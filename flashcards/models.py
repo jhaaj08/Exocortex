@@ -423,3 +423,71 @@ class StudySession(models.Model):
             return 0
         
         return round((completed_blocks / total_blocks) * 100, 1)
+
+class FocusSession(models.Model):
+    """Track individual focus block study sessions"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    focus_block = models.ForeignKey(FocusBlock, on_delete=models.CASCADE, related_name='study_sessions')
+    
+    # Session tracking
+    started_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    
+    # Progress tracking
+    current_segment = models.IntegerField(default=0, help_text="Current segment index")
+    segments_completed = models.JSONField(default=list, help_text="List of completed segment indices")
+    
+    # Timing data
+    total_study_time = models.FloatField(null=True, blank=True, help_text="Actual time spent in seconds")
+    segment_times = models.JSONField(default=dict, help_text="Time spent on each segment")
+    
+    # Learning assessment
+    proficiency_score = models.IntegerField(
+        null=True, blank=True,
+        choices=[(i, f"{i}/5") for i in range(1, 6)],
+        help_text="Self-assessed proficiency score (1-5)"
+    )
+    difficulty_rating = models.IntegerField(
+        null=True, blank=True,
+        choices=[(i, f"{i}/5") for i in range(1, 6)],
+        help_text="How difficult was this content? (1=easy, 5=hard)"
+    )
+    
+    # Session status
+    status = models.CharField(
+        max_length=20,
+        choices=[
+            ('active', 'Active'),
+            ('paused', 'Paused'),
+            ('completed', 'Completed'),
+            ('abandoned', 'Abandoned')
+        ],
+        default='active'
+    )
+    
+    # Notes and feedback
+    learning_notes = models.TextField(blank=True, help_text="Student's notes during session")
+    confusion_points = models.JSONField(default=list, help_text="Segments where student got confused")
+    
+    class Meta:
+        ordering = ['-started_at']
+    
+    def __str__(self):
+        return f"Session: {self.focus_block.title} ({self.status})"
+    
+    def get_completion_percentage(self):
+        """Get completion percentage"""
+        if not self.focus_block:
+            return 0
+        total_segments = len(self.focus_block.get_segments())
+        if total_segments == 0:
+            return 0
+        return (len(self.segments_completed) / total_segments) * 100
+    
+    def mark_segment_completed(self, segment_index, time_spent):
+        """Mark a segment as completed"""
+        if segment_index not in self.segments_completed:
+            self.segments_completed.append(segment_index)
+        self.segment_times[str(segment_index)] = time_spent
+        self.current_segment = segment_index + 1
+        self.save()

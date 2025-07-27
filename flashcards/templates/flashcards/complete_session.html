@@ -1,0 +1,195 @@
+{% extends 'flashcards/base.html' %}
+
+{% block title %}Session Complete - Rate Your Learning{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card shadow">
+                <div class="card-header bg-success text-white text-center">
+                    <h3><i class="fas fa-check-circle"></i> Focus Session Complete!</h3>
+                    <p class="mb-0">{{ focus_block.title }}</p>
+                </div>
+                
+                <div class="card-body">
+                    <form method="post">
+                        {% csrf_token %}
+                        
+                        <!-- Proficiency Score -->
+                        <div class="mb-4">
+                            <label class="form-label h5">
+                                <i class="fas fa-star text-warning"></i> How well do you understand this content?
+                            </label>
+                            <div class="proficiency-scale">
+                                {% for i in "12345" %}
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="proficiency_score" id="prof{{ i }}" value="{{ i }}" required>
+                                    <label class="form-check-label" for="prof{{ i }}">
+                                        <div class="score-option">
+                                            <div class="score-number">{{ i }}</div>
+                                            <div class="score-label">
+                                                {% if i == "1" %}Confused{% elif i == "2" %}Basic{% elif i == "3" %}Good{% elif i == "4" %}Strong{% else %}Mastered{% endif %}
+                                            </div>
+                                        </div>
+                                    </label>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+
+                        <!-- Difficulty Rating -->
+                        <div class="mb-4">
+                            <label class="form-label h5">
+                                <i class="fas fa-chart-line text-info"></i> How difficult was this content?
+                            </label>
+                            <div class="difficulty-scale">
+                                {% for i in "12345" %}
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="difficulty_rating" id="diff{{ i }}" value="{{ i }}">
+                                    <label class="form-check-label" for="diff{{ i }}">
+                                        <div class="score-option">
+                                            <div class="score-number">{{ i }}</div>
+                                            <div class="score-label">
+                                                {% if i == "1" %}Very Easy{% elif i == "2" %}Easy{% elif i == "3" %}Moderate{% elif i == "4" %}Hard{% else %}Very Hard{% endif %}
+                                            </div>
+                                        </div>
+                                    </label>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+
+                        <!-- Learning Notes -->
+                        <div class="mb-4">
+                            <label for="learning_notes" class="form-label h5">
+                                <i class="fas fa-notes-medical text-primary"></i> Your Learning Notes (Optional)
+                            </label>
+                            <textarea class="form-control" id="learning_notes" name="learning_notes" rows="4" 
+                                placeholder="What did you learn? What questions do you still have?"></textarea>
+                        </div>
+
+                        <!-- Confusion Points -->
+                        <div class="mb-4">
+                            <label class="form-label h5">
+                                <i class="fas fa-question-circle text-warning"></i> Which parts were confusing? (Optional)
+                            </label>
+                            {% for segment in focus_block.get_segments %}
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="confusion_points" 
+                                       value="{{ forloop.counter0 }}" id="confusion{{ forloop.counter0 }}">
+                                <label class="form-check-label" for="confusion{{ forloop.counter0 }}">
+                                    {{ segment.title }}
+                                </label>
+                            </div>
+                            {% endfor %}
+                        </div>
+
+                        <!-- Session Summary -->
+                        <div class="session-summary mb-4">
+                            <h6>Session Summary:</h6>
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <div class="summary-item">
+                                        <i class="fas fa-clock text-primary"></i>
+                                        <span>Duration: ~7 minutes</span>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="summary-item">
+                                        <i class="fas fa-book text-success"></i>
+                                        <span>{{ focus_block.get_segments|length }} segments</span>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="summary-item">
+                                        <i class="fas fa-question text-info"></i>
+                                        <span>{{ focus_block.get_qa_items|length }} Q&A items</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Submit Buttons -->
+                        <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                            <button type="submit" class="btn btn-success btn-lg">
+                                <i class="fas fa-save"></i> Save & Continue Learning
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Next Recommendations -->
+            <div class="card mt-4">
+                <div class="card-body">
+                    <h6><i class="fas fa-arrow-right text-primary"></i> What's Next?</h6>
+                    <div class="d-grid gap-2 d-md-flex">
+                        <a href="{% url 'flashcards:all_focus_blocks' %}" class="btn btn-outline-primary">
+                            <i class="fas fa-list"></i> View All Focus Blocks
+                        </a>
+                        <a href="{% url 'flashcards:home' %}" class="btn btn-outline-secondary">
+                            <i class="fas fa-home"></i> Upload New PDFs
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.proficiency-scale, .difficulty-scale {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.score-option {
+    text-align: center;
+    padding: 15px 10px;
+    border: 2px solid #dee2e6;
+    border-radius: 10px;
+    transition: all 0.3s ease;
+    cursor: pointer;
+    min-width: 80px;
+}
+
+.score-option:hover {
+    border-color: #007bff;
+    background-color: #f8f9fa;
+}
+
+.form-check-input:checked + .form-check-label .score-option {
+    border-color: #007bff;
+    background-color: #e3f2fd;
+}
+
+.score-number {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #007bff;
+}
+
+.score-label {
+    font-size: 0.8rem;
+    color: #6c757d;
+    margin-top: 5px;
+}
+
+.summary-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.session-summary {
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 8px;
+    border-left: 4px solid #007bff;
+}
+</style>
+{% endblock %}

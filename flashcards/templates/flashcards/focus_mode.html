@@ -1,0 +1,447 @@
+{% extends 'flashcards/base.html' %}
+
+{% block title %}Focus Mode - {{ focus_block.title }}{% endblock %}
+
+{% block content %}
+<div class="focus-mode-container" id="focus-container">
+    <!-- Timer Header -->
+    <div class="focus-header">
+        <div class="row align-items-center">
+            <div class="col-md-4">
+                <h2 class="h4 mb-0">🎯 Focus Mode</h2>
+                <small class="text-muted">{{ focus_block.title }}</small>
+            </div>
+            <div class="col-md-4 text-center">
+                <div class="timer-display">
+                    <div id="main-timer" class="timer-main">7:00</div>
+                    <div id="segment-timer" class="timer-segment">Segment: 2:00</div>
+                </div>
+            </div>
+            <div class="col-md-4 text-end">
+                <div class="progress-indicator">
+                    <span id="progress-text">Revision</span>
+                    <div class="progress mt-1" style="height: 6px;">
+                        <div id="progress-bar" class="progress-bar" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Control Buttons -->
+    <div class="focus-controls text-center mb-4">
+        <button id="start-btn" class="btn btn-success btn-lg">
+            <i class="fas fa-play"></i> Start Focus Session
+        </button>
+        <button id="pause-btn" class="btn btn-warning btn-lg" style="display: none;">
+            <i class="fas fa-pause"></i> Pause
+        </button>
+        <button id="resume-btn" class="btn btn-success btn-lg" style="display: none;">
+            <i class="fas fa-play"></i> Resume
+        </button>
+        <button id="skip-btn" class="btn btn-secondary" style="display: none;">
+            <i class="fas fa-forward"></i> Next Segment
+        </button>
+    </div>
+
+    <!-- Content Area -->
+    <div class="focus-content">
+        <!-- Revision Phase -->
+        <div id="revision-phase" class="content-phase" style="display: none;">
+            <div class="revision-card">
+                <h3><i class="fas fa-history"></i> Quick Revision</h3>
+                {% if revision_data %}
+                <p class="lead">{{ revision_data.nano_recap }}</p>
+                <div class="revision-question mt-3">
+                    <strong>Quick Check:</strong> {{ revision_data.question.prompt }}
+                    <div class="revision-answer mt-2" id="revision-answer" style="display: none;">
+                        <div class="alert alert-info">
+                            <strong>Answer:</strong> {{ revision_data.question.answer }}
+                        </div>
+                    </div>
+                    <button class="btn btn-outline-primary btn-sm mt-2" onclick="showRevisionAnswer()">
+                        Show Answer
+                    </button>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Teaching Segments -->
+        {% for segment in segments %}
+        <div id="segment-{{ forloop.counter0 }}" class="content-phase segment-phase" style="display: none;">
+            <div class="segment-card">
+                <h3><i class="fas fa-book-open"></i> {{ segment.title }}</h3>
+                <div class="segment-content">
+                    {% for teach_item in segment.teach %}
+                    <div class="teach-item mb-3">
+                        {% if teach_item.mode == 'socratic' %}
+                        <div class="alert alert-primary">
+                            <i class="fas fa-question-circle"></i> <strong>Think About:</strong> {{ teach_item.text }}
+                        </div>
+                        {% elif teach_item.mode == 'explain' %}
+                        <div class="explanation">
+                            <i class="fas fa-lightbulb"></i> {{ teach_item.text }}
+                        </div>
+                        {% elif teach_item.mode == 'example' %}
+                        <div class="alert alert-success">
+                            <i class="fas fa-lightbulb"></i> <strong>Example:</strong> {{ teach_item.text }}
+                        </div>
+                        {% elif teach_item.mode == 'warning' %}
+                        <div class="alert alert-warning">
+                            <i class="fas fa-exclamation-triangle"></i> <strong>Watch Out:</strong> {{ teach_item.text }}
+                        </div>
+                        {% elif teach_item.mode == 'benefit' %}
+                        <div class="alert alert-info">
+                            <i class="fas fa-star"></i> <strong>Why This Matters:</strong> {{ teach_item.text }}
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                    
+                    {% if segment.diagram_suggestion %}
+                    <div class="diagram-suggestion mt-3">
+                        <i class="fas fa-image"></i> <strong>Visual Aid:</strong> {{ segment.diagram_suggestion }}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+
+        <!-- Q&A Phase -->
+        <div id="qa-phase" class="content-phase" style="display: none;">
+            <div class="qa-card">
+                <h3><i class="fas fa-question"></i> Understanding Check</h3>
+                {% for qa_item in qa_items %}
+                <div class="qa-item mb-4">
+                    <div class="question mb-2">
+                        <strong>{{ forloop.counter }}. {{ qa_item.prompt }}</strong>
+                    </div>
+                    <div class="answer" id="qa-answer-{{ forloop.counter0 }}" style="display: none;">
+                        <div class="alert alert-success">
+                            {% if qa_item.ideal_answer %}
+                            <strong>Answer:</strong> {{ qa_item.ideal_answer }}
+                            {% endif %}
+                            {% if qa_item.solution_steps %}
+                            <strong>Steps:</strong>
+                            <ol>
+                                {% for step in qa_item.solution_steps %}
+                                <li>{{ step }}</li>
+                                {% endfor %}
+                            </ol>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <button class="btn btn-outline-primary btn-sm" onclick="showQAAnswer({{ forloop.counter0 }})">
+                        Show Answer
+                    </button>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Completion Phase -->
+        <div id="completion-phase" class="content-phase" style="display: none;">
+            <div class="completion-card text-center">
+                <h3><i class="fas fa-check-circle text-success"></i> Session Complete!</h3>
+                <p class="lead">Great job! You've completed this focus block.</p>
+                <div class="session-stats">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="stat-item">
+                                <div class="stat-value" id="final-time">7:00</div>
+                                <div class="stat-label">Total Time</div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="stat-item">
+                                <div class="stat-value">{{ segments|length }}</div>
+                                <div class="stat-label">Segments</div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="stat-item">
+                                <div class="stat-value">{{ qa_items|length }}</div>
+                                <div class="stat-label">Q&A Items</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <button class="btn btn-primary btn-lg mt-3" onclick="showProficiencyForm()">
+                    <i class="fas fa-star"></i> Rate Your Understanding
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.focus-mode-container {
+    background: #f8f9fa;
+    min-height: 100vh;
+    padding: 20px;
+}
+
+.focus-header {
+    background: white;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    margin-bottom: 20px;
+}
+
+.timer-display {
+    font-family: 'Courier New', monospace;
+}
+
+.timer-main {
+    font-size: 2rem;
+    font-weight: bold;
+    color: #007bff;
+}
+
+.timer-segment {
+    font-size: 1rem;
+    color: #6c757d;
+}
+
+.focus-content {
+    background: white;
+    padding: 30px;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    min-height: 500px;
+}
+
+.content-phase {
+    animation: fadeIn 0.5s ease-in-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.teach-item {
+    padding: 15px;
+    border-left: 4px solid #dee2e6;
+    margin-bottom: 15px;
+}
+
+.segment-card, .revision-card, .qa-card, .completion-card {
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.stat-item {
+    text-align: center;
+    padding: 15px;
+}
+
+.stat-value {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #007bff;
+}
+
+.stat-label {
+    color: #6c757d;
+    font-size: 0.9rem;
+}
+</style>
+
+<script>
+// Focus Mode JavaScript
+let sessionTimer;
+let segmentTimer;
+let totalSeconds = 420; // 7 minutes
+let currentPhase = 'waiting';
+let currentSegment = 0;
+let sessionStartTime;
+let segmentStartTime;
+
+const phases = [
+    { name: 'revision', duration: 30 },
+    {% for segment in segments %}
+    { name: 'segment-{{ forloop.counter0 }}', duration: {{ segment.time_sec|default:120 }} },
+    {% endfor %}
+    { name: 'qa', duration: 60 },
+    { name: 'completion', duration: 0 }
+];
+
+function startFocusSession() {
+    document.getElementById('start-btn').style.display = 'none';
+    document.getElementById('pause-btn').style.display = 'inline-block';
+    document.getElementById('skip-btn').style.display = 'inline-block';
+    
+    sessionStartTime = Date.now();
+    currentPhase = 0;
+    startPhase(currentPhase);
+    startMainTimer();
+}
+
+function startPhase(phaseIndex) {
+    // Hide all phases
+    document.querySelectorAll('.content-phase').forEach(el => el.style.display = 'none');
+    
+    // Show current phase
+    const phase = phases[phaseIndex];
+    document.getElementById(phase.name + '-phase').style.display = 'block';
+    document.getElementById('progress-text').textContent = phase.name.charAt(0).toUpperCase() + phase.name.slice(1);
+    
+    // Start segment timer
+    segmentStartTime = Date.now();
+    if (phase.duration > 0) {
+        startSegmentTimer(phase.duration);
+    }
+    
+    // Update progress
+    const progress = ((phaseIndex + 1) / phases.length) * 100;
+    document.getElementById('progress-bar').style.width = progress + '%';
+}
+
+function startMainTimer() {
+    sessionTimer = setInterval(() => {
+        totalSeconds--;
+        updateMainTimerDisplay();
+        
+        if (totalSeconds <= 0) {
+            completeSession();
+        }
+    }, 1000);
+}
+
+function startSegmentTimer(duration) {
+    let segmentSeconds = duration;
+    updateSegmentTimerDisplay(segmentSeconds);
+    
+    segmentTimer = setInterval(() => {
+        segmentSeconds--;
+        updateSegmentTimerDisplay(segmentSeconds);
+        
+        if (segmentSeconds <= 0) {
+            clearInterval(segmentTimer);
+            nextPhase();
+        }
+    }, 1000);
+}
+
+function updateMainTimerDisplay() {
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    document.getElementById('main-timer').textContent = 
+        `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+function updateSegmentTimerDisplay(seconds) {
+    const minutes = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    document.getElementById('segment-timer').textContent = 
+        `Segment: ${minutes}:${secs.toString().padStart(2, '0')}`;
+}
+
+function nextPhase() {
+    // Record segment completion
+    if (currentPhase < phases.length - 1) {
+        const timeSpent = (Date.now() - segmentStartTime) / 1000;
+        updateProgress('complete_segment', {
+            segment_index: currentPhase,
+            time_spent: timeSpent
+        });
+    }
+    
+    currentPhase++;
+    if (currentPhase < phases.length) {
+        startPhase(currentPhase);
+    } else {
+        completeSession();
+    }
+}
+
+function pauseSession() {
+    clearInterval(sessionTimer);
+    clearInterval(segmentTimer);
+    document.getElementById('pause-btn').style.display = 'none';
+    document.getElementById('resume-btn').style.display = 'inline-block';
+    updateProgress('pause_session');
+}
+
+function resumeSession() {
+    startMainTimer();
+    if (currentPhase < phases.length && phases[currentPhase].duration > 0) {
+        const remainingTime = phases[currentPhase].duration - 
+            Math.floor((Date.now() - segmentStartTime) / 1000);
+        startSegmentTimer(Math.max(remainingTime, 0));
+    }
+    document.getElementById('resume-btn').style.display = 'none';
+    document.getElementById('pause-btn').style.display = 'inline-block';
+    updateProgress('resume_session');
+}
+
+function completeSession() {
+    clearInterval(sessionTimer);
+    clearInterval(segmentTimer);
+    
+    // Show completion phase
+    document.querySelectorAll('.content-phase').forEach(el => el.style.display = 'none');
+    document.getElementById('completion-phase').style.display = 'block';
+    
+    // Update final time
+    const totalTime = (Date.now() - sessionStartTime) / 1000;
+    const minutes = Math.floor(totalTime / 60);
+    const seconds = Math.floor(totalTime % 60);
+    document.getElementById('final-time').textContent = 
+        `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    
+    updateProgress('complete_session', { total_time: totalTime });
+}
+
+function updateProgress(action, data = {}) {
+    fetch(`/focus/{{ session.id }}/update/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: JSON.stringify({
+            action: action,
+            ...data
+        })
+    });
+}
+
+function showRevisionAnswer() {
+    document.getElementById('revision-answer').style.display = 'block';
+}
+
+function showQAAnswer(index) {
+    document.getElementById('qa-answer-' + index).style.display = 'block';
+}
+
+function showProficiencyForm() {
+    window.location.href = `/focus/{{ session.id }}/complete/`;
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+// Event listeners
+document.getElementById('start-btn').addEventListener('click', startFocusSession);
+document.getElementById('pause-btn').addEventListener('click', pauseSession);
+document.getElementById('resume-btn').addEventListener('click', resumeSession);
+document.getElementById('skip-btn').addEventListener('click', nextPhase);
+</script>
+{% endblock %}

@@ -17,6 +17,9 @@ from openai import OpenAI
 from django.conf import settings
 import hashlib
 from difflib import SequenceMatcher
+from django.utils import timezone
+import uuid
+from .models import FocusSession
 
 logger = logging.getLogger(__name__)
 
@@ -1034,3 +1037,119 @@ def focus_schedule(request):
     }
     
     return render(request, 'flashcards/focus_schedule.html', context)
+
+def start_focus_mode(request, focus_block_id):
+    """Start a new focus session"""
+    try:
+        focus_block = FocusBlock.objects.get(id=focus_block_id)
+        
+        # Create new session
+        session = FocusSession.objects.create(
+            focus_block=focus_block,
+            status='active'
+        )
+        
+        return redirect('flashcards:focus_mode', session_id=session.id)
+        
+    except FocusBlock.DoesNotExist:
+        messages.error(request, "Focus block not found")
+        return redirect('flashcards:all_focus_blocks')
+
+def focus_mode(request, session_id):
+    """Focus mode interface with timer"""
+    try:
+        session = FocusSession.objects.get(id=session_id)
+        focus_block = session.focus_block
+        segments = focus_block.get_segments()
+        
+        context = {
+            'session': session,
+            'focus_block': focus_block,
+            'segments': segments,
+            'revision_data': focus_block.get_revision_data(),
+            'qa_items': focus_block.get_qa_items(),
+            'recap_data': focus_block.get_recap_data(),
+            'total_segments': len(segments),
+            'current_segment': session.current_segment,
+        }
+        
+        return render(request, 'flashcards/focus_mode.html', context)
+        
+    except FocusSession.DoesNotExist:
+        messages.error(request, "Focus session not found")
+        return redirect('flashcards:all_focus_blocks')
+
+def update_focus_progress(request, session_id):
+    """AJAX endpoint to update focus session progress"""
+    if request.method == 'POST':
+        try:
+            session = FocusSession.objects.get(id=session_id)
+            data = json.loads(request.body)
+            
+            action = data.get('action')
+            
+            if action == 'complete_segment':
+                segment_index = data.get('segment_index')
+                time_spent = data.get('time_spent')
+                session.mark_segment_completed(segment_index, time_spent)
+                
+            elif action == 'pause_session':
+                session.status = 'paused'
+                session.save()
+                
+            elif action == 'resume_session':
+                session.status = 'active'
+                session.save()
+                
+            elif action == 'complete_session':
+                session.status = 'completed'
+                session.completed_at = timezone.now()
+                session.total_study_time = data.get('total_time')
+                session.save()
+            
+            return JsonResponse({'status': 'success'})
+            
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)})
+    
+    return JsonResponse({'status': 'error', 'message': 'Invalid request'})
+
+def complete_focus_session(request, session_id):
+    """Complete session and collect proficiency score"""
+    if request.method == 'POST':
+        try:
+            session = FocusSession.objects.get(id=session_id)
+            
+            # Get proficiency data
+            proficiency_score = request.POST.get('proficiency_score')
+            difficulty_rating = request.POST.get('difficulty_rating')
+            learning_notes = request.POST.get('learning_notes', '')
+            confusion_points = request.POST.getlist('confusion_points')
+            
+            # Update session
+            session.proficiency_score = int(proficiency_score) if proficiency_score else None
+            session.difficulty_rating = int(difficulty_rating) if difficulty_rating else None
+            session.learning_notes = learning_notes
+            session.confusion_points = confusion_points
+            session.status = 'completed'
+            session.completed_at = timezone.now()
+            session.save()
+            
+            messages.success(request, f"Session completed! Proficiency score: {proficiency_score}/5")
+            return redirect('flashcards:all_focus_blocks')
+            
+        except Exception as e:
+            messages.error(request, f"Error saving session: {e}")
+            return redirect('flashcards:focus_mode', session_id=session_id)
+    
+    # GET request - show completion form
+    try:
+        session = FocusSession.objects.get(id=session_id)
+        context = {
+            'session': session,
+            'focus_block': session.focus_block,
+        }
+        return render(request, 'flashcards/complete_session.html', context)
+    except FocusSession.DoesNotExist:
+        messages.error(request, "Session not found")
+        return redirect('flashcards:all_focus_blocks')
