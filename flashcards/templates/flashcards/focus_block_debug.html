@@ -1,0 +1,148 @@
+{% extends 'flashcards/base.html' %}
+
+{% block title %}Focus Block Debug - {{ pdf_document.name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{% url 'flashcards:home' %}">Home</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'flashcards:pdf_focus_blocks' pdf_document.id %}">Focus Blocks</a></li>
+                    <li class="breadcrumb-item active">Debug</li>
+                </ol>
+            </nav>
+            
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1><i class="fas fa-bug me-2"></i>Focus Block Debug</h1>
+                    <p class="text-muted mb-0">
+                        <i class="fas fa-file-pdf me-1"></i>{{ pdf_document.name }}
+                    </p>
+                </div>
+                <div>
+                    <a href="{% url 'flashcards:pdf_focus_blocks' pdf_document.id %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left me-1"></i>Back to Focus Blocks
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Summary -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="alert alert-info">
+                <h5><i class="fas fa-info-circle me-2"></i>Debug Summary</h5>
+                <p class="mb-0">
+                    <strong>Total Focus Blocks:</strong> {{ total_blocks }} |
+                    <strong>Blocks with Compact7 Data:</strong> {{ debug_info|length }} |
+                    <strong>API Available:</strong> {% if debug_info %}Yes{% else %}Check OPENAI_API_KEY{% endif %}
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Debug Information -->
+    {% if debug_info %}
+    <div class="row">
+        <div class="col-12">
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Block</th>
+                            <th>Compact7 Status</th>
+                            <th>Content Counts</th>
+                            <th>Data Keys</th>
+                            <th>Core Goal</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for info in debug_info %}
+                        <tr>
+                            <td>
+                                <strong>{{ info.block.block_order }}</strong><br>
+                                <small>{{ info.block.title }}</small>
+                            </td>
+                            <td>
+                                {% if info.has_compact7_data %}
+                                    <span class="badge bg-success">✅ Has Data</span>
+                                {% else %}
+                                    <span class="badge bg-danger">❌ Empty</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <small>
+                                    <strong>Segments:</strong> {{ info.segments_count }}<br>
+                                    <strong>Q&A:</strong> {{ info.qa_count }}<br>
+                                    <strong>Revision:</strong> {% if info.has_revision %}✅{% else %}❌{% endif %}<br>
+                                    <strong>Recap:</strong> {% if info.has_recap %}✅{% else %}❌{% endif %}<br>
+                                    <strong>Rescue:</strong> {% if info.has_rescue %}✅{% else %}❌{% endif %}
+                                </small>
+                            </td>
+                            <td>
+                                <small>
+                                    {% for key in info.compact7_keys %}
+                                        <span class="badge bg-secondary me-1">{{ key }}</span>
+                                    {% empty %}
+                                        <span class="text-muted">No keys</span>
+                                    {% endfor %}
+                                </small>
+                            </td>
+                            <td>
+                                <small>{{ info.core_goal|default:"No goal" }}</small>
+                            </td>
+                            <td>
+                                <a href="{% url 'flashcards:focus_block_detail' info.block.id %}" class="btn btn-sm btn-outline-primary">
+                                    <i class="fas fa-eye me-1"></i>View
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="row">
+        <div class="col-12">
+            <div class="text-center py-5">
+                <i class="fas fa-exclamation-triangle fa-3x text-warning mb-3"></i>
+                <h4>No Focus Blocks Found</h4>
+                <p class="text-muted">Generate focus blocks first to see debug information.</p>
+                <a href="{% url 'flashcards:pdf_focus_blocks' pdf_document.id %}" class="btn btn-primary">
+                    <i class="fas fa-magic me-2"></i>Go to Focus Blocks
+                </a>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Raw Data Preview (Optional) -->
+    {% if debug_info %}
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-code me-2"></i>Sample Compact7 Data</h5>
+                </div>
+                <div class="card-body">
+                    {% for info in debug_info %}
+                        {% if info.has_compact7_data %}
+                        <h6>Block {{ info.block.block_order }} Sample Data:</h6>
+                        <pre class="bg-light p-3 rounded"><code>{{ info.block.compact7_data|truncatechars:500 }}</code></pre>
+                        {% break %}
+                        {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %} 

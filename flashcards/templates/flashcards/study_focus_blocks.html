@@ -1,0 +1,295 @@
+{% extends 'flashcards/base.html' %}
+
+{% block title %}Study Session - {{ current_block.title }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Progress Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h5 class="mb-0">{{ pdf_document.name }} - Compact7 Study Session</h5>
+                        <span class="badge bg-primary">Block {{ current_block.block_order }} of {{ total_blocks }}</span>
+                    </div>
+                    <div class="progress mb-2" style="height: 10px;">
+                        <div class="progress-bar" style="width: {{ progress_percentage }}%"></div>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <small class="text-muted">{{ completed_blocks }} completed</small>
+                        <small class="text-muted">{{ progress_percentage }}% complete</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Focus Block Content -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h4 class="mb-0">
+                            <i class="fas fa-target me-2"></i>{{ current_block.title }}
+                        </h4>
+                        <span class="badge bg-light text-dark">{{ current_block.get_estimated_duration_display }}</span>
+                    </div>
+                </div>
+                <div class="card-body">
+                    {% with revision_data=current_block.get_revision_data %}
+                    {% if revision_data %}
+                    <!-- Revision Section -->
+                    <div class="section-card bg-light p-3 rounded mb-4">
+                        <h6 class="text-primary"><i class="fas fa-redo me-2"></i>Quick Revision</h6>
+                        <p class="mb-2"><strong>Context:</strong> {{ revision_data.nano_recap }}</p>
+                        
+                        {% with rev_question=revision_data.question %}
+                        {% if rev_question %}
+                        <div class="revision-question border rounded p-2 bg-white">
+                            <p class="mb-2"><strong>{{ rev_question.type|title }} Check:</strong> {{ rev_question.prompt }}</p>
+                            <button class="btn btn-sm btn-outline-primary" onclick="toggleRevisionAnswer()">
+                                <i class="fas fa-eye me-1"></i>Show Answer
+                            </button>
+                            <div id="revisionAnswer" class="mt-2 alert alert-success" style="display: none;">
+                                <strong>Answer:</strong> {{ rev_question.answer }}
+                            </div>
+                        </div>
+                        {% endif %}
+                        {% endwith %}
+                    </div>
+                    {% endif %}
+                    {% endwith %}
+
+                    <!-- Core Learning Goal -->
+                    {% with core_goal=current_block.get_core_goal %}
+                    {% if core_goal %}
+                    <div class="alert alert-info">
+                        <h6><i class="fas fa-bullseye me-2"></i>Learning Goal</h6>
+                        <p class="mb-0">{{ core_goal }}</p>
+                    </div>
+                    {% endif %}
+                    {% endwith %}
+
+                    <!-- Teaching Segments -->
+                    {% with segments=current_block.get_segments %}
+                    {% if segments %}
+                    <div class="section-card border p-4 mb-4">
+                        <h6 class="text-success"><i class="fas fa-chalkboard-teacher me-2"></i>Learning Content</h6>
+                        
+                        {% for segment in segments %}
+                        <div class="segment-section border rounded p-3 mb-3" id="segment-{{ forloop.counter }}">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <h6 class="text-primary mb-0">{{ segment.title }}</h6>
+                                <span class="badge bg-secondary">{{ segment.time_sec }}s</span>
+                            </div>
+                            
+                            {% if segment.diagram_suggestion %}
+                            <div class="alert alert-light mb-2">
+                                <small><i class="fas fa-image me-1"></i><strong>Visual:</strong> {{ segment.diagram_suggestion }}</small>
+                            </div>
+                            {% endif %}
+                            
+                            <div class="teaching-content">
+                                {% for teach_item in segment.teach %}
+                                <div class="teach-item mb-3 p-2 border-start border-3 
+                                    {% if teach_item.mode == 'socratic' %}border-warning bg-warning bg-opacity-10
+                                    {% elif teach_item.mode == 'explain' %}border-info bg-info bg-opacity-10
+                                    {% elif teach_item.mode == 'example' %}border-success bg-success bg-opacity-10
+                                    {% elif teach_item.mode == 'warning' %}border-danger bg-danger bg-opacity-10
+                                    {% elif teach_item.mode == 'benefit' %}border-primary bg-primary bg-opacity-10
+                                    {% elif teach_item.mode == 'contrast' %}border-secondary bg-secondary bg-opacity-10
+                                    {% else %}border-dark bg-light{% endif %}">
+                                    
+                                    <div class="d-flex align-items-start">
+                                        <span class="badge me-2 
+                                            {% if teach_item.mode == 'socratic' %}bg-warning
+                                            {% elif teach_item.mode == 'explain' %}bg-info
+                                            {% elif teach_item.mode == 'example' %}bg-success
+                                            {% elif teach_item.mode == 'warning' %}bg-danger
+                                            {% elif teach_item.mode == 'benefit' %}bg-primary
+                                            {% elif teach_item.mode == 'contrast' %}bg-secondary
+                                            {% else %}bg-dark{% endif %}">
+                                            {{ teach_item.mode|title }}
+                                        </span>
+                                        <div class="flex-grow-1">{{ teach_item.text }}</div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                    {% endwith %}
+
+                    <!-- Q&A Section -->
+                    {% with qa_items=current_block.get_qa_items %}
+                    {% if qa_items %}
+                    <div class="section-card border p-4 mb-4">
+                        <h6 class="text-warning"><i class="fas fa-question-circle me-2"></i>Check Your Understanding</h6>
+                        {% for qa in qa_items %}
+                        <div class="qa-item border rounded p-3 mb-3" id="qa-{{ forloop.counter }}">
+                            <div class="question-section">
+                                <h6 class="text-primary">Question {{ forloop.counter }} ({{ qa.type|title }}):</h6>
+                                <p>{{ qa.prompt }}</p>
+                                <button class="btn btn-outline-primary btn-sm" onclick="showQAAnswer({{ forloop.counter }})">
+                                    <i class="fas fa-lightbulb me-1"></i>Show Answer
+                                </button>
+                                {% if qa.rubric %}
+                                <button class="btn btn-outline-secondary btn-sm ms-2" onclick="showRubric({{ forloop.counter }})">
+                                    <i class="fas fa-list me-1"></i>Show Rubric
+                                </button>
+                                {% endif %}
+                                {% if qa.solution_steps %}
+                                <button class="btn btn-outline-info btn-sm ms-2" onclick="showSteps({{ forloop.counter }})">
+                                    <i class="fas fa-step-forward me-1"></i>Show Steps
+                                </button>
+                                {% endif %}
+                            </div>
+                            
+                            {% if qa.rubric %}
+                            <div class="rubric-section mt-3" id="rubric-{{ forloop.counter }}" style="display: none;">
+                                <div class="alert alert-info">
+                                    <h6>Assessment Rubric:</h6>
+                                    <ul class="mb-0">
+                                        {% for criterion in qa.rubric %}
+                                        <li>{{ criterion }}</li>
+                                        {% endfor %}
+                                    </ul>
+                                </div>
+                            </div>
+                            {% endif %}
+                            
+                            {% if qa.solution_steps %}
+                            <div class="steps-section mt-3" id="steps-{{ forloop.counter }}" style="display: none;">
+                                <div class="alert alert-info">
+                                    <h6>Solution Steps:</h6>
+                                    <ol class="mb-0">
+                                        {% for step in qa.solution_steps %}
+                                        <li>{{ step }}</li>
+                                        {% endfor %}
+                                    </ol>
+                                </div>
+                            </div>
+                            {% endif %}
+                            
+                            <div class="answer-section mt-3" id="qa-answer-{{ forloop.counter }}" style="display: none;">
+                                <div class="alert alert-success">
+                                    <h6>Ideal Answer:</h6>
+                                    <p class="mb-0">{{ qa.ideal_answer }}</p>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                    {% endwith %}
+
+                    <!-- Rescue Reset Section -->
+                    {% with rescue_data=current_block.get_rescue_data %}
+                    <div class="section-card bg-warning bg-opacity-10 border border-warning p-4 mb-4" style="display: none;" id="rescueSection">
+                        <h6 class="text-warning"><i class="fas fa-life-ring me-2"></i>Need Help? Let's Reset</h6>
+                        {% if rescue_data.nano_summary %}
+                        <div class="mb-3">
+                            <strong>Quick Summary:</strong> {{ rescue_data.nano_summary }}
+                        </div>
+                        {% endif %}
+                        {% if rescue_data.one_min_reset %}
+                        <div class="reset-questions">
+                            <h6>Let's rebuild step by step:</h6>
+                            <ol>
+                                {% for reset_question in rescue_data.one_min_reset %}
+                                <li class="mb-2">{{ reset_question }}</li>
+                                {% endfor %}
+                            </ol>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endwith %}
+
+                    <!-- Recap Section -->
+                    {% with recap_data=current_block.get_recap_data %}
+                    {% if recap_data %}
+                    <div class="section-card bg-success bg-opacity-10 border border-success p-4 mb-4">
+                        <h6 class="text-success"><i class="fas fa-check-circle me-2"></i>Key Takeaways</h6>
+                        {% if recap_data.bullets %}
+                        <ul>
+                            {% for bullet in recap_data.bullets %}
+                            <li>{{ bullet }}</li>
+                            {% endfor %}
+                        </ul>
+                        {% endif %}
+                        {% if recap_data.confidence_prompt %}
+                        <div class="confidence-check mt-3">
+                            <p class="mb-2"><strong>{{ recap_data.confidence_prompt }}</strong></p>
+                            <div class="btn-group" role="group">
+                                {% for i in "12345" %}
+                                <input type="radio" class="btn-check" name="confidence" id="conf{{ i }}" value="{{ i }}">
+                                <label class="btn btn-outline-success" for="conf{{ i }}">{{ i }}</label>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endif %}
+                        {% if recap_data.next_review %}
+                        <div class="mt-2">
+                            <small class="text-muted">
+                                <i class="fas fa-calendar me-1"></i>Next review: {{ recap_data.next_review }}
+                            </small>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                    {% endwith %}
+
+                    <!-- Navigation -->
+                    <div class="text-center">
+                        <button class="btn btn-outline-warning me-2" onclick="toggleRescue()">
+                            <i class="fas fa-life-ring me-1"></i>I'm Lost - Help!
+                        </button>
+                        <form method="post" action="{% url 'flashcards:complete_focus_block' study_session.session_id current_block.id %}" style="display: inline;">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-success btn-lg">
+                                <i class="fas fa-check me-1"></i>Complete This Block
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function toggleRevisionAnswer() {
+    const answer = document.getElementById('revisionAnswer');
+    answer.style.display = answer.style.display === 'none' ? 'block' : 'none';
+}
+
+function showQAAnswer(qaNumber) {
+    document.getElementById(`qa-answer-${qaNumber}`).style.display = 'block';
+}
+
+function showRubric(qaNumber) {
+    document.getElementById(`rubric-${qaNumber}`).style.display = 'block';
+}
+
+function showSteps(qaNumber) {
+    document.getElementById(`steps-${qaNumber}`).style.display = 'block';
+}
+
+function toggleRescue() {
+    const section = document.getElementById('rescueSection');
+    section.style.display = section.style.display === 'none' ? 'block' : 'none';
+}
+
+// Auto-save confidence rating
+document.querySelectorAll('input[name="confidence"]').forEach(input => {
+    input.addEventListener('change', function() {
+        console.log(`Confidence level: ${this.value}`);
+        // Could save to backend here
+    });
+});
+</script>
+{% endblock %}

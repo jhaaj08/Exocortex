@@ -1,0 +1,248 @@
+{% extends 'flashcards/base.html' %}
+
+{% block title %}Study: {{ folder.name }} - Flashcard Generator{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-8">
+        <h2><i class="fas fa-graduation-cap me-2"></i>Study Session: {{ folder.name }}</h2>
+        <p class="text-muted">
+            Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }} 
+            ({{ page_obj.paginator.count }} total flashcards)
+        </p>
+    </div>
+    <div class="col-md-4 text-md-end">
+        <div class="btn-group" role="group">
+            <a href="{% url 'flashcards:folder_detail' folder.id %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-1"></i>Back
+            </a>
+            <button type="button" class="btn btn-outline-info" onclick="flipAllCards()">
+                <i class="fas fa-sync me-1"></i>Flip All
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Study Progress -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body py-3">
+                <div class="row align-items-center">
+                    <div class="col-md-8">
+                        <div class="progress" style="height: 8px;">
+                            <div class="progress-bar" role="progressbar" 
+                                 style="width: {{ progress_percentage }}%">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4 text-md-end">
+                        <small class="text-muted">
+                            Session Progress: {{ page_obj.number }} / {{ page_obj.paginator.num_pages }} pages
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Flashcards Grid -->
+<div class="row mb-4" id="flashcards-container">
+    {% for flashcard in page_obj %}
+    <div class="col-md-6 col-lg-4 mb-4">
+        <div class="flip-card" onclick="flipCard(this)">
+            <div class="flip-card-inner">
+                <div class="flip-card-front">
+                    <div class="p-3">
+                        <div class="d-flex justify-content-between align-items-start mb-3">
+                            <span class="badge bg-light text-dark">{{ forloop.counter }}</span>
+                            <span class="badge bg-{{ flashcard.difficulty_level|default:'secondary' }}">
+                                {{ flashcard.difficulty_level|title|default:'Medium' }}
+                            </span>
+                        </div>
+                        <h5 class="card-title">{{ flashcard.question }}</h5>
+                        <div class="mt-auto">
+                            <small class="text-light">
+                                <i class="fas fa-file-alt me-1"></i>{{ flashcard.source_file }}
+                            </small>
+                            <div class="text-center mt-3">
+                                <small class="text-light opacity-75">
+                                    <i class="fas fa-mouse-pointer me-1"></i>Click to reveal answer
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="flip-card-back">
+                    <div class="p-3">
+                        <div class="d-flex justify-content-between align-items-start mb-3">
+                            <span class="badge bg-light text-dark">{{ forloop.counter }}</span>
+                            <span class="badge bg-light text-dark">Answer</span>
+                        </div>
+                        <div class="answer-content">
+                            {% if flashcard.answer|slice:":3" == "```" %}
+                                <pre class="bg-dark text-light p-2 rounded"><code>{{ flashcard.answer|slice:"3:-3" }}</code></pre>
+                            {% else %}
+                                <p class="card-text">{{ flashcard.answer|linebreaks }}</p>
+                            {% endif %}
+                        </div>
+                        <div class="mt-auto">
+                            <small class="text-light">
+                                <i class="fas fa-file-alt me-1"></i>{{ flashcard.source_file }}
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% empty %}
+    <div class="col-12">
+        <div class="alert alert-warning text-center">
+            <h4><i class="fas fa-exclamation-triangle me-2"></i>No Flashcards Available</h4>
+            <p>This folder doesn't have any flashcards yet.</p>
+            <a href="{% url 'flashcards:process_folder' folder.id %}" class="btn btn-warning">
+                <i class="fas fa-cogs me-1"></i>Process Folder
+            </a>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Pagination -->
+{% if page_obj.paginator.num_pages > 1 %}
+<div class="row">
+    <div class="col-12">
+        <nav aria-label="Flashcard pagination">
+            <ul class="pagination justify-content-center">
+                {% if page_obj.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page=1">
+                            <i class="fas fa-angle-double-left"></i>
+                        </a>
+                    </li>
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.previous_page_number }}">
+                            <i class="fas fa-angle-left"></i> Previous
+                        </a>
+                    </li>
+                {% endif %}
+
+                {% for num in page_obj.paginator.page_range %}
+                    {% if page_obj.number == num %}
+                        <li class="page-item active">
+                            <span class="page-link">{{ num }}</span>
+                        </li>
+                    {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ num }}">{{ num }}</a>
+                        </li>
+                    {% endif %}
+                {% endfor %}
+
+                {% if page_obj.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.next_page_number }}">
+                            Next <i class="fas fa-angle-right"></i>
+                        </a>
+                    </li>
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}">
+                            <i class="fas fa-angle-double-right"></i>
+                        </a>
+                    </li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+</div>
+{% endif %}
+
+<!-- Study Tips -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card bg-light">
+            <div class="card-body">
+                <h6><i class="fas fa-lightbulb me-2"></i>Study Tips</h6>
+                <div class="row">
+                    <div class="col-md-6">
+                        <ul class="list-unstyled mb-0 small">
+                            <li><i class="fas fa-check text-success me-1"></i>Click on any flashcard to flip it</li>
+                            <li><i class="fas fa-check text-success me-1"></i>Try to answer before revealing</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <ul class="list-unstyled mb-0 small">
+                            <li><i class="fas fa-check text-success me-1"></i>Use keyboard: Space to flip, Arrow keys to navigate</li>
+                            <li><i class="fas fa-check text-success me-1"></i>Study regularly for better retention</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Page navigation data
+const navigationData = {{ navigation_data|safe }};
+
+// Enhanced flashcard functionality
+let flippedCards = new Set();
+
+function flipCard(card) {
+    card.classList.toggle('flipped');
+}
+
+function flipAllCards() {
+    const cards = document.querySelectorAll('.flip-card');
+    const allFlipped = cards.length > 0 && [...cards].every(card => card.classList.contains('flipped'));
+    
+    cards.forEach(card => {
+        if (allFlipped) {
+            card.classList.remove('flipped');
+        } else {
+            card.classList.add('flipped');
+        }
+    });
+}
+
+// Keyboard navigation
+document.addEventListener('keydown', function(event) {
+    switch(event.code) {
+        case 'Space':
+            event.preventDefault();
+            // Flip the first visible card that's not flipped, or flip all
+            const unflippedCard = document.querySelector('.flip-card:not(.flipped)');
+            if (unflippedCard) {
+                flipCard(unflippedCard);
+            } else {
+                flipAllCards();
+            }
+            break;
+            
+        case 'ArrowLeft':
+            event.preventDefault();
+            if (navigationData.prevPage) {
+                window.location.href = '?page=' + navigationData.prevPage;
+            }
+            break;
+            
+        case 'ArrowRight':
+            event.preventDefault();
+            if (navigationData.nextPage) {
+                window.location.href = '?page=' + navigationData.nextPage;
+            }
+            break;
+    }
+});
+
+// Auto-focus for keyboard navigation
+document.addEventListener('DOMContentLoaded', function() {
+    document.body.focus();
+});
+</script>
+{% endblock %} 

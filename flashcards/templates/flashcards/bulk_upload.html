@@ -1,0 +1,256 @@
+{% extends 'flashcards/base.html' %}
+
+{% block title %}Bulk PDF Upload - Navvar{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            
+            <!-- Header -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h2 class="mb-1">
+                        <i class="fas fa-upload me-2 text-primary"></i>
+                        Bulk PDF Upload
+                    </h2>
+                    <p class="text-muted mb-0">Upload multiple PDFs to automatically generate focus blocks</p>
+                </div>
+                <a href="{% url 'flashcards:bulk_manage' %}" class="btn btn-outline-primary">
+                    <i class="fas fa-list me-1"></i>Manage PDFs
+                </a>
+            </div>
+
+            <!-- Upload Card -->
+            <div class="card shadow-sm">
+                <div class="card-body p-5">
+                    <form method="post" enctype="multipart/form-data" id="bulkUploadForm">
+                        {% csrf_token %}
+                        
+                        <!-- File Drop Zone -->
+                        <div class="mb-4">
+                            <label class="form-label fw-bold">
+                                <i class="fas fa-file-pdf me-1 text-danger"></i>
+                                Select PDF Files
+                            </label>
+                            <div class="border border-dashed border-primary rounded-3 p-5 text-center bg-light" 
+                                 id="dropzone"
+                                 style="min-height: 200px; cursor: pointer;">
+                                <div id="dropzone-content">
+                                    <i class="fas fa-cloud-upload-alt fa-3x text-primary mb-3"></i>
+                                    <h5 class="text-primary">Drag & Drop PDFs Here</h5>
+                                    <p class="text-muted mb-3">or click to browse files</p>
+                                    <input type="file" 
+                                           name="pdf_files" 
+                                           id="pdf_files" 
+                                           multiple 
+                                           accept=".pdf"
+                                           class="d-none">
+                                    <button type="button" class="btn btn-primary" onclick="document.getElementById('pdf_files').click()">
+                                        <i class="fas fa-folder-open me-1"></i>Choose Files
+                                    </button>
+                                </div>
+                                
+                                <!-- Selected Files Display -->
+                                <div id="selected-files" class="mt-3" style="display: none;">
+                                    <h6 class="text-success mb-2">
+                                        <i class="fas fa-check-circle me-1"></i>Selected Files:
+                                    </h6>
+                                    <div id="file-list" class="text-start"></div>
+                                </div>
+                            </div>
+                            <small class="text-muted">
+                                <i class="fas fa-info-circle me-1"></i>
+                                Maximum file size: 50MB per file. Only PDF files are accepted.
+                            </small>
+                        </div>
+
+                        <!-- Upload Options -->
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                <h6 class="mb-0">
+                                    <i class="fas fa-cogs me-1"></i>Processing Options
+                                </h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="auto_process" checked>
+                                            <label class="form-check-label" for="auto_process">
+                                                <strong>Auto-process PDFs</strong><br>
+                                                <small class="text-muted">Automatically extract text, create concept units, and generate focus blocks</small>
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="skip_duplicates" checked>
+                                            <label class="form-check-label" for="skip_duplicates">
+                                                <strong>Skip duplicates</strong><br>
+                                                <small class="text-muted">Automatically detect and skip similar content (80% similarity)</small>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Upload Button -->
+                        <div class="d-grid">
+                            <button type="submit" 
+                                    class="btn btn-primary btn-lg" 
+                                    id="uploadBtn"
+                                    disabled>
+                                <i class="fas fa-upload me-2"></i>
+                                <span id="uploadBtnText">Select Files to Upload</span>
+                            </button>
+                        </div>
+                        
+                        <!-- Progress Display -->
+                        <div id="upload-progress" class="mt-3" style="display: none;">
+                            <div class="progress">
+                                <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                                     role="progressbar" style="width: 0%"></div>
+                            </div>
+                            <small class="text-muted mt-1">Processing files...</small>
+                        </div>
+
+                    </form>
+                </div>
+            </div>
+
+            <!-- Info Card -->
+            <div class="card mt-4 border-info">
+                <div class="card-body">
+                    <h6 class="card-title text-info">
+                        <i class="fas fa-lightbulb me-1"></i>What happens after upload?
+                    </h6>
+                    <ul class="mb-0">
+                        <li>📄 <strong>Text Extraction:</strong> Extract and clean text from each PDF</li>
+                        <li>🧩 <strong>Chunking:</strong> Break content into ~350-word segments</li>
+                        <li>🏷️ <strong>AI Labeling:</strong> Use AI to identify concept types (Definition, Example, etc.)</li>
+                        <li>⏱️ <strong>Time Optimization:</strong> Group concepts for optimal study time (6-7 minutes)</li>
+                        <li>🎯 <strong>Focus Blocks:</strong> Generate structured learning sessions with Q&A</li>
+                    </ul>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('pdf_files');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const uploadBtnText = document.getElementById('uploadBtnText');
+    const selectedFiles = document.getElementById('selected-files');
+    const fileList = document.getElementById('file-list');
+    const uploadProgress = document.getElementById('upload-progress');
+    const form = document.getElementById('bulkUploadForm');
+
+    // Drag and drop functionality
+    dropzone.addEventListener('click', function() {
+        fileInput.click();
+    });
+
+    dropzone.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        dropzone.classList.add('border-success');
+    });
+
+    dropzone.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        dropzone.classList.remove('border-success');
+    });
+
+    dropzone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        dropzone.classList.remove('border-success');
+        
+        const files = Array.from(e.dataTransfer.files).filter(file => 
+            file.type === 'application/pdf'
+        );
+        
+        if (files.length > 0) {
+            fileInput.files = createFileList(files);
+            updateFileDisplay();
+        }
+    });
+
+    // File input change
+    fileInput.addEventListener('change', updateFileDisplay);
+
+    function createFileList(files) {
+        const dt = new DataTransfer();
+        files.forEach(file => dt.items.add(file));
+        return dt.files;
+    }
+
+    function updateFileDisplay() {
+        const files = Array.from(fileInput.files);
+        
+        if (files.length > 0) {
+            selectedFiles.style.display = 'block';
+            uploadBtn.disabled = false;
+            uploadBtnText.textContent = `Upload ${files.length} PDF${files.length > 1 ? 's' : ''}`;
+            
+            fileList.innerHTML = files.map(file => `
+                <div class="d-flex justify-content-between align-items-center py-1">
+                    <span><i class="fas fa-file-pdf text-danger me-1"></i>${file.name}</span>
+                    <small class="text-muted">${(file.size / 1024 / 1024).toFixed(1)} MB</small>
+                </div>
+            `).join('');
+        } else {
+            selectedFiles.style.display = 'none';
+            uploadBtn.disabled = true;
+            uploadBtnText.textContent = 'Select Files to Upload';
+        }
+    }
+
+    // Form submission
+    form.addEventListener('submit', function(e) {
+        const files = fileInput.files;
+        if (files.length === 0) {
+            e.preventDefault();
+            alert('Please select at least one PDF file.');
+            return;
+        }
+
+        // Show progress
+        uploadBtn.disabled = true;
+        uploadBtnText.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Uploading...';
+        uploadProgress.style.display = 'block';
+        
+        // Animate progress bar
+        let progress = 0;
+        const interval = setInterval(() => {
+            progress += Math.random() * 10;
+            if (progress > 90) progress = 90;
+            document.querySelector('.progress-bar').style.width = progress + '%';
+        }, 300);
+
+        // Clear interval when form actually submits
+        setTimeout(() => clearInterval(interval), 10000);
+    });
+});
+</script>
+
+<style>
+#dropzone:hover {
+    background-color: #f8f9fa;
+}
+
+#dropzone.border-success {
+    border-color: #28a745 !important;
+    background-color: #d4edda;
+}
+
+.progress-bar-animated {
+    animation: progress-bar-stripes 1s linear infinite;
+}
+</style>
+
+{% endblock %} 

@@ -1,0 +1,495 @@
+{% extends 'flashcards/base.html' %}
+
+{% block title %}Focus Blocks - Navvar{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    
+    {% if no_blocks %}
+    <!-- No Focus Blocks State -->
+    <div class="row justify-content-center">
+        <div class="col-md-8 text-center py-5">
+            <i class="fas fa-target fa-4x text-muted mb-4"></i>
+            <h3 class="text-muted">No Focus Blocks Yet</h3>
+            <p class="text-muted mb-4">Upload PDFs on the home page to generate AI-powered focus blocks</p>
+            <a href="{% url 'flashcards:home' %}" class="btn btn-primary btn-lg">
+                <i class="fas fa-upload me-2"></i>Upload Your First PDF
+            </a>
+        </div>
+    </div>
+    
+    {% else %}
+    
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="text-center">
+                <h1 class="display-5 mb-3">
+                    <i class="fas fa-target me-3"></i>Focus Blocks
+                </h1>
+                <p class="lead text-muted">AI-powered micro-lessons for optimal learning</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Study Overview -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card text-center bg-primary text-white">
+                <div class="card-body">
+                    <i class="fas fa-layer-group fa-2x mb-2"></i>
+                    <h4>{{ total_blocks }}</h4>
+                    <p class="mb-0">Total Blocks</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center bg-success text-white">
+                <div class="card-body">
+                    <i class="fas fa-clock fa-2x mb-2"></i>
+                    <h4>{{ total_study_time|floatformat:0 }}m</h4>
+                    <p class="mb-0">Study Time</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center bg-info text-white">
+                <div class="card-body">
+                    <i class="fas fa-file-pdf fa-2x mb-2"></i>
+                    <h4>{{ unique_pdfs }}</h4>
+                    <p class="mb-0">Source PDFs</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center bg-warning text-dark">
+                <div class="card-body">
+                    <i class="fas fa-brain fa-2x mb-2"></i>
+                    <h4>6-7min</h4>
+                    <p class="mb-0">Per Block</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Unified Study Interface -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card shadow">
+                <div class="card-header bg-dark text-white">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            <i class="fas fa-play-circle me-2"></i>Interactive Study Session
+                        </h5>
+                        <div class="d-flex align-items-center">
+                            <span class="badge bg-light text-dark me-2" id="blockIndicator">Block 1 / {{ total_blocks }}</span>
+                            <span class="badge bg-warning" id="currentDuration">6-7 min</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Progress Bar -->
+                <div class="progress" style="height: 6px;">
+                    <div class="progress-bar bg-success" id="overallProgress" style="width: 0%"></div>
+                </div>
+                
+                <div class="card-body">
+                    <!-- Block Content Container -->
+                    <div id="blockContent">
+                        
+                        {% for block_data in formatted_blocks %}
+                        <div class="focus-block-container" data-block-index="{{ forloop.counter0 }}" style="display: none;">
+                            
+                            <!-- Block Header -->
+                            <div class="block-header mb-4 p-3 bg-light rounded">
+                                <div class="row align-items-center">
+                                    <div class="col-md-8">
+                                        <h3 class="mb-1">{{ block_data.block.title }}</h3>
+                                        <p class="text-muted mb-1">
+                                            <i class="fas fa-file-pdf me-1"></i>{{ block_data.source_pdf }}
+                                        </p>
+                                        {% if block_data.block.get_core_goal %}
+                                        <p class="text-primary mb-0">
+                                            <i class="fas fa-bullseye me-1"></i>{{ block_data.block.get_core_goal }}
+                                        </p>
+                                        {% endif %}
+                                    </div>
+                                    <div class="col-md-4 text-end">
+                                        <div class="mb-2">
+                                            <span class="badge bg-primary me-1">{{ block_data.total_segments }} segments</span>
+                                            <span class="badge bg-warning">{{ block_data.total_qa }} Q&A</span>
+                                        </div>
+                                        <div>
+                                            <span class="badge bg-info">{{ block_data.block.get_estimated_duration_display }}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Step Content for this Block -->
+                            <div class="step-content">
+                                
+                                <!-- Revision Step -->
+                                {% if block_data.revision_data %}
+                                <div class="study-step" style="display: none;">
+                                    <div class="step-header mb-3">
+                                        <h4><i class="fas fa-redo text-secondary me-2"></i>Quick Revision</h4>
+                                    </div>
+                                    
+                                    {% if block_data.revision_data.nano_recap %}
+                                    <div class="revision-content bg-light p-4 rounded mb-3">
+                                        <h6>Context Reminder:</h6>
+                                        <p class="mb-0">{{ block_data.revision_data.nano_recap }}</p>
+                                    </div>
+                                    {% endif %}
+                                    
+                                    {% if block_data.revision_data.question %}
+                                    <div class="revision-question border-start border-primary border-4 ps-3">
+                                        <h6>Quick Check:</h6>
+                                        <p><strong>{{ block_data.revision_data.question.prompt }}</strong></p>
+                                        <div class="mt-2">
+                                            <button class="btn btn-sm btn-outline-primary" onclick="toggleAnswer('revision{{ forloop.counter0 }}')">
+                                                <i class="fas fa-eye me-1"></i>Show Answer
+                                            </button>
+                                            <div id="revision{{ forloop.counter0 }}" class="mt-2 text-success" style="display: none;">
+                                                <strong>Answer:</strong> {{ block_data.revision_data.question.answer }}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                {% endif %}
+
+                                <!-- Teaching Segments -->
+                                {% for segment in block_data.segments %}
+                                <div class="study-step" style="display: none;">
+                                    <div class="step-header mb-3">
+                                        <h4><i class="fas fa-chalkboard-teacher text-success me-2"></i>{{ segment.title }}</h4>
+                                        <div class="d-flex justify-content-between">
+                                            <p class="text-muted mb-0">Segment {{ forloop.counter }}</p>
+                                            <span class="badge bg-primary">{{ segment.time_sec }}s</span>
+                                        </div>
+                                    </div>
+                                    
+                                    {% if segment.teach %}
+                                    <div class="teaching-content">
+                                        {% for step in segment.teach %}
+                                        <div class="teaching-step mb-3 p-3 rounded border-start border-4 
+                                             {% if step.mode == 'socratic' %}border-info bg-light-blue
+                                             {% elif step.mode == 'example' %}border-success bg-light-green
+                                             {% elif step.mode == 'warning' %}border-warning bg-light-warning
+                                             {% else %}border-secondary bg-light{% endif %}">
+                                            
+                                            <div class="d-flex align-items-start">
+                                                <span class="badge 
+                                                      {% if step.mode == 'socratic' %}bg-info
+                                                      {% elif step.mode == 'example' %}bg-success
+                                                      {% elif step.mode == 'warning' %}bg-warning
+                                                      {% else %}bg-secondary{% endif %} me-3">
+                                                    {{ step.mode|title }}
+                                                </span>
+                                                <div class="flex-grow-1">
+                                                    <p class="mb-0">{{ step.text }}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        {% endfor %}
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                {% endfor %}
+
+                                <!-- Q&A Steps -->
+                                {% for qa in block_data.qa_items %}
+                                <div class="study-step" style="display: none;">
+                                    <div class="step-header mb-3">
+                                        <h4><i class="fas fa-question-circle text-warning me-2"></i>Knowledge Check {{ forloop.counter }}</h4>
+                                    </div>
+                                    
+                                    <div class="qa-interactive">
+                                        <div class="question-card bg-primary text-white p-4 rounded mb-3">
+                                            <h5>{{ qa.prompt }}</h5>
+                                            <span class="badge bg-light text-primary">{{ qa.type|title }} Question</span>
+                                        </div>
+                                        
+                                        <div class="text-center mb-3">
+                                            <button class="btn btn-success btn-lg" onclick="revealAnswer('qa{{ forloop.parentloop.counter0 }}_{{ forloop.counter0 }}')">
+                                                <i class="fas fa-eye me-2"></i>Reveal Answer
+                                            </button>
+                                        </div>
+                                        
+                                        <div id="qa{{ forloop.parentloop.counter0 }}_{{ forloop.counter0 }}" class="answer-section" style="display: none;">
+                                            <div class="answer-card bg-success text-white p-4 rounded mb-3">
+                                                <h6><i class="fas fa-check-circle me-2"></i>Ideal Answer:</h6>
+                                                <p class="mb-0">{{ qa.ideal_answer }}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+
+                                <!-- Recap Step -->
+                                {% if block_data.recap_data %}
+                                <div class="study-step" style="display: none;">
+                                    <div class="step-header mb-3">
+                                        <h4><i class="fas fa-flag-checkered text-success me-2"></i>Block Complete!</h4>
+                                    </div>
+                                    
+                                    {% if block_data.recap_data.bullets %}
+                                    <div class="recap-content bg-success text-white p-4 rounded mb-4">
+                                        <h5><i class="fas fa-check-circle me-2"></i>Key Takeaways:</h5>
+                                        <ul class="mb-0">
+                                            {% for bullet in block_data.recap_data.bullets %}
+                                            <li>{{ bullet }}</li>
+                                            {% endfor %}
+                                        </ul>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                {% endif %}
+
+                            </div>
+                        </div>
+                        {% endfor %}
+
+                    </div>
+                </div>
+                
+                <!-- Navigation Footer -->
+                <div class="card-footer bg-light">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <button class="btn btn-outline-secondary" id="prevBtn" onclick="previousStep()" disabled>
+                            <i class="fas fa-chevron-left me-1"></i>Previous
+                        </button>
+                        
+                        <div class="text-center">
+                            <div class="step-dots mb-2" id="stepDots"></div>
+                            <small class="text-muted" id="stepInfo">Step 1</small>
+                        </div>
+                        
+                        <button class="btn btn-primary" id="nextBtn" onclick="nextStep()">
+                            Next <i class="fas fa-chevron-right ms-1"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    {% endif %}
+</div>
+
+<script>
+// Global variables
+let currentBlockIndex = 0;
+let currentStepIndex = 0;
+let totalBlocks = {{ total_blocks }};
+let allSteps = [];
+let blockContainers = [];
+
+// Initialize the unified study interface
+function initializeUnifiedStudy() {
+    blockContainers = document.querySelectorAll('.focus-block-container');
+    
+    // Collect all steps from all blocks
+    blockContainers.forEach((container, blockIndex) => {
+        const steps = container.querySelectorAll('.study-step');
+        steps.forEach((step, stepIndex) => {
+            allSteps.push({
+                blockIndex: blockIndex,
+                stepIndex: stepIndex,
+                element: step,
+                blockContainer: container
+            });
+        });
+    });
+    
+    console.log(`Total steps across all blocks: ${allSteps.length}`);
+    
+    // Create dots for all steps
+    createStepDots();
+    
+    // Show first step
+    if (allSteps.length > 0) {
+        showStep(0);
+    }
+}
+
+function createStepDots() {
+    const dotsContainer = document.getElementById('stepDots');
+    dotsContainer.innerHTML = '';
+    
+    allSteps.forEach((_, index) => {
+        const dot = document.createElement('span');
+        dot.className = 'step-dot';
+        dot.onclick = () => goToStep(index);
+        dotsContainer.appendChild(dot);
+    });
+}
+
+function showStep(globalStepIndex) {
+    if (globalStepIndex < 0 || globalStepIndex >= allSteps.length) return;
+    
+    const stepData = allSteps[globalStepIndex];
+    
+    // Hide all block containers
+    blockContainers.forEach(container => container.style.display = 'none');
+    
+    // Hide all steps
+    allSteps.forEach(step => step.element.style.display = 'none');
+    
+    // Show current block container and step
+    stepData.blockContainer.style.display = 'block';
+    stepData.element.style.display = 'block';
+    
+    // Update current indices
+    currentBlockIndex = stepData.blockIndex;
+    currentStepIndex = stepData.stepIndex;
+    
+    // Update UI
+    updateUI(globalStepIndex);
+}
+
+function updateUI(globalStepIndex) {
+    // Update indicators
+    document.getElementById('blockIndicator').textContent = `Block ${currentBlockIndex + 1} / ${totalBlocks}`;
+    document.getElementById('stepInfo').textContent = `Step ${globalStepIndex + 1} of ${allSteps.length}`;
+    
+    // Update progress
+    const progress = ((globalStepIndex + 1) / allSteps.length) * 100;
+    document.getElementById('overallProgress').style.width = progress + '%';
+    
+    // Update navigation buttons
+    document.getElementById('prevBtn').disabled = globalStepIndex === 0;
+    
+    const nextBtn = document.getElementById('nextBtn');
+    if (globalStepIndex === allSteps.length - 1) {
+        nextBtn.innerHTML = 'Complete All <i class="fas fa-trophy ms-1"></i>';
+        nextBtn.classList.add('btn-success');
+        nextBtn.classList.remove('btn-primary');
+    } else {
+        nextBtn.innerHTML = 'Next <i class="fas fa-chevron-right ms-1"></i>';
+        nextBtn.classList.add('btn-primary');
+        nextBtn.classList.remove('btn-success');
+    }
+    
+    // Update step dots
+    updateStepDots(globalStepIndex);
+}
+
+function updateStepDots(currentIndex) {
+    const dots = document.querySelectorAll('.step-dot');
+    dots.forEach((dot, index) => {
+        dot.classList.remove('active', 'completed');
+        if (index === currentIndex) {
+            dot.classList.add('active');
+        } else if (index < currentIndex) {
+            dot.classList.add('completed');
+        }
+    });
+}
+
+// Navigation functions
+function nextStep() {
+    const currentGlobalIndex = allSteps.findIndex(step => 
+        step.blockIndex === currentBlockIndex && step.stepIndex === currentStepIndex
+    );
+    
+    if (currentGlobalIndex < allSteps.length - 1) {
+        showStep(currentGlobalIndex + 1);
+    } else {
+        // All blocks completed
+        completeAllSessions();
+    }
+}
+
+function previousStep() {
+    const currentGlobalIndex = allSteps.findIndex(step => 
+        step.blockIndex === currentBlockIndex && step.stepIndex === currentStepIndex
+    );
+    
+    if (currentGlobalIndex > 0) {
+        showStep(currentGlobalIndex - 1);
+    }
+}
+
+function goToStep(globalStepIndex) {
+    showStep(globalStepIndex);
+}
+
+function completeAllSessions() {
+    alert('🎉 Congratulations! You have completed all focus blocks!');
+    // TODO: Save completion data
+}
+
+// Utility functions
+function toggleAnswer(elementId) {
+    const element = document.getElementById(elementId);
+    if (element) {
+        element.style.display = element.style.display === 'none' ? 'block' : 'none';
+    }
+}
+
+function revealAnswer(elementId) {
+    const element = document.getElementById(elementId);
+    if (element) {
+        element.style.display = 'block';
+        event.target.style.display = 'none';
+    }
+}
+
+// Initialize when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    initializeUnifiedStudy();
+    
+    // Keyboard navigation
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'ArrowRight' || e.key === ' ') {
+            e.preventDefault();
+            nextStep();
+        } else if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            previousStep();
+        }
+    });
+});
+</script>
+
+<style>
+/* Step indicator dots */
+.step-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: #dee2e6;
+    display: inline-block;
+    margin: 0 2px;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.step-dot.active {
+    background-color: #0d6efd;
+    transform: scale(1.3);
+}
+
+.step-dot.completed {
+    background-color: #198754;
+}
+
+/* Enhanced backgrounds */
+.bg-light-blue { background-color: #e3f2fd !important; }
+.bg-light-green { background-color: #e8f5e8 !important; }
+.bg-light-warning { background-color: #fff3cd !important; }
+
+/* Smooth transitions */
+.focus-block-container, .study-step {
+    animation: fadeIn 0.5s ease-in;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+</style>
+{% endblock %}

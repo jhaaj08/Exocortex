@@ -1,0 +1,343 @@
+{% extends 'flashcards/base.html' %}
+
+{% block title %}{{ folder.name }} - Flashcard Generator{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-8">
+        <h2><i class="fas fa-folder-open me-2"></i>{{ folder.name }}</h2>
+        <p class="text-muted">
+            {% if folder.processed %}
+                <span class="badge bg-success me-2">✓ Processed</span>
+                Generated {{ total_cards }} flashcards from {{ folder.total_files }} markdown files
+            {% else %}
+                <span class="badge bg-warning me-2">⏳ Not Processed</span>
+                Ready to process {{ folder.total_files }} markdown files
+            {% endif %}
+        </p>
+    </div>
+    <div class="col-md-4 text-md-end">
+        <div class="btn-group" role="group">
+            {% if folder.processed %}
+                <a href="{% url 'flashcards:study_flashcards' folder.id %}" class="btn btn-primary">
+                    <i class="fas fa-play me-1"></i>Study Flashcards
+                </a>
+            {% else %}
+                <a href="{% url 'flashcards:process_folder' folder.id %}" class="btn btn-warning">
+                    <i class="fas fa-cogs me-1"></i>Process Folder
+                </a>
+            {% endif %}
+            
+            <!-- Folder Actions Dropdown -->
+            <div class="btn-group" role="group">
+                <button type="button" class="btn btn-outline-secondary dropdown-toggle" 
+                        data-bs-toggle="dropdown">
+                    <i class="fas fa-cog"></i>
+                </button>
+                <ul class="dropdown-menu">
+                    <li>
+                        <button class="dropdown-item text-danger" type="button"
+                                onclick="confirmDeleteFolder({{ folder.id }}, '{{ folder.name|escapejs }}', {{ total_cards }})">
+                            <i class="fas fa-trash me-2"></i>Delete Folder
+                        </button>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card h-100 text-center">
+            <div class="card-body">
+                <i class="fas fa-file-alt fa-3x text-primary mb-3"></i>
+                <h5 class="card-title">{{ folder.total_files }}</h5>
+                <p class="card-text text-muted">Markdown Files</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100 text-center">
+            <div class="card-body">
+                <i class="fas fa-cards-blank fa-3x text-success mb-3"></i>
+                <h5 class="card-title">{{ total_cards }}</h5>
+                <p class="card-text text-muted">Generated Flashcards</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100 text-center">
+            <div class="card-body">
+                <i class="fas fa-calendar fa-3x text-info mb-3"></i>
+                <h5 class="card-title">{{ folder.created_at|date:"M d" }}</h5>
+                <p class="card-text text-muted">Date Added</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h5 class="card-title mb-0">
+            <i class="fas fa-info-circle me-2"></i>Folder Details
+        </h5>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-6">
+                <p><strong>Name:</strong> {{ folder.name }}</p>
+                <p><strong>Path:</strong> <code>{{ folder.path }}</code></p>
+                <p><strong>Status:</strong> 
+                    {% if folder.processed %}
+                        <span class="badge bg-success">Processed</span>
+                    {% else %}
+                        <span class="badge bg-warning">Pending</span>
+                    {% endif %}
+                </p>
+            </div>
+            <div class="col-md-6">
+                <p><strong>Files:</strong> {{ folder.total_files }} markdown files</p>
+                <p><strong>Created:</strong> {{ folder.created_at|date:"M d, Y H:i" }}</p>
+                <p><strong>Updated:</strong> {{ folder.updated_at|date:"M d, Y H:i" }}</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if flashcards %}
+<div class="card mt-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="card-title mb-0">
+            <i class="fas fa-list me-2"></i>Generated Flashcards ({{ total_cards }})
+        </h5>
+        <div class="btn-group" role="group">
+            {% if total_cards > 5 %}
+                <a href="{% url 'flashcards:study_flashcards' folder.id %}" class="btn btn-primary btn-sm">
+                    <i class="fas fa-play me-1"></i>Study All
+                </a>
+            {% endif %}
+            <button type="button" class="btn btn-outline-danger btn-sm" onclick="toggleBulkDelete()">
+                <i class="fas fa-check-square me-1"></i>Select for Delete
+            </button>
+        </div>
+    </div>
+    <div class="card-body">
+        <!-- Bulk Delete Form -->
+        <form id="bulkDeleteForm" method="post" action="{% url 'flashcards:bulk_delete_flashcards' folder.id %}" style="display: none;">
+            {% csrf_token %}
+            <div class="alert alert-info">
+                <div class="d-flex justify-content-between align-items-center">
+                    <span>
+                        <i class="fas fa-info-circle me-2"></i>
+                        Select flashcards to delete
+                    </span>
+                    <div>
+                        <button type="button" class="btn btn-sm btn-outline-secondary me-2" onclick="selectAllFlashcards()">
+                            Select All
+                        </button>
+                        <button type="submit" class="btn btn-sm btn-danger">
+                            <i class="fas fa-trash me-1"></i>Delete Selected
+                        </button>
+                        <button type="button" class="btn btn-sm btn-secondary" onclick="toggleBulkDelete()">
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            </div>
+        
+        <div class="row" id="flashcardGrid">
+            {% for flashcard in flashcards|slice:":6" %}
+            <div class="col-md-6 col-lg-4 mb-3">
+                <!-- Bulk Delete Checkbox -->
+                <div class="bulk-delete-checkbox" style="display: none;">
+                    <div class="form-check position-absolute" style="top: 10px; left: 10px; z-index: 10;">
+                        <input class="form-check-input" type="checkbox" name="flashcard_ids" value="{{ flashcard.id }}">
+                    </div>
+                </div>
+                
+                <!-- Individual Delete Button -->
+                <div class="individual-delete-btn position-absolute" style="top: 10px; right: 10px; z-index: 10;">
+                    <button type="button" class="btn btn-sm btn-outline-danger" 
+                            onclick="confirmDeleteFlashcard('{{ flashcard.id }}', '{{ flashcard.question|slice:":30"|escapejs }}...')">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                
+                <div class="flip-card" onclick="flipCard(this)">
+                    <div class="flip-card-inner">
+                        <div class="flip-card-front">
+                            <div class="p-3">
+                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                    <span class="badge bg-light text-dark small">{{ forloop.counter }}</span>
+                                    <span class="badge bg-secondary small">{{ flashcard.difficulty_level|title }}</span>
+                                </div>
+                                <h6 class="card-title text-white mb-3">{{ flashcard.question|truncatechars:80 }}</h6>
+                                <div class="mt-auto">
+                                    <small class="text-light opacity-75">
+                                        <i class="fas fa-file-alt me-1"></i>{{ flashcard.source_file|truncatechars:25 }}
+                                    </small>
+                                    <div class="text-center mt-2">
+                                        <small class="text-light opacity-50">
+                                            <i class="fas fa-mouse-pointer me-1"></i>Click to reveal
+                                        </small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flip-card-back">
+                            <div class="p-3">
+                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                    <span class="badge bg-light text-dark small">{{ forloop.counter }}</span>
+                                    <span class="badge bg-light text-dark small">Answer</span>
+                                </div>
+                                <div class="answer-content">
+                                    {% if flashcard.answer|slice:":3" == "```" %}
+                                        <pre class="bg-dark text-light p-2 rounded small"><code>{{ flashcard.answer|slice:"3:-3" }}</code></pre>
+                                    {% else %}
+                                        <p class="text-white small">{{ flashcard.answer|truncatechars:150 }}</p>
+                                    {% endif %}
+                                </div>
+                                <div class="mt-auto">
+                                    <small class="text-light opacity-75">
+                                        <i class="fas fa-file-alt me-1"></i>{{ flashcard.source_file|truncatechars:25 }}
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        </form>
+        
+        {% if total_cards > 6 %}
+        <div class="text-center mt-3">
+            <p class="text-muted">Showing first 6 flashcards of {{ total_cards }}</p>
+            <a href="{% url 'flashcards:study_flashcards' folder.id %}" class="btn btn-primary">
+                <i class="fas fa-eye me-1"></i>View All Flashcards
+            </a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Delete Flashcard Modal -->
+<div class="modal fade" id="deleteFlashcardModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">
+                    <i class="fas fa-exclamation-triangle me-2"></i>Delete Flashcard
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p><strong>Are you sure you want to delete this flashcard?</strong></p>
+                <div class="alert alert-warning">
+                    <strong>Question:</strong> <span id="flashcardQuestionToDelete"></span><br>
+                    <strong>This action cannot be undone!</strong>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form id="deleteFlashcardForm" method="post" style="display: inline;">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger">
+                        <i class="fas fa-trash me-1"></i>Delete Flashcard
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Folder Delete Modal (same as in folder_list.html) -->
+<div class="modal fade" id="deleteFolderModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">
+                    <i class="fas fa-exclamation-triangle me-2"></i>Confirm Deletion
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p><strong>Are you sure you want to delete this folder?</strong></p>
+                <div class="alert alert-warning">
+                    <strong>Folder:</strong> <span id="folderNameToDelete"></span><br>
+                    <strong>This will also delete:</strong> <span id="flashcardCountToDelete"></span> flashcards<br>
+                    <strong>This action cannot be undone!</strong>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form id="deleteFolderForm" method="post" style="display: inline;">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger">
+                        <i class="fas fa-trash me-1"></i>Delete Folder
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function toggleBulkDelete() {
+    const form = document.getElementById('bulkDeleteForm');
+    const checkboxes = document.querySelectorAll('.bulk-delete-checkbox');
+    const deleteButtons = document.querySelectorAll('.individual-delete-btn');
+    
+    if (form.style.display === 'none') {
+        form.style.display = 'block';
+        checkboxes.forEach(cb => cb.style.display = 'block');
+        deleteButtons.forEach(btn => btn.style.display = 'none');
+    } else {
+        form.style.display = 'none';
+        checkboxes.forEach(cb => cb.style.display = 'none');
+        deleteButtons.forEach(btn => btn.style.display = 'block');
+        // Uncheck all
+        document.querySelectorAll('input[name="flashcard_ids"]').forEach(cb => cb.checked = false);
+    }
+}
+
+function selectAllFlashcards() {
+    const checkboxes = document.querySelectorAll('input[name="flashcard_ids"]');
+    const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+    checkboxes.forEach(cb => cb.checked = !allChecked);
+}
+
+function confirmDeleteFlashcard(flashcardId, questionPreview) {
+    document.getElementById('flashcardQuestionToDelete').textContent = questionPreview;
+    document.getElementById('deleteFlashcardForm').action = `/flashcard/${flashcardId}/delete/`;
+    
+    const modal = new bootstrap.Modal(document.getElementById('deleteFlashcardModal'));
+    modal.show();
+}
+
+function confirmDeleteFolder(folderId, folderName, flashcardCount) {
+    document.getElementById('folderNameToDelete').textContent = folderName;
+    document.getElementById('flashcardCountToDelete').textContent = flashcardCount;
+    document.getElementById('deleteFolderForm').action = `/folder/${folderId}/delete/`;
+    
+    const modal = new bootstrap.Modal(document.getElementById('deleteFolderModal'));
+    modal.show();
+}
+</script>
+{% endif %}
+
+<div class="row mt-4">
+    <div class="col-12">
+        <a href="{% url 'flashcards:folder_list' %}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i>Back to Folders
+        </a>
+        {% if folder.processed %}
+            <a href="{% url 'flashcards:study_flashcards' folder.id %}" class="btn btn-primary ms-2">
+                <i class="fas fa-graduation-cap me-1"></i>Start Studying
+            </a>
+        {% endif %}
+    </div>
+</div>
+{% endblock %} 

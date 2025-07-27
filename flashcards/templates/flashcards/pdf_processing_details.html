@@ -1,0 +1,404 @@
+{% extends 'flashcards/base.html' %}
+
+{% block title %}Processing Details - {{ pdf_document.name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{% url 'flashcards:home' %}">Home</a></li>
+                    <li class="breadcrumb-item active">Processing Details</li>
+                </ol>
+            </nav>
+            
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1><i class="fas fa-target me-2"></i>{{ focus_block.title }}</h1>
+                    <p class="text-muted mb-0">
+                        <i class="fas fa-file-pdf me-1"></i>{{ pdf_document.name }}
+                    </p>
+                </div>
+                <div>
+                    <a href="{% url 'flashcards:home' %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left me-1"></i>Back to Home
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Processing Pipeline Overview -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="fas fa-sitemap me-2"></i>Processing Pipeline Overview</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row text-center">
+                        <!-- Step 1: Raw Text -->
+                        <div class="col-md-2">
+                            <div class="processing-step">
+                                <div class="step-icon bg-secondary text-white rounded-circle p-3 mx-auto mb-2" style="width: 60px; height: 60px;">
+                                    <i class="fas fa-file-text fa-lg"></i>
+                                </div>
+                                <h6>Raw Text</h6>
+                                <div class="badge bg-secondary">{{ pdf_document.word_count }} words</div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-1 d-flex align-items-center justify-content-center">
+                            <i class="fas fa-arrow-right text-muted"></i>
+                        </div>
+
+                        <!-- Step 2: Text Chunks -->
+                        <div class="col-md-2">
+                            <div class="processing-step">
+                                <div class="step-icon bg-info text-white rounded-circle p-3 mx-auto mb-2" style="width: 60px; height: 60px;">
+                                    <i class="fas fa-layer-group fa-lg"></i>
+                                </div>
+                                <h6>Text Chunks</h6>
+                                <div class="badge bg-info">{{ processing_stats.total_chunks }} chunks</div>
+                                <small class="text-muted d-block">~350 words each</small>
+                            </div>
+                        </div>
+
+                        <div class="col-md-1 d-flex align-items-center justify-content-center">
+                            <i class="fas fa-arrow-right text-muted"></i>
+                        </div>
+
+                        <!-- Step 3: LLM Labeling -->
+                        <div class="col-md-2">
+                            <div class="processing-step">
+                                <div class="step-icon bg-warning text-white rounded-circle p-3 mx-auto mb-2" style="width: 60px; height: 60px;">
+                                    <i class="fas fa-brain fa-lg"></i>
+                                </div>
+                                <h6>LLM Labeling</h6>
+                                <div class="badge bg-warning">{{ processing_stats.labeled_chunks }} labeled</div>
+                                <small class="text-muted d-block">Definition, Example, etc.</small>
+                            </div>
+                        </div>
+
+                        <div class="col-md-1 d-flex align-items-center justify-content-center">
+                            <i class="fas fa-arrow-right text-muted"></i>
+                        </div>
+
+                        <!-- Step 4: Concept Units -->
+                        <div class="col-md-2">
+                            <div class="processing-step">
+                                <div class="step-icon bg-success text-white rounded-circle p-3 mx-auto mb-2" style="width: 60px; height: 60px;">
+                                    <i class="fas fa-clock fa-lg"></i>
+                                </div>
+                                <h6>Time-Optimized</h6>
+                                <div class="badge bg-success">{{ processing_stats.total_concept_units }} units</div>
+                                <small class="text-muted d-block">~{{ processing_stats.avg_time_per_unit|floatformat:1 }} min each</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card h-100 border-info">
+                <div class="card-body text-center">
+                    <i class="fas fa-layer-group fa-2x text-info mb-2"></i>
+                    <h3 class="text-info">{{ processing_stats.total_chunks }}</h3>
+                    <p class="card-text">Text Chunks Created</p>
+                    <small class="text-muted">From {{ pdf_document.word_count }} words</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card h-100 border-warning">
+                <div class="card-body text-center">
+                    <i class="fas fa-tags fa-2x text-warning mb-2"></i>
+                    <h3 class="text-warning">{{ processing_stats.labeled_chunks }}</h3>
+                    <p class="card-text">Chunks Labeled by LLM</p>
+                    <small class="text-muted">{{ label_distribution|length }} different labels used</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card h-100 border-success">
+                <div class="card-body text-center">
+                    <i class="fas fa-puzzle-piece fa-2x text-success mb-2"></i>
+                    <h3 class="text-success">{{ processing_stats.total_concept_units }}</h3>
+                    <p class="card-text">Final Concept Units</p>
+                    <small class="text-muted">Time-optimized for learning</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card h-100 border-primary">
+                <div class="card-body text-center">
+                    <i class="fas fa-clock fa-2x text-primary mb-2"></i>
+                    <h3 class="text-primary">{{ processing_stats.total_estimated_time|floatformat:0 }}</h3>
+                    <p class="card-text">Total Reading Time (min)</p>
+                    <small class="text-muted">Avg {{ processing_stats.avg_time_per_unit|floatformat:1 }} min per unit</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Label Distribution -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="fas fa-chart-pie me-2"></i>Concept Label Distribution</h6>
+                </div>
+                <div class="card-body">
+                    {% for label, data in label_distribution.items %}
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="badge bg-secondary">{{ label }}</span>
+                        <div class="flex-grow-1 mx-3">
+                            <div class="progress" style="height: 20px;">
+                                <div class="progress-bar" style="width: {{ data.percentage }}%">
+                                    {{ data.count }}
+                                </div>
+                            </div>
+                        </div>
+                        <small class="text-muted">{{ data.percentage }}%</small>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="fas fa-info-circle me-2"></i>Processing Summary</h6>
+                </div>
+                <div class="card-body">
+                    <ul class="list-unstyled mb-0">
+                        <li><i class="fas fa-check text-success me-2"></i><strong>Text Extraction:</strong> {{ pdf_document.page_count }} pages processed</li>
+                        <li><i class="fas fa-check text-success me-2"></i><strong>Text Cleaning:</strong> Headers/footers removed, hyphens fixed</li>
+                        <li><i class="fas fa-check text-success me-2"></i><strong>Chunking:</strong> Split into {{ processing_stats.total_chunks }} manageable pieces</li>
+                        <li><i class="fas fa-check text-success me-2"></i><strong>LLM Analysis:</strong> {{ processing_stats.labeled_chunks }} chunks categorized</li>
+                        <li><i class="fas fa-check text-success me-2"></i><strong>Time Optimization:</strong> {{ processing_stats.optimized_units }} units optimized</li>
+                        <li><i class="fas fa-check text-success me-2"></i><strong>Ready for Flashcards:</strong> {{ processing_stats.total_concept_units }} concept units</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Debug Information -->
+    {% if processing_stats.debug_info %}
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card border-warning">
+                <div class="card-header bg-warning text-dark">
+                    <h6 class="mb-0"><i class="fas fa-bug me-2"></i>Debug Information</h6>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <ul class="list-unstyled">
+                                <li><strong>Chunks Created:</strong> 
+                                    {% if processing_stats.debug_info.chunks_exist %}
+                                        <span class="text-success">✓ {{ processing_stats.total_chunks }}</span>
+                                    {% else %}
+                                        <span class="text-danger">✗ None</span>
+                                    {% endif %}
+                                </li>
+                                <li><strong>Chunks with Labels:</strong> 
+                                    {% if processing_stats.debug_info.chunks_with_labels > 0 %}
+                                        <span class="text-success">✓ {{ processing_stats.debug_info.chunks_with_labels }}</span>
+                                    {% else %}
+                                        <span class="text-danger">✗ {{ processing_stats.debug_info.chunks_with_labels }}</span>
+                                    {% endif %}
+                                </li>
+                                <li><strong>Chunks without Labels:</strong> 
+                                    {% if processing_stats.debug_info.chunks_without_labels > 0 %}
+                                        <span class="text-warning">⚠ {{ processing_stats.debug_info.chunks_without_labels }}</span>
+                                    {% else %}
+                                        <span class="text-success">✓ {{ processing_stats.debug_info.chunks_without_labels }}</span>
+                                    {% endif %}
+                                </li>
+                            </ul>
+                        </div>
+                        <div class="col-md-6">
+                            <ul class="list-unstyled">
+                                <li><strong>Concept Units Created:</strong> 
+                                    {% if processing_stats.debug_info.concept_units_exist %}
+                                        <span class="text-info">{{ processing_stats.total_concept_units }}</span>
+                                    {% else %}
+                                        <span class="text-muted">None</span>
+                                    {% endif %}
+                                </li>
+                                <li><strong>Units with Chunks:</strong> 
+                                    <span class="text-info">{{ processing_stats.debug_info.concept_units_with_chunks }}</span>
+                                </li>
+                                <li><strong>Orphaned Units:</strong> 
+                                    {% if processing_stats.debug_info.orphaned_concept_units > 0 %}
+                                        <span class="text-danger">⚠ {{ processing_stats.debug_info.orphaned_concept_units }}</span>
+                                    {% else %}
+                                        <span class="text-success">✓ 0</span>
+                                    {% endif %}
+                                </li>
+                                <li><strong>Concepts Analyzed Flag:</strong> 
+                                    {% if processing_stats.debug_info.concepts_analyzed_flag %}
+                                        <span class="text-success">✓ True</span>
+                                    {% else %}
+                                        <span class="text-warning">⚠ False</span>
+                                    {% endif %}
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    {% if processing_stats.debug_info.chunks_with_labels == 0 and processing_stats.total_concept_units > 0 %}
+                    <div class="alert alert-danger mt-3">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        <strong>Data Inconsistency Detected:</strong> 
+                        Found {{ processing_stats.total_concept_units }} concept units but 0 labeled chunks. 
+                        This suggests either:
+                        <ul class="mb-0 mt-2">
+                            <li>LLM labeling completely failed but concept units were created anyway (bug)</li>
+                            <li>Database inconsistency from partial processing</li>
+                            <li>Fallback logic created units without proper labeling</li>
+                        </ul>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Detailed Concept Units Breakdown -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-list-ol me-2"></i>Concept Units Breakdown</h5>
+                </div>
+                <div class="card-body">
+                    {% for concept_info in concept_breakdown %}
+                    <div class="concept-unit-card border rounded p-3 mb-3 {% if concept_info.unit.time_optimized %}border-success{% else %}border-warning{% endif %}">
+                        <div class="row">
+                            <div class="col-md-8">
+                                <h6 class="mb-2">
+                                    <span class="badge bg-primary me-2">Unit {{ concept_info.unit.concept_order }}</span>
+                                    <a href="{% url 'flashcards:concept_unit_detail' concept_info.unit.id %}" class="text-decoration-none">
+                                        {{ concept_info.unit.title }}
+                                    </a>
+                                    {% if concept_info.unit.time_optimized %}
+                                        <i class="fas fa-check-circle text-success ms-2" title="Time Optimized"></i>
+                                    {% endif %}
+                                </h6>
+                                <p class="text-muted mb-2">{{ concept_info.unit.description }}</p>
+                                
+                                <!-- Labels Used -->
+                                <div class="mb-2">
+                                    <small class="text-muted me-2"><strong>Labels:</strong></small>
+                                    {% for label in concept_info.labels_used %}
+                                        <span class="badge bg-outline-secondary me-1">{{ label }}</span>
+                                    {% endfor %}
+                                </div>
+                                
+                                <!-- Keywords -->
+                                <div class="mb-2">
+                                    <small class="text-muted me-2"><strong>Keywords:</strong></small>
+                                    {% for keyword in concept_info.keywords|slice:":5" %}
+                                        <span class="badge bg-light text-dark me-1">{{ keyword }}</span>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            <div class="col-md-4 text-end">
+                                <div class="concept-stats">
+                                    <div class="mb-1">
+                                        <span class="badge bg-info">{{ concept_info.chunk_count }} chunks</span>
+                                    </div>
+                                    <div class="mb-1">
+                                        <span class="badge bg-secondary">{{ concept_info.unit.word_count }} words</span>
+                                    </div>
+                                    <div class="mb-1">
+                                        <span class="badge bg-{% if concept_info.unit.estimated_reading_time <= 10 %}success{% else %}warning{% endif %}">
+                                            {{ concept_info.unit.estimated_reading_time|floatformat:1 }} min
+                                        </span>
+                                    </div>
+                                    <div class="mb-2">
+                                        <span class="badge bg-{{ concept_info.unit.cognitive_load }}">{{ concept_info.unit.cognitive_load|title }} Load</span>
+                                    </div>
+                                    <!-- Add View Full Text Button -->
+                                    <div>
+                                        <a href="{% url 'flashcards:concept_unit_detail' concept_info.unit.id %}" class="btn btn-sm btn-primary">
+                                            <i class="fas fa-file-text me-1"></i>View Full Text
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Chunks in this unit -->
+                        <div class="mt-3">
+                            <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#chunks-{{ concept_info.unit.id }}" aria-expanded="false">
+                                <i class="fas fa-eye me-1"></i>View {{ concept_info.chunk_count }} Chunks
+                            </button>
+                        </div>
+                        
+                        <div class="collapse mt-3" id="chunks-{{ concept_info.unit.id }}">
+                            <div class="border rounded p-2 bg-light">
+                                {% for chunk_label in concept_info.chunks %}
+                                <div class="chunk-preview border-bottom pb-2 mb-2">
+                                    <div class="d-flex justify-content-between align-items-start">
+                                        <div class="flex-grow-1">
+                                            <small class="text-muted">
+                                                <strong>Chunk {{ chunk_label.text_chunk.chunk_order }}:</strong>
+                                                <span class="badge bg-secondary">{{ chunk_label.primary_label }}</span>
+                                            </small>
+                                            <p class="mb-1 text-truncate">{{ chunk_label.text_chunk.chunk_text|truncatechars:150 }}</p>
+                                            <small class="text-muted">{{ chunk_label.text_chunk.word_count }} words | {{ chunk_label.confidence_score|floatformat:1 }}% confidence</small>
+                                        </div>
+                                        <div class="ms-2">
+                                            <a href="{% url 'flashcards:chunk_detail' chunk_label.text_chunk.id %}" class="btn btn-sm btn-outline-primary">
+                                                <i class="fas fa-external-link-alt"></i>
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.processing-step {
+    position: relative;
+}
+
+.step-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.concept-unit-card {
+    transition: box-shadow 0.2s;
+}
+
+.concept-unit-card:hover {
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.badge.bg-low { background-color: #28a745 !important; }
+.badge.bg-medium { background-color: #ffc107 !important; }
+.badge.bg-high { background-color: #fd7e14 !important; }
+.badge.bg-very_high { background-color: #dc3545 !important; }
+</style>
+{% endblock %}

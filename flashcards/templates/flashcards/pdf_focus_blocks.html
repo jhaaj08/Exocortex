@@ -1,0 +1,170 @@
+{% extends 'flashcards/base.html' %}
+
+{% block title %}Focus Blocks - {{ pdf_document.name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{% url 'flashcards:home' %}">Home</a></li>
+                    <li class="breadcrumb-item active">Focus Blocks</li>
+                </ol>
+            </nav>
+            
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1><i class="fas fa-target me-2"></i>Focus Blocks</h1>
+                    <p class="text-muted mb-0">
+                        <i class="fas fa-file-pdf me-1"></i>{{ pdf_document.name }}
+                    </p>
+                </div>
+                <div>
+                    {% if focus_blocks %}
+                        <a href="{% url 'flashcards:study_focus_blocks' pdf_document.id %}" class="btn btn-primary me-2">
+                            <i class="fas fa-play me-1"></i>Start Study Session
+                        </a>
+                    {% endif %}
+                    <a href="{% url 'flashcards:home' %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left me-1"></i>Back to Home
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if focus_blocks %}
+    <!-- Study Overview -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <i class="fas fa-clock fa-2x text-primary mb-2"></i>
+                    <h4>{{ total_duration|floatformat:0 }} min</h4>
+                    <p class="text-muted">Total Study Time</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <i class="fas fa-layer-group fa-2x text-success mb-2"></i>
+                    <h4>{{ total_blocks }}</h4>
+                    <p class="text-muted">Focus Blocks</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <i class="fas fa-graduation-cap fa-2x text-warning mb-2"></i>
+                    <h4>6-7 min</h4>
+                    <p class="text-muted">Per Block</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <i class="fas fa-brain fa-2x text-info mb-2"></i>
+                    <h4>Optimized</h4>
+                    <p class="text-muted">Psychology-Aware</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Focus Blocks List -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-list-ol me-2"></i>Study Sequence</h5>
+                </div>
+                <div class="card-body">
+                    {% for block in focus_blocks %}
+                    <div class="focus-block-card border rounded p-3 mb-3">
+                        <div class="row align-items-center">
+                            <div class="col-md-1 text-center">
+                                <div class="block-number bg-primary text-white rounded-circle d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;">
+                                    {{ block.block_order }}
+                                </div>
+                            </div>
+                            <div class="col-md-8">
+                                <h6 class="mb-1" title="{{ block.title }}">{{ block.title|truncatechars:80 }}</h6>
+                                <p class="text-muted mb-1">{{ block.get_core_goal|truncatechars:100 }}</p>
+                                <div class="mb-1">
+                                    {% for label in block.main_concept_unit.primary_labels %}
+                                        <span class="badge bg-secondary me-1">{{ label }}</span>
+                                    {% endfor %}
+                                </div>
+                                {% if block.revision_concept_unit %}
+                                <small class="text-info">
+                                    <i class="fas fa-redo me-1"></i>Reviews: {{ block.revision_concept_unit.title }}
+                                </small>
+                                {% endif %}
+                            </div>
+                            <div class="col-md-2 text-center">
+                                <div class="badge bg-info mb-1">{{ block.get_estimated_duration_display }}</div>
+                                <div class="badge bg-{{ block.difficulty_level }}">{{ block.difficulty_level|title }}</div>
+                            </div>
+                            <div class="col-md-1 text-end">
+                                <a href="{% url 'flashcards:focus_block_detail' block.id %}" class="btn btn-sm btn-outline-primary">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <!-- No Focus Blocks -->
+    <div class="row">
+        <div class="col-12">
+            <div class="text-center py-5">
+                <i class="fas fa-target fa-3x text-muted mb-3"></i>
+                <h4>No Focus Blocks Generated</h4>
+                <p class="text-muted">This PDF hasn't been processed for focus blocks yet.</p>
+                <a href="{% url 'flashcards:home' %}" class="btn btn-primary">
+                    <i class="fas fa-arrow-left me-2"></i>Return to Home
+                </a>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<style>
+.focus-block-card {
+    transition: box-shadow 0.2s;
+}
+
+.focus-block-card:hover {
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.badge.bg-beginner { background-color: #28a745 !important; }
+.badge.bg-intermediate { background-color: #ffc107 !important; }
+.badge.bg-advanced { background-color: #dc3545 !important; }
+
+.focus-block-title {
+    font-weight: 600;
+    color: #2c3e50;
+    line-height: 1.3;
+}
+
+.focus-block-title:hover {
+    color: #3498db;
+    transition: color 0.3s ease;
+}
+
+.title-truncated {
+    cursor: help;
+}
+</style>
+{% endblock %}

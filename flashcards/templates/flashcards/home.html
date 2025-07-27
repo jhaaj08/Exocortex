@@ -1,0 +1,290 @@
+{% extends 'flashcards/base.html' %}
+
+{% block title %}Home - Navvar{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12 text-center">
+            <h1 class="display-4 mb-3">
+                <i class="fas fa-brain text-primary me-3"></i>Exocortex
+            </h1>
+            <p class="lead text-muted">Transform PDFs into AI-powered learning experiences</p>
+        </div>
+    </div>
+
+    <!-- PDF Upload Section -->
+    <div class="row justify-content-center mb-5">
+        <div class="col-md-8 col-lg-6">
+            <div class="card">
+                <div class="card-header bg-primary text-white text-center">
+                    <h5 class="mb-0"><i class="fas fa-upload me-2"></i>Upload New PDF</h5>
+                </div>
+                <div class="card-body">
+                    <form method="post" enctype="multipart/form-data" id="uploadForm">
+                        {% csrf_token %}
+                        <input type="hidden" name="pdf_upload" value="1">
+                        
+                        <div class="mb-3">
+                            <label for="id_pdf_file" class="form-label">Select PDF File</label>
+                            <input type="file" class="form-control" name="pdf_file" accept=".pdf" required>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="id_name" class="form-label">Document Name (optional)</label>
+                            <input type="text" class="form-control" name="name" placeholder="Auto-detected from filename">
+                        </div>
+                        
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary btn-lg" id="uploadBtn">
+                                <i class="fas fa-magic me-2"></i>Upload & Generate Focus Blocks
+                            </button>
+                        </div>
+                    </form>
+                    
+                    <!-- Bulk Upload Option -->
+                    <div class="text-center mt-3">
+                        <p class="text-muted mb-2">Need to upload multiple PDFs?</p>
+                        <a href="{% url 'flashcards:bulk_upload' %}" class="btn btn-outline-primary">
+                            <i class="fas fa-layer-group me-1"></i>Bulk Upload PDFs
+                        </a>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Processing Pipeline Info -->
+            <div class="alert alert-info mt-3">
+                <h6><i class="fas fa-info-circle me-2"></i>What happens next:</h6>
+                <ol class="mb-0 small">
+                    <li>Extract and clean text from PDF</li>
+                    <li>Check for duplicate content (80% similarity)</li>
+                    <li>Create text chunks (~350 words each)</li>
+                    <li>Analyze concepts with AI labeling</li>
+                    <li>Generate optimized focus blocks (6-7 min study sessions)</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+
+    <!-- All Processed PDFs -->
+    {% if recent_pdfs %}
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h3><i class="fas fa-library me-2"></i>Your PDF Library</h3>
+                <div class="btn-group" role="group">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="filterPDFs('all')">
+                        All ({{ recent_pdfs|length }})
+                    </button>
+                    <button type="button" class="btn btn-outline-success btn-sm" onclick="filterPDFs('ready')">
+                        Ready to Study
+                    </button>
+                    <button type="button" class="btn btn-outline-info btn-sm" onclick="filterPDFs('duplicates')">
+                        Duplicates
+                    </button>
+                </div>
+            </div>
+            
+            <div class="row" id="pdfGrid">
+                {% for pdf_document in recent_pdfs %}
+                <div class="col-lg-4 col-md-6 mb-4 pdf-card" 
+                     data-status="{% if pdf_document.is_duplicate %}duplicate{% elif pdf_document.focus_blocks.exists %}ready{% else %}processing{% endif %}">
+                    <div class="card h-100">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h6 class="mb-0 text-truncate">
+                                <i class="fas fa-file-pdf text-danger me-2"></i>
+                                {{ pdf_document.name|truncatechars:30 }}
+                            </h6>
+                            
+                            <!-- Status Badge -->
+                            {% if pdf_document.is_duplicate %}
+                                <span class="badge bg-info">
+                                    <i class="fas fa-copy me-1"></i>Duplicate
+                                </span>
+                            {% elif pdf_document.focus_blocks.exists %}
+                                <span class="badge bg-success">
+                                    <i class="fas fa-check me-1"></i>Ready
+                                </span>
+                            {% elif pdf_document.processing_error %}
+                                <span class="badge bg-danger">
+                                    <i class="fas fa-exclamation-triangle me-1"></i>Error
+                                </span>
+                            {% else %}
+                                <span class="badge bg-warning">
+                                    <i class="fas fa-clock me-1"></i>Processing
+                                </span>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="card-body">
+                            <!-- PDF Stats -->
+                            <div class="row text-center mb-3">
+                                <div class="col-4">
+                                    <div class="border-end">
+                                        <h5 class="text-primary mb-0">{{ pdf_document.chunks_count }}</h5>
+                                        <small class="text-muted">Chunks</small>
+                                    </div>
+                                </div>
+                                <div class="col-4">
+                                    <div class="border-end">
+                                        <h5 class="text-success mb-0">{{ pdf_document.concepts_count }}</h5>
+                                        <small class="text-muted">Concepts</small>
+                                    </div>
+                                </div>
+                                <div class="col-4">
+                                    <h5 class="text-warning mb-0">{{ pdf_document.focus_blocks_count }}</h5>
+                                    <small class="text-muted">Focus Blocks</small>
+                                </div>
+                            </div>
+                            
+                            <!-- Document Info -->
+                            <div class="small text-muted mb-3">
+                                <div><i class="fas fa-calendar me-1"></i>{{ pdf_document.created_at|date:"M d, Y" }}</div>
+                                <div><i class="fas fa-file-alt me-1"></i>{{ pdf_document.page_count }} pages</div>
+                                <div><i class="fas fa-font me-1"></i>{{ pdf_document.word_count }} words</div>
+                                {% if pdf_document.has_focus_blocks %}
+                                <div><i class="fas fa-clock me-1"></i>~{{ pdf_document.total_study_time }} min study time</div>
+                                {% endif %}
+                            </div>
+                            
+                            <!-- Duplicate Info -->
+                            {% if pdf_document.is_duplicate %}
+                            <div class="alert alert-info py-2">
+                                <small>
+                                    <strong>{{ pdf_document.similarity_score|floatformat:1 }}% similar</strong> to 
+                                    {{ pdf_document.duplicate_of.name|truncatechars:25 }}
+                                </small>
+                            </div>
+                            {% endif %}
+                            
+                            <!-- Error Info -->
+                            {% if pdf_document.processing_error %}
+                            <div class="alert alert-danger py-2">
+                                <small>{{ pdf_document.processing_error|truncatechars:60 }}</small>
+                            </div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="card-footer bg-transparent">
+                            {% if pdf_document.focus_blocks.exists %}
+                                <a href="{% url 'flashcards:pdf_focus_blocks' pdf_document.id %}" class="btn btn-primary w-100">
+                                    <i class="fas fa-play me-2"></i>Study Focus Blocks
+                                </a>
+                            {% elif pdf_document.processing_error %}
+                                <button class="btn btn-outline-warning w-100" onclick="reprocessPDF({{ pdf_document.id }})">
+                                    <i class="fas fa-redo me-2"></i>Retry Processing
+                                </button>
+                            {% else %}
+                                <button class="btn btn-outline-secondary w-100" disabled>
+                                    <i class="fas fa-spinner fa-spin me-2"></i>Processing...
+                                </button>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <!-- Empty State -->
+    <div class="row">
+        <div class="col-12 text-center py-5">
+            <i class="fas fa-inbox fa-4x text-muted mb-4"></i>
+            <h4 class="text-muted">No PDFs uploaded yet</h4>
+            <p class="text-muted">Upload your first PDF to get started with AI-powered focus blocks</p>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+function filterPDFs(filter) {
+    const cards = document.querySelectorAll('.pdf-card');
+    const buttons = document.querySelectorAll('.btn-group .btn');
+    
+    // Reset button states
+    buttons.forEach(btn => {
+        btn.classList.remove('btn-success', 'btn-info', 'btn-secondary');
+        btn.classList.add('btn-outline-secondary');
+    });
+    
+    // Show/hide cards based on filter
+    cards.forEach(card => {
+        const status = card.dataset.status;
+        let show = false;
+        
+        switch(filter) {
+            case 'all':
+                show = true;
+                event.target.classList.remove('btn-outline-secondary');
+                event.target.classList.add('btn-secondary');
+                break;
+            case 'ready':
+                show = status === 'ready';
+                event.target.classList.remove('btn-outline-secondary');
+                event.target.classList.add('btn-success');
+                break;
+            case 'duplicates':
+                show = status === 'duplicate';
+                event.target.classList.remove('btn-outline-secondary');
+                event.target.classList.add('btn-info');
+                break;
+        }
+        
+        card.style.display = show ? 'block' : 'none';
+    });
+}
+
+// ✅ FIXED: Proper form submission with UI feedback
+document.getElementById('uploadForm').addEventListener('submit', function(e) {
+    const button = document.getElementById('uploadBtn');
+    const fileInput = document.querySelector('input[name="pdf_file"]');
+    
+    // Check if file is selected
+    if (!fileInput.files.length) {
+        e.preventDefault();
+        alert('Please select a PDF file first.');
+        return false;
+    }
+    
+    // Show uploading state (but let form submit naturally)
+    button.disabled = true;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Uploading & Processing...';
+    
+    // The form will submit normally after this
+});
+
+function reprocessPDF(pdfId) {
+    if (confirm('Reprocess this PDF? This will regenerate all content.')) {
+        // Redirect to reprocess or show processing indicator
+        window.location.reload();
+    }
+}
+</script>
+
+<style>
+.card {
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.border-end {
+    border-right: 1px solid #dee2e6;
+}
+
+@media (max-width: 768px) {
+    .border-end {
+        border-right: none;
+        border-bottom: 1px solid #dee2e6;
+        padding-bottom: 0.5rem;
+        margin-bottom: 0.5rem;
+    }
+}
+</style>
+{% endblock %} 

@@ -1,0 +1,187 @@
+{% extends 'flashcards/base.html' %}
+
+{% block title %}Process Folder - {{ folder.name }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header bg-warning text-dark">
+                <h4 class="card-title mb-0">
+                    <i class="fas fa-cogs me-2"></i>Process Folder: {{ folder.name }}
+                </h4>
+            </div>
+            <div class="card-body text-center">
+                <div class="mb-4">
+                    <i class="fas fa-folder-open fa-4x text-warning mb-3"></i>
+                    <h5>Ready to Process</h5>
+                    <p class="text-muted">
+                        This folder contains <strong>{{ folder.total_files }}</strong> markdown files.
+                        <br>
+                        Processing will analyze the content and generate flashcards using AI.
+                    </p>
+                </div>
+
+                <div class="alert alert-info" role="alert">
+                    <i class="fas fa-info-circle me-2"></i>
+                    <strong>Note:</strong> This step is not yet implemented in this demo. 
+                    In the next development phase, this will:
+                    <ul class="list-unstyled mt-2 mb-0">
+                        <li>• Read all markdown files from the folder</li>
+                        <li>• Send content to OpenAI API for flashcard generation</li>
+                        <li>• Save generated flashcards to the database</li>
+                        <li>• Mark the folder as processed</li>
+                    </ul>
+                </div>
+
+                <div class="d-grid gap-2 d-md-flex justify-content-md-center">
+                    <a href="{% url 'flashcards:folder_list' %}" class="btn btn-outline-secondary me-md-2">
+                        <i class="fas fa-arrow-left me-1"></i>Back to Folders
+                    </a>
+                    <button type="button" class="btn btn-primary" id="process-btn" onclick="processFolder()">
+                        <i class="fas fa-robot me-1"></i>Process with AI
+                    </button>
+                </div>
+                
+                <!-- Processing Status -->
+                <div id="processing-status" class="mt-4" style="display: none;">
+                    <div class="alert alert-info">
+                        <div class="d-flex align-items-center">
+                            <div class="spinner-border spinner-border-sm me-3" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <div>
+                                <strong>Processing...</strong>
+                                <div class="small text-muted" id="status-message">Extracting content from markdown files...</div>
+                            </div>
+                        </div>
+                        <div class="progress mt-3" style="height: 6px;">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                                 role="progressbar" style="width: 0%" id="progress-bar"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-folder me-2"></i>Folder Details
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <p><strong>Name:</strong> {{ folder.name }}</p>
+                        <p><strong>Path:</strong> <code>{{ folder.path }}</code></p>
+                    </div>
+                    <div class="col-md-6">
+                        <p><strong>Files:</strong> {{ folder.total_files }} markdown files</p>
+                        <p><strong>Added:</strong> {{ folder.created_at|date:"M d, Y H:i" }}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+async function processFolder() {
+    const processBtn = document.getElementById('process-btn');
+    const statusDiv = document.getElementById('processing-status');
+    const statusMessage = document.getElementById('status-message');
+    const progressBar = document.getElementById('progress-bar');
+    
+    // Disable button and show processing status
+    processBtn.disabled = true;
+    processBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Processing...';
+    statusDiv.style.display = 'block';
+    
+    // Simulate progress updates
+    let progress = 0;
+    const progressInterval = setInterval(() => {
+        progress += Math.random() * 20;
+        if (progress > 95) progress = 95;
+        progressBar.style.width = progress + '%';
+    }, 500);
+    
+    try {
+        // Update status message
+        statusMessage.textContent = 'Extracting content from markdown files...';
+        
+        const response = await fetch('{% url "flashcards:process_folder_ajax" folder.id %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}'
+            }
+        });
+        
+        const result = await response.json();
+        
+        // Clear progress interval
+        clearInterval(progressInterval);
+        progressBar.style.width = '100%';
+        
+        if (result.success) {
+            // Success - show completion message
+            statusMessage.textContent = result.message;
+            statusDiv.innerHTML = `
+                <div class="alert alert-success">
+                    <h5><i class="fas fa-check-circle me-2"></i>Processing Complete!</h5>
+                    <p class="mb-2">${result.message}</p>
+                    <div class="small">
+                        📊 Processed: ${result.processed_count} items<br>
+                        💾 Saved: ${result.saved_count} flashcards
+                    </div>
+                    ${result.warning ? `<div class="alert alert-warning mt-2 mb-0 small">${result.warning}</div>` : ''}
+                </div>
+            `;
+            
+            // Redirect after a short delay
+            setTimeout(() => {
+                window.location.href = result.redirect_url;
+            }, 2000);
+            
+        } else {
+            // Error - show error message
+            statusDiv.innerHTML = `
+                <div class="alert alert-danger">
+                    <h5><i class="fas fa-exclamation-triangle me-2"></i>Processing Failed</h5>
+                    <p class="mb-0">${result.message}</p>
+                    ${result.error === 'api_key_missing' ? `
+                        <hr>
+                        <div class="small">
+                            <strong>💡 To enable AI enhancement:</strong><br>
+                            1. Get an OpenAI API key from <a href="https://platform.openai.com/api-keys" target="_blank">platform.openai.com</a><br>
+                            2. Copy <code>env_example.txt</code> to <code>.env</code><br>
+                            3. Add your API key to the <code>.env</code> file
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+            
+            // Re-enable button
+            processBtn.disabled = false;
+            processBtn.innerHTML = '<i class="fas fa-robot me-1"></i>Try Again';
+        }
+        
+    } catch (error) {
+        // Network or parsing error
+        clearInterval(progressInterval);
+        
+        statusDiv.innerHTML = `
+            <div class="alert alert-danger">
+                <h5><i class="fas fa-exclamation-triangle me-2"></i>Connection Error</h5>
+                <p class="mb-0">Failed to connect to the server. Please check your connection and try again.</p>
+            </div>
+        `;
+        
+        // Re-enable button
+        processBtn.disabled = false;
+        processBtn.innerHTML = '<i class="fas fa-robot me-1"></i>Try Again';
+    }
+}
+</script>
+{% endblock %} 

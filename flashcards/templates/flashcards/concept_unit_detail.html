@@ -1,0 +1,307 @@
+{% extends 'flashcards/base.html' %}
+
+{% block title %}{{ concept_unit.title }} - Concept Unit{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{% url 'flashcards:home' %}">Home</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'flashcards:pdf_processing_details' pdf_document.id %}">Processing Details</a></li>
+                    <li class="breadcrumb-item active">{{ concept_unit.title }}</li>
+                </ol>
+            </nav>
+            
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1><i class="fas fa-puzzle-piece me-2"></i>{{ concept_unit.title }}</h1>
+                    <p class="text-muted mb-0">
+                        <i class="fas fa-file-pdf me-1"></i>{{ pdf_document.name }} - Concept Unit {{ concept_unit.concept_order }}
+                    </p>
+                </div>
+                <div>
+                    {% if focus_blocks %}
+                        <a href="{% url 'flashcards:focus_block_detail' focus_blocks.first.id %}" class="btn btn-primary me-2">
+                            <i class="fas fa-target me-1"></i>View Focus Block
+                        </a>
+                    {% endif %}
+                    <a href="{% url 'flashcards:pdf_processing_details' pdf_document.id %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left me-1"></i>Back to Overview
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Statistics -->
+    <div class="row mb-4">
+        <div class="col-md-2">
+            <div class="card text-center">
+                <div class="card-body">
+                    <i class="fas fa-font fa-2x text-primary mb-2"></i>
+                    <h4>{{ word_count }}</h4>
+                    <p class="text-muted">Words</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card text-center">
+                <div class="card-body">
+                    <i class="fas fa-layer-group fa-2x text-success mb-2"></i>
+                    <h4>{{ chunk_labels.count }}</h4>
+                    <p class="text-muted">Chunks</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card text-center">
+                <div class="card-body">
+                    <i class="fas fa-clock fa-2x text-warning mb-2"></i>
+                    <h4>{{ concept_unit.estimated_reading_time|floatformat:1 }}</h4>
+                    <p class="text-muted">Minutes</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card text-center">
+                <div class="card-body">
+                    <i class="fas fa-signal fa-2x text-info mb-2"></i>
+                    <h4>{{ concept_unit.complexity_score|floatformat:1 }}</h4>
+                    <p class="text-muted">Complexity</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card text-center">
+                <div class="card-body">
+                    <i class="fas fa-brain fa-2x text-danger mb-2"></i>
+                    <h4>{{ concept_unit.cognitive_load|title }}</h4>
+                    <p class="text-muted">Load</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card text-center">
+                <div class="card-body">
+                    <i class="fas fa-list-ol fa-2x text-secondary mb-2"></i>
+                    <h4>{{ concept_unit.concept_order }}</h4>
+                    <p class="text-muted">Order</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Concept Labels and Description -->
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-tags me-2"></i>Concept Information</h5>
+                </div>
+                <div class="card-body">
+                    <h6>Description:</h6>
+                    <p>{{ concept_unit.description }}</p>
+                    
+                    <h6>Content Labels:</h6>
+                    {% for label in concept_unit.primary_labels %}
+                        <span class="badge bg-primary me-1 mb-1">{{ label }}</span>
+                    {% endfor %}
+                    
+                    {% if concept_unit.time_optimized %}
+                    <div class="mt-3">
+                        <span class="badge bg-success">
+                            <i class="fas fa-check me-1"></i>Time Optimized
+                        </span>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-layer-group me-2"></i>Component Chunks</h5>
+                </div>
+                <div class="card-body">
+                    {% for chunk_label in chunk_labels %}
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <div>
+                            <small class="text-muted">Chunk {{ chunk_label.text_chunk.chunk_order }}</small>
+                            <br>
+                            <span class="badge bg-secondary">{{ chunk_label.primary_label }}</span>
+                        </div>
+                        <div class="text-end">
+                            <small class="text-muted">{{ chunk_label.text_chunk.word_count }} words</small>
+                            <br>
+                            <a href="{% url 'flashcards:chunk_detail' chunk_label.text_chunk.id %}" class="btn btn-sm btn-outline-primary">
+                                <i class="fas fa-eye"></i>
+                            </a>
+                        </div>
+                    </div>
+                    <hr class="my-2">
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Full Text Content -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-file-text me-2"></i>Complete Text Content</h5>
+                    <div>
+                        <button class="btn btn-sm btn-outline-secondary me-2" onclick="copyFullText()">
+                            <i class="fas fa-copy me-1"></i>Copy All Text
+                        </button>
+                        <button class="btn btn-sm btn-outline-primary" onclick="toggleTextView()">
+                            <i class="fas fa-expand me-1"></i>Toggle Full Screen
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div id="textContainer" class="border rounded p-3 bg-light" style="max-height: 600px; overflow-y: auto;">
+                        <pre id="fullText" style="white-space: pre-wrap; margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; line-height: 1.6;">{{ combined_text }}</pre>
+                    </div>
+                    
+                    <div class="mt-3 text-center">
+                        <small class="text-muted">
+                            <i class="fas fa-info-circle me-1"></i>
+                            Total: {{ word_count }} words, {{ char_count }} characters
+                            {% if concept_unit.estimated_reading_time %}
+                                | Estimated reading time: {{ concept_unit.estimated_reading_time|floatformat:1 }} minutes
+                            {% endif %}
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chunk Breakdown -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-list-ol me-2"></i>Chunk Breakdown</h5>
+                </div>
+                <div class="card-body">
+                    {% for chunk_label in chunk_labels %}
+                    <div class="chunk-section border rounded p-3 mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <div>
+                                <h6 class="mb-0">
+                                    <span class="badge bg-primary me-2">Chunk {{ chunk_label.text_chunk.chunk_order }}</span>
+                                    {{ chunk_label.primary_label }}
+                                </h6>
+                                <small class="text-muted">
+                                    {{ chunk_label.text_chunk.word_count }} words | 
+                                    Confidence: {{ chunk_label.confidence_score|floatformat:1 }}%
+                                </small>
+                            </div>
+                            <div>
+                                <a href="{% url 'flashcards:chunk_detail' chunk_label.text_chunk.id %}" class="btn btn-sm btn-outline-primary">
+                                    <i class="fas fa-external-link-alt me-1"></i>View Details
+                                </a>
+                            </div>
+                        </div>
+                        
+                        {% if chunk_label.concept_keywords %}
+                        <div class="mb-2">
+                            <small class="text-muted me-2"><strong>Keywords:</strong></small>
+                            {% for keyword in chunk_label.concept_keywords %}
+                                <span class="badge bg-light text-dark me-1">{{ keyword }}</span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                        
+                        {% if chunk_label.secondary_labels %}
+                        <div class="mb-2">
+                            <small class="text-muted me-2"><strong>Secondary Labels:</strong></small>
+                            {% for label in chunk_label.secondary_labels %}
+                                <span class="badge bg-outline-secondary me-1">{{ label }}</span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                        
+                        <div class="text-preview bg-light p-2 rounded">
+                            <small>{{ chunk_label.text_chunk.chunk_text|truncatechars:200 }}</small>
+                        </div>
+                        
+                        {% if chunk_label.reasoning %}
+                        <div class="mt-2">
+                            <small class="text-info">
+                                <strong>LLM Reasoning:</strong> {{ chunk_label.reasoning }}
+                            </small>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function copyFullText() {
+    const textElement = document.getElementById('fullText');
+    if (textElement) {
+        navigator.clipboard.writeText(textElement.textContent).then(() => {
+            const btn = event.target.closest('button');
+            const originalHTML = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-check me-1"></i>Copied!';
+            btn.className = 'btn btn-sm btn-success';
+            
+            setTimeout(() => {
+                btn.innerHTML = originalHTML;
+                btn.className = 'btn btn-sm btn-outline-secondary';
+            }, 2000);
+        });
+    }
+}
+
+function toggleTextView() {
+    const container = document.getElementById('textContainer');
+    const btn = event.target.closest('button');
+    
+    if (container.style.maxHeight === 'none') {
+        container.style.maxHeight = '600px';
+        btn.innerHTML = '<i class="fas fa-expand me-1"></i>Toggle Full Screen';
+    } else {
+        container.style.maxHeight = 'none';
+        btn.innerHTML = '<i class="fas fa-compress me-1"></i>Collapse View';
+    }
+}
+
+// Highlight search functionality
+function addSearchHighlight() {
+    const searchTerm = prompt("Search within this concept unit:");
+    if (searchTerm) {
+        const textElement = document.getElementById('fullText');
+        const text = textElement.textContent;
+        const highlightedText = text.replace(
+            new RegExp(searchTerm, 'gi'),
+            `<mark>$&</mark>`
+        );
+        textElement.innerHTML = highlightedText;
+    }
+}
+
+// Add search button dynamically
+document.addEventListener('DOMContentLoaded', function() {
+    const header = document.querySelector('.card-header .btn-group, .card-header div:last-child');
+    if (header) {
+        const searchBtn = document.createElement('button');
+        searchBtn.className = 'btn btn-sm btn-outline-success';
+        searchBtn.innerHTML = '<i class="fas fa-search me-1"></i>Search';
+        searchBtn.onclick = addSearchHighlight;
+        header.appendChild(searchBtn);
+    }
+});
+</script>
+{% endblock %} 

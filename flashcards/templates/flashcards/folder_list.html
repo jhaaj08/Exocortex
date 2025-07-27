@@ -1,0 +1,137 @@
+{% extends 'flashcards/base.html' %}
+
+{% block title %}My Folders - Flashcard Generator{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-8">
+        <h2><i class="fas fa-folder me-2"></i>My Folders</h2>
+        <p class="text-muted">Manage your markdown folder collections and generated flashcards.</p>
+    </div>
+    <div class="col-md-4 text-md-end">
+        <a href="{% url 'flashcards:add_folder' %}" class="btn btn-primary">
+            <i class="fas fa-plus me-1"></i>Add New Folder
+        </a>
+    </div>
+</div>
+
+{% if folders %}
+    <div class="row">
+        {% for folder in folders %}
+        <div class="col-md-6 col-lg-4 mb-4">
+            <div class="card h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">{{ folder.name }}</h5>
+                    {% if folder.processed %}
+                        <span class="badge bg-success">Processed</span>
+                    {% else %}
+                        <span class="badge bg-warning">Pending</span>
+                    {% endif %}
+                </div>
+                <div class="card-body">
+                    <p class="card-text">
+                        <small class="text-muted">
+                            <i class="fas fa-folder me-1"></i>{{ folder.total_files }} markdown files<br>
+                            <i class="fas fa-calendar me-1"></i>Added {{ folder.created_at|date:"M d, Y" }}<br>
+                            {% if folder.processed %}
+                                <i class="fas fa-cards-blank me-1"></i>{{ folder.flashcards.count }} flashcards generated
+                            {% endif %}
+                        </small>
+                    </p>
+                    <p class="card-text">
+                        <small><code>{{ folder.path|truncatechars:40 }}</code></small>
+                    </p>
+                </div>
+                <div class="card-footer bg-transparent">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <a href="{% url 'flashcards:folder_detail' folder.id %}" 
+                               class="btn btn-outline-primary btn-sm">
+                                <i class="fas fa-eye me-1"></i>View
+                            </a>
+                            {% if folder.processed %}
+                                <a href="{% url 'flashcards:study_flashcards' folder.id %}" 
+                                   class="btn btn-primary btn-sm">
+                                    <i class="fas fa-play me-1"></i>Study
+                                </a>
+                            {% else %}
+                                <a href="{% url 'flashcards:process_folder' folder.id %}" 
+                                   class="btn btn-warning btn-sm">
+                                    <i class="fas fa-cogs me-1"></i>Process
+                                </a>
+                            {% endif %}
+                        </div>
+                        
+                        <!-- Delete Button -->
+                        <button type="button" class="btn btn-outline-danger btn-sm" 
+                                onclick="confirmDeleteFolder({{ folder.id }}, '{{ folder.name|escapejs }}', {{ folder.flashcards.count }})">
+                            <i class="fas fa-trash me-1"></i>Delete
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+{% else %}
+    <div class="row justify-content-center">
+        <div class="col-md-6 text-center">
+            <div class="card">
+                <div class="card-body py-5">
+                    <i class="fas fa-folder-open fa-4x text-muted mb-3"></i>
+                    <h4>No Folders Yet</h4>
+                    <p class="text-muted mb-4">
+                        You haven't added any folders containing markdown files yet. 
+                        Get started by adding your first folder.
+                    </p>
+                    <a href="{% url 'flashcards:add_folder' %}" class="btn btn-primary">
+                        <i class="fas fa-plus me-1"></i>Add Your First Folder
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endif %}
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteFolderModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">
+                    <i class="fas fa-exclamation-triangle me-2"></i>Confirm Deletion
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p><strong>Are you sure you want to delete this folder?</strong></p>
+                <div class="alert alert-warning">
+                    <strong>Folder:</strong> <span id="folderNameToDelete"></span><br>
+                    <strong>This will also delete:</strong> <span id="flashcardCountToDelete"></span> flashcards<br>
+                    <strong>This action cannot be undone!</strong>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form id="deleteFolderForm" method="post" style="display: inline;">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger">
+                        <i class="fas fa-trash me-1"></i>Delete Folder
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function confirmDeleteFolder(folderId, folderName, flashcardCount) {
+    document.getElementById('folderNameToDelete').textContent = folderName;
+    document.getElementById('flashcardCountToDelete').textContent = flashcardCount;
+    document.getElementById('deleteFolderForm').action = `/folder/${folderId}/delete/`;
+    
+    const modal = new bootstrap.Modal(document.getElementById('deleteFolderModal'));
+    modal.show();
+}
+</script>
+{% endblock %} 
