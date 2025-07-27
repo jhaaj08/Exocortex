@@ -27,7 +27,6 @@ class ConceptAnalyzer:
         else:
             try:
                 # Clear any proxy environment variables that might interfere
-                import os
                 proxy_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy']
                 original_proxies = {}
                 for var in proxy_vars:
