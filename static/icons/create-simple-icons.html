@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Generate Exocortex PWA Icons</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #0d6efd; text-align: center; }
+        .icon-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin: 20px 0; }
+        .icon-item { text-align: center; border: 1px solid #ddd; padding: 15px; border-radius: 8px; }
+        canvas { border: 2px solid #0d6efd; border-radius: 10px; margin: 10px 0; }
+        .download-btn { display: inline-block; background: #28a745; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin: 5px; }
+        .download-btn:hover { background: #218838; }
+        .generate-btn { background: #0d6efd; color: white; padding: 15px 30px; border: none; border-radius: 5px; font-size: 16px; cursor: pointer; }
+        .generate-btn:hover { background: #0b5ed7; }
+        .instructions { background: #e9ecef; padding: 15px; border-radius: 5px; margin: 20px 0; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧠 Generate Exocortex PWA Icons</h1>
+        
+        <div class="instructions">
+            <h3>Instructions:</h3>
+            <ol>
+                <li>Click "Generate Icons" below</li>
+                <li>Download all 4 PNG files</li>
+                <li>Save them in your <code>static/icons/</code> folder</li>
+                <li>Refresh your Django app page</li>
+                <li>The "Install App" button should appear!</li>
+            </ol>
+        </div>
+
+        <div style="text-align: center;">
+            <button class="generate-btn" onclick="generateAllIcons()">
+                🎨 Generate All Icons
+            </button>
+        </div>
+
+        <div id="status"></div>
+        <div id="icons-container" class="icon-grid"></div>
+    </div>
+
+    <script>
+        function showStatus(message, type = 'success') {
+            const status = document.getElementById('status');
+            status.innerHTML = `<div class="status ${type}">${message}</div>`;
+        }
+
+        function generateAllIcons() {
+            const icons = [
+                { size: 192, name: 'icon-192.png', title: 'Standard Icon 192x192' },
+                { size: 512, name: 'icon-512.png', title: 'Standard Icon 512x512' },
+                { size: 192, name: 'maskable-192.png', title: 'Maskable Icon 192x192' },
+                { size: 512, name: 'maskable-512.png', title: 'Maskable Icon 512x512' }
+            ];
+
+            const container = document.getElementById('icons-container');
+            container.innerHTML = '';
+            
+            showStatus('🎨 Generating icons...');
+
+            icons.forEach(icon => {
+                const iconDiv = createIcon(icon.size, icon.name, icon.title);
+                container.appendChild(iconDiv);
+            });
+
+            showStatus('✅ All icons generated! Download them and save to static/icons/ folder.');
+        }
+
+        function createIcon(size, filename, title) {
+            const canvas = document.createElement('canvas');
+            canvas.width = size;
+            canvas.height = size;
+            
+            const ctx = canvas.getContext('2d');
+            
+            // Background circle with gradient
+            const gradient = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+            gradient.addColorStop(0, '#4c84ff');
+            gradient.addColorStop(1, '#0d6efd');
+            
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(size/2, size/2, size/2 - 8, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            // White border
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 6;
+            ctx.stroke();
+            
+            // Main letter E
+            ctx.fillStyle = '#ffffff';
+            ctx.font = `bold ${size/3}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('E', size/2, size/2 - size/8);
+            
+            // Brain emoji or symbol
+            ctx.font = `${size/6}px Arial`;
+            if (size >= 512) {
+                ctx.fillText('🧠', size/2, size/2 + size/6);
+            } else {
+                // Simplified brain for smaller icons
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(size/2 - size/8, size/2 + size/8, size/16, 0, 2 * Math.PI);
+                ctx.arc(size/2 + size/8, size/2 + size/8, size/16, 0, 2 * Math.PI);
+                ctx.fill();
+            }
+            
+            // Create download link
+            const downloadLink = document.createElement('a');
+            downloadLink.href = canvas.toDataURL('image/png');
+            downloadLink.download = filename;
+            downloadLink.className = 'download-btn';
+            downloadLink.textContent = `📥 Download ${filename}`;
+            
+            // Create container div
+            const div = document.createElement('div');
+            div.className = 'icon-item';
+            
+            const titleEl = document.createElement('h4');
+            titleEl.textContent = title;
+            titleEl.style.margin = '0 0 10px 0';
+            
+            const sizeEl = document.createElement('p');
+            sizeEl.textContent = `${size}x${size} pixels`;
+            sizeEl.style.color = '#666';
+            sizeEl.style.margin = '5px 0';
+            
+            div.appendChild(titleEl);
+            div.appendChild(canvas);
+            div.appendChild(sizeEl);
+            div.appendChild(downloadLink);
+            
+            return div;
+        }
+
+        // Auto-generate on page load
+        window.addEventListener('load', generateAllIcons);
+    </script>
+</body>
+</html> 

@@ -129,8 +129,12 @@ local_settings.py
 db.sqlite3
 db.sqlite3-journal
 /media
-/static
-/staticfiles
+
+# Static files - ignore collected files but keep source files
+/staticfiles/
+/static/admin/  
+/static/debug_toolbar/
+# But allow our custom static files like manifest.json, sw.js, icons/
 
 # IDE files
 .idea/

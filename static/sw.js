@@ -1,0 +1,148 @@
+/* Exocortex PWA Service Worker */
+const CACHE_VERSION = "exocortex-v1.0.0";
+const STATIC_CACHE = `${CACHE_VERSION}-static`;
+const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
+
+// Core assets to cache immediately
+const CORE_ASSETS = [
+  "/",
+  "/static/manifest.json",
+  "/static/icons/icon-192.png",
+  "/static/icons/icon-512.png",
+  "/focus-blocks/",
+  // Add your critical CSS/JS files here when you have them
+];
+
+// Install event - cache core assets
+self.addEventListener("install", (event) => {
+  console.log("[SW] Installing service worker...");
+  event.waitUntil(
+    caches.open(STATIC_CACHE).then((cache) => {
+      console.log("[SW] Caching core assets");
+      return cache.addAll(CORE_ASSETS);
+    })
+  );
+  self.skipWaiting(); // Force activation
+});
+
+// Activate event - clean up old caches
+self.addEventListener("activate", (event) => {
+  console.log("[SW] Activating service worker...");
+  event.waitUntil(
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames
+          .filter((cacheName) => !cacheName.startsWith(CACHE_VERSION))
+          .map((cacheName) => {
+            console.log("[SW] Deleting old cache:", cacheName);
+            return caches.delete(cacheName);
+          })
+      );
+    })
+  );
+  self.clients.claim(); // Take control immediately
+});
+
+// Fetch event - serve from cache with network fallback
+self.addEventListener("fetch", (event) => {
+  const { request } = event;
+  
+  // Skip non-GET requests
+  if (request.method !== "GET") {
+    return;
+  }
+
+  // Skip external requests
+  if (!request.url.startsWith(self.location.origin)) {
+    return;
+  }
+
+  // Handle different types of requests
+  if (request.url.includes("/static/")) {
+    // Static files - cache first strategy
+    event.respondWith(cacheFirstStrategy(request));
+  } else if (request.url.includes("/api/") || request.url.includes("/admin/")) {
+    // API/Admin - network first strategy
+    event.respondWith(networkFirstStrategy(request));
+  } else {
+    // HTML pages - stale while revalidate strategy
+    event.respondWith(staleWhileRevalidateStrategy(request));
+  }
+});
+
+// Cache first strategy for static assets
+async function cacheFirstStrategy(request) {
+  try {
+    const cachedResponse = await caches.match(request);
+    if (cachedResponse) {
+      return cachedResponse;
+    }
+    
+    const networkResponse = await fetch(request);
+    if (networkResponse.status === 200) {
+      const cache = await caches.open(STATIC_CACHE);
+      cache.put(request, networkResponse.clone());
+    }
+    return networkResponse;
+  } catch (error) {
+    console.log("[SW] Cache first failed:", error);
+    return new Response("Offline", { status: 503 });
+  }
+}
+
+// Network first strategy for dynamic content
+async function networkFirstStrategy(request) {
+  try {
+    const networkResponse = await fetch(request);
+    if (networkResponse.status === 200) {
+      const cache = await caches.open(DYNAMIC_CACHE);
+      cache.put(request, networkResponse.clone());
+    }
+    return networkResponse;
+  } catch (error) {
+    console.log("[SW] Network first failed, trying cache:", error);
+    const cachedResponse = await caches.match(request);
+    return cachedResponse || new Response("Offline", { status: 503 });
+  }
+}
+
+// Stale while revalidate strategy for HTML pages
+async function staleWhileRevalidateStrategy(request) {
+  try {
+    const cachedResponse = await caches.match(request);
+    
+    const networkResponsePromise = fetch(request).then(async (networkResponse) => {
+      if (networkResponse.status === 200) {
+        const cache = await caches.open(DYNAMIC_CACHE);
+        cache.put(request, networkResponse.clone());
+      }
+      return networkResponse;
+    });
+
+    // Return cached version immediately, update in background
+    if (cachedResponse) {
+      networkResponsePromise.catch(() => {}); // Ignore network errors
+      return cachedResponse;
+    }
+
+    // If no cache, wait for network
+    return await networkResponsePromise;
+  } catch (error) {
+    console.log("[SW] Stale while revalidate failed:", error);
+    // Try to return a fallback page
+    const fallback = await caches.match("/");
+    return fallback || new Response("Offline", { status: 503 });
+  }
+}
+
+// Background sync for future features
+self.addEventListener("sync", (event) => {
+  console.log("[SW] Background sync:", event.tag);
+  // Add background sync logic here if needed
+});
+
+// Push notifications for future features
+self.addEventListener("push", (event) => {
+  console.log("[SW] Push notification received");
+  // Add push notification logic here if needed
+}); 
