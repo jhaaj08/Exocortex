@@ -34,27 +34,7 @@ redis==5.0.1
 
 # Development Tools
 django-extensions==3.2.3
-```
 
-## **🚀 Minimal Version (Render-Tested):**
 
-For immediate deployment success on Render:
-
-```python:requirements.txt
-<code_block_to_apply_changes_from>
-Django==4.2.7
-gunicorn==21.2.0
-whitenoise==6.6.0
-dj-database-url==2.2.0
-psycopg2-binary==2.9.9
-python-dotenv==1.0.0
-openai==1.35.0
-httpx==0.25.0
-PyPDF2==3.0.1
-pdfplumber==0.10.3
-Markdown==3.5.1
-Pillow==10.1.0
-requests==2.31.0
-```
 
 ## **💡
