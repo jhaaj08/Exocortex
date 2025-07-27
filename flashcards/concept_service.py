@@ -15,20 +15,30 @@ class ConceptAnalyzer:
     """Service class to analyze text chunks and create concept units using LLM"""
     
     def __init__(self):
-        # Initialize OpenAI client (same pattern as your working llm_service.py)
+        # Initialize OpenAI client with error handling
         api_key = os.getenv('OPENAI_API_KEY')
         
-        print(f"🔍 DEBUG: API key exists: {bool(api_key)}")  # ✅ Debug print
-        print(f"🔍 DEBUG: API key length: {len(api_key) if api_key else 0}")  # ✅ Debug print
+        print(f"🔍 DEBUG: API key exists: {bool(api_key)}")
+        print(f"🔍 DEBUG: API key length: {len(api_key) if api_key else 0}")
         
         if not api_key or api_key == 'your_openai_api_key_here':
             self.client = None
             self.api_available = False
-            print("❌ DEBUG: OpenAI API not available")  # ✅ Debug print
+            print("❌ DEBUG: OpenAI API not available")
         else:
-            self.client = OpenAI(api_key=api_key)
-            self.api_available = True
-            print("✅ DEBUG: OpenAI client initialized successfully")  # ✅ Debug print
+            try:
+                # Explicit parameters only - no proxy inference
+                self.client = OpenAI(
+                    api_key=api_key,
+                    timeout=60.0,  # Add timeout
+                    max_retries=3   # Add retries
+                )
+                self.api_available = True
+                print("✅ DEBUG: OpenAI client initialized successfully")
+            except Exception as e:
+                print(f"❌ DEBUG: OpenAI client initialization failed: {e}")
+                self.client = None
+                self.api_available = False
         
         self.model = "gpt-3.5-turbo"
         
