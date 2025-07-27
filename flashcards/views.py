@@ -229,11 +229,14 @@ def process_pdf_complete(pdf_document: PDFDocument) -> Tuple[bool, str, Dict]:
         print(f"🚀 Processing: {pdf_document.name}")
         
         # Step 1: Basic text extraction first
+        print("📄 Step 1: Text extraction...")
         from .pdf_service import extract_pdf_text
         text, page_count, extract_success, extract_error = extract_pdf_text(pdf_document)
         
         if not extract_success:
             return False, extract_error, {}
+        
+        print("✅ Text extraction successful")
         
         # Step 2: Update basic PDF info
         pdf_document.extracted_text = text

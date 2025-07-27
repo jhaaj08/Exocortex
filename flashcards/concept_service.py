@@ -15,11 +15,10 @@ class ConceptAnalyzer:
     """Service class to analyze text chunks and create concept units using LLM"""
     
     def __init__(self):
-        # Initialize OpenAI client with error handling
+        # Initialize OpenAI client with defensive error handling
         api_key = os.getenv('OPENAI_API_KEY')
         
         print(f"🔍 DEBUG: API key exists: {bool(api_key)}")
-        print(f"🔍 DEBUG: API key length: {len(api_key) if api_key else 0}")
         
         if not api_key or api_key == 'your_openai_api_key_here':
             self.client = None
@@ -27,16 +26,31 @@ class ConceptAnalyzer:
             print("❌ DEBUG: OpenAI API not available")
         else:
             try:
-                # Explicit parameters only - no proxy inference
-                self.client = OpenAI(
-                    api_key=api_key,
-                    timeout=60.0,  # Add timeout
-                    max_retries=3   # Add retries
-                )
+                # Create client with minimal parameters to avoid proxy issues
+                self.client = OpenAI(api_key=api_key)
                 self.api_available = True
                 print("✅ DEBUG: OpenAI client initialized successfully")
+            except TypeError as e:
+                if 'proxies' in str(e):
+                    print(f"🔧 DEBUG: Proxy parameter issue detected: {e}")
+                    print("🔧 DEBUG: Trying alternative initialization...")
+                    try:
+                        # Alternative initialization without any optional parameters
+                        import openai
+                        openai.api_key = api_key
+                        self.client = openai
+                        self.api_available = True
+                        print("✅ DEBUG: OpenAI legacy client initialized")
+                    except Exception as e2:
+                        print(f"❌ DEBUG: All OpenAI initialization methods failed: {e2}")
+                        self.client = None
+                        self.api_available = False
+                else:
+                    print(f"❌ DEBUG: OpenAI client initialization failed: {e}")
+                    self.client = None
+                    self.api_available = False
             except Exception as e:
-                print(f"❌ DEBUG: OpenAI client initialization failed: {e}")
+                print(f"❌ DEBUG: Unexpected OpenAI error: {e}")
                 self.client = None
                 self.api_available = False
         
