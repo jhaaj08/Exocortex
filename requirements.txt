@@ -1,5 +1,5 @@
 # Core Framework
-Django==4.2.7
+Django>=5.1,<5.3
 
 # Production & Deployment
 gunicorn==21.2.0
@@ -24,7 +24,7 @@ pdfplumber==0.10.3
 Markdown==3.5.1
 
 # Security & Utils
-Pillow==10.1.0
+Pillow>=11.0.0,<12
 cryptography==41.0.7
 requests==2.31.0
 
