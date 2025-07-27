@@ -42,4 +42,10 @@ urlpatterns = [
     
     # Deduplication stats
     path('deduplication-stats/', views.deduplication_stats, name='deduplication_stats'),
+    
+    # Focus Mode URLs
+    path('focus/<uuid:focus_block_id>/start/', views.start_focus_mode, name='start_focus_mode'),
+    path('focus/session/<uuid:session_id>/', views.focus_mode, name='focus_mode'),
+    path('focus/<uuid:session_id>/update/', views.update_focus_progress, name='update_focus_progress'),
+    path('focus/<uuid:session_id>/complete/', views.complete_focus_session, name='complete_focus_session'),
 ] 
