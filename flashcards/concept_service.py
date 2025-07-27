@@ -15,7 +15,7 @@ class ConceptAnalyzer:
     """Service class to analyze text chunks and create concept units using LLM"""
     
     def __init__(self):
-        # Initialize OpenAI client with defensive error handling
+        # Initialize OpenAI client with Render-specific proxy handling
         api_key = os.getenv('OPENAI_API_KEY')
         
         print(f"🔍 DEBUG: API key exists: {bool(api_key)}")
@@ -26,31 +26,26 @@ class ConceptAnalyzer:
             print("❌ DEBUG: OpenAI API not available")
         else:
             try:
-                # Create client with minimal parameters to avoid proxy issues
+                # Clear any proxy environment variables that might interfere
+                import os
+                proxy_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy']
+                original_proxies = {}
+                for var in proxy_vars:
+                    if var in os.environ:
+                        original_proxies[var] = os.environ[var]
+                        del os.environ[var]
+                
+                # Initialize OpenAI client without proxy interference
                 self.client = OpenAI(api_key=api_key)
                 self.api_available = True
                 print("✅ DEBUG: OpenAI client initialized successfully")
-            except TypeError as e:
-                if 'proxies' in str(e):
-                    print(f"🔧 DEBUG: Proxy parameter issue detected: {e}")
-                    print("🔧 DEBUG: Trying alternative initialization...")
-                    try:
-                        # Alternative initialization without any optional parameters
-                        import openai
-                        openai.api_key = api_key
-                        self.client = openai
-                        self.api_available = True
-                        print("✅ DEBUG: OpenAI legacy client initialized")
-                    except Exception as e2:
-                        print(f"❌ DEBUG: All OpenAI initialization methods failed: {e2}")
-                        self.client = None
-                        self.api_available = False
-                else:
-                    print(f"❌ DEBUG: OpenAI client initialization failed: {e}")
-                    self.client = None
-                    self.api_available = False
+                
+                # Restore proxy variables for other services
+                for var, value in original_proxies.items():
+                    os.environ[var] = value
+                    
             except Exception as e:
-                print(f"❌ DEBUG: Unexpected OpenAI error: {e}")
+                print(f"❌ DEBUG: OpenAI client initialization failed: {e}")
                 self.client = None
                 self.api_available = False
         
