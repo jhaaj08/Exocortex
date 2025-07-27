@@ -1019,3 +1019,18 @@ def bulk_delete_pdfs(request):
             messages.warning(request, 'No PDFs selected for deletion')
     
     return redirect('flashcards:bulk_manage')
+
+def focus_schedule(request):
+    """Focus Schedule dashboard showing new blocks, completed blocks, and repetition schedule"""
+    
+    # Get all focus blocks
+    all_focus_blocks = FocusBlock.objects.select_related(
+        'pdf_document', 'main_concept_unit'
+    ).order_by('pdf_document__created_at', 'block_order')
+    
+    context = {
+        'all_focus_blocks': all_focus_blocks,
+        'total_blocks': all_focus_blocks.count(),
+    }
+    
+    return render(request, 'flashcards/focus_schedule.html', context)

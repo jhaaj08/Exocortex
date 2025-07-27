@@ -1,0 +1,532 @@
+{% extends 'flashcards/base.html' %}
+
+{% block title %}Focus Schedule - Exocortex{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="text-center">
+                <h1 class="display-5 mb-3">
+                    <i class="fas fa-calendar-alt me-3"></i>Focus Schedule
+                </h1>
+                <p class="lead text-muted">Your personalized spaced repetition dashboard</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Stats -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card text-center bg-primary text-white h-100">
+                <div class="card-body">
+                    <i class="fas fa-layer-group fa-2x mb-2"></i>
+                    <h4 id="total-blocks">{{ total_blocks }}</h4>
+                    <p class="mb-0">Total Blocks</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center bg-warning text-dark h-100">
+                <div class="card-body">
+                    <i class="fas fa-hourglass-start fa-2x mb-2"></i>
+                    <h4 id="new-blocks">0</h4>
+                    <p class="mb-0">New Blocks</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center bg-danger text-white h-100">
+                <div class="card-body">
+                    <i class="fas fa-bell fa-2x mb-2"></i>
+                    <h4 id="due-today">0</h4>
+                    <p class="mb-0">Due Today</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center bg-success text-white h-100">
+                <div class="card-body">
+                    <i class="fas fa-check-circle fa-2x mb-2"></i>
+                    <h4 id="completed-blocks">0</h4>
+                    <p class="mb-0">Completed</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content Tabs -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card shadow">
+                <div class="card-header">
+                    <ul class="nav nav-tabs card-header-tabs" id="scheduleTab" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="due-tab" data-bs-toggle="tab" data-bs-target="#due-pane" type="button" role="tab">
+                                <i class="fas fa-bell me-1"></i>Due for Review
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="new-tab" data-bs-toggle="tab" data-bs-target="#new-pane" type="button" role="tab">
+                                <i class="fas fa-plus me-1"></i>New Blocks
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="completed-tab" data-bs-toggle="tab" data-bs-target="#completed-pane" type="button" role="tab">
+                                <i class="fas fa-history me-1"></i>Completed
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="calendar-tab" data-bs-toggle="tab" data-bs-target="#calendar-pane" type="button" role="tab">
+                                <i class="fas fa-calendar me-1"></i>Schedule
+                            </button>
+                        </li>
+                    </ul>
+                </div>
+                
+                <div class="card-body">
+                    <div class="tab-content" id="scheduleTabContent">
+                        
+                        <!-- Due for Review Tab -->
+                        <div class="tab-pane fade show active" id="due-pane" role="tabpanel">
+                            <div id="due-blocks-container">
+                                <div class="text-center text-muted py-4">
+                                    <i class="fas fa-clock fa-3x mb-3"></i>
+                                    <p>Loading due blocks...</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- New Blocks Tab -->
+                        <div class="tab-pane fade" id="new-pane" role="tabpanel">
+                            <div id="new-blocks-container">
+                                {% if all_focus_blocks %}
+                                <div class="row" id="new-blocks-list">
+                                    <!-- Will be populated by JavaScript -->
+                                </div>
+                                {% else %}
+                                <div class="text-center text-muted py-4">
+                                    <i class="fas fa-plus-circle fa-3x mb-3"></i>
+                                    <h5>No Focus Blocks Yet</h5>
+                                    <p>Upload PDFs to generate your first focus blocks</p>
+                                    <a href="{% url 'flashcards:home' %}" class="btn btn-primary">
+                                        <i class="fas fa-upload me-2"></i>Upload PDFs
+                                    </a>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <!-- Completed Tab -->
+                        <div class="tab-pane fade" id="completed-pane" role="tabpanel">
+                            <div id="completed-blocks-container">
+                                <div class="text-center text-muted py-4">
+                                    <i class="fas fa-list fa-3x mb-3"></i>
+                                    <p>Loading completed blocks...</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Calendar Schedule Tab -->
+                        <div class="tab-pane fade" id="calendar-pane" role="tabpanel">
+                            <div id="calendar-container">
+                                <div class="text-center text-muted py-4">
+                                    <i class="fas fa-calendar-alt fa-3x mb-3"></i>
+                                    <p>Loading review schedule...</p>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+// Focus Schedule Dashboard JavaScript
+document.addEventListener('DOMContentLoaded', function() {
+    loadFocusScheduleData();
+});
+
+// All focus blocks data from Django
+const allFocusBlocks = [
+    {% for block in all_focus_blocks %}
+    {
+        id: '{{ block.id }}',
+        title: '{{ block.title|escapejs }}',
+        pdfName: '{{ block.pdf_document.name|escapejs }}',
+        order: {{ block.block_order }},
+        estimatedDuration: '{{ block.get_estimated_duration_display }}',
+        goal: '{{ block.get_core_goal|escapejs }}'
+    },
+    {% endfor %}
+];
+
+function loadFocusScheduleData() {
+    // Load data from localStorage
+    const completionData = JSON.parse(localStorage.getItem('focusBlockCompletions') || '[]');
+    const repetitionData = JSON.parse(localStorage.getItem('repetitionData') || '{}');
+    
+    // Categorize blocks
+    const completedBlockIds = new Set(completionData.map(c => c.blockIndex));
+    const newBlocks = allFocusBlocks.filter((_, index) => !completedBlockIds.has(index));
+    const completedBlocks = getCompletedBlocksWithData(completionData, repetitionData);
+    const dueBlocks = getDueBlocks(repetitionData);
+    
+    // Update stats
+    updateStats(newBlocks.length, dueBlocks.length, completedBlocks.length);
+    
+    // Populate tabs
+    populateNewBlocks(newBlocks);
+    populateDueBlocks(dueBlocks);
+    populateCompletedBlocks(completedBlocks);
+    populateCalendar(repetitionData);
+}
+
+function updateStats(newCount, dueCount, completedCount) {
+    document.getElementById('new-blocks').textContent = newCount;
+    document.getElementById('due-today').textContent = dueCount;
+    document.getElementById('completed-blocks').textContent = completedCount;
+}
+
+function populateNewBlocks(newBlocks) {
+    const container = document.getElementById('new-blocks-list');
+    
+    if (newBlocks.length === 0) {
+        container.innerHTML = `
+            <div class="col-12 text-center text-muted py-4">
+                <i class="fas fa-check-circle fa-3x mb-3"></i>
+                <h5>All Blocks Completed!</h5>
+                <p>Great job! All focus blocks have been studied.</p>
+            </div>
+        `;
+        return;
+    }
+    
+    container.innerHTML = newBlocks.map(block => `
+        <div class="col-md-6 col-lg-4 mb-3">
+            <div class="card h-100 border-warning">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <span class="badge bg-warning">New</span>
+                        <small class="text-muted">${block.estimatedDuration}</small>
+                    </div>
+                    <h6 class="card-title">${block.title}</h6>
+                    <p class="card-text small text-muted mb-2">
+                        <i class="fas fa-file-pdf me-1"></i>${block.pdfName}
+                    </p>
+                    ${block.goal ? `<p class="card-text small">${block.goal}</p>` : ''}
+                </div>
+                <div class="card-footer">
+                    <a href="{% url 'flashcards:all_focus_blocks' %}" class="btn btn-primary btn-sm w-100">
+                        <i class="fas fa-play me-1"></i>Start Learning
+                    </a>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+function populateDueBlocks(dueBlocks) {
+    const container = document.getElementById('due-blocks-container');
+    
+    if (dueBlocks.length === 0) {
+        container.innerHTML = `
+            <div class="text-center text-muted py-4">
+                <i class="fas fa-check-circle fa-3x mb-3 text-success"></i>
+                <h5>All Caught Up!</h5>
+                <p>No blocks are due for review today. Great job staying on track!</p>
+            </div>
+        `;
+        return;
+    }
+    
+    container.innerHTML = `
+        <div class="row">
+            ${dueBlocks.map(block => `
+                <div class="col-md-6 col-lg-4 mb-3">
+                    <div class="card h-100 ${block.daysOverdue > 0 ? 'border-danger' : 'border-warning'}">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <span class="badge ${block.daysOverdue > 0 ? 'bg-danger' : 'bg-warning'}">
+                                    ${block.daysOverdue > 0 ? `${block.daysOverdue} days overdue` : 'Due today'}
+                                </span>
+                                <small class="text-muted">Review #${block.reviewCount}</small>
+                            </div>
+                            <h6 class="card-title">${allFocusBlocks[block.blockIndex]?.title || 'Block ' + (block.blockIndex + 1)}</h6>
+                            <p class="card-text small">
+                                <i class="fas fa-star me-1"></i>Last score: ${block.lastProficiency}/5<br>
+                                <i class="fas fa-clock me-1"></i>Avg time: ${formatTime(block.averageTime || 0)}
+                            </p>
+                        </div>
+                        <div class="card-footer">
+                            <div class="btn-group w-100" role="group">
+                                <a href="{% url 'flashcards:all_focus_blocks' %}" class="btn btn-primary btn-sm">
+                                    <i class="fas fa-redo me-1"></i>Review
+                                </a>
+                                <button class="btn btn-outline-secondary btn-sm" onclick="adjustReview(${block.blockIndex}, 1)" title="Postpone 1 day">
+                                    <i class="fas fa-calendar-plus"></i>
+                                </button>
+                                <button class="btn btn-outline-secondary btn-sm" onclick="adjustReview(${block.blockIndex}, -1)" title="Review sooner">
+                                    <i class="fas fa-calendar-minus"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
+function populateCompletedBlocks(completedBlocks) {
+    const container = document.getElementById('completed-blocks-container');
+    
+    if (completedBlocks.length === 0) {
+        container.innerHTML = `
+            <div class="text-center text-muted py-4">
+                <i class="fas fa-play fa-3x mb-3"></i>
+                <h5>Start Learning</h5>
+                <p>Complete your first focus block to see progress here!</p>
+            </div>
+        `;
+        return;
+    }
+    
+    const recentCompletions = completedBlocks.slice(-10).reverse();
+    
+    container.innerHTML = `
+        <div class="row">
+            ${recentCompletions.map(completion => `
+                <div class="col-md-6 col-lg-4 mb-3">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <span class="badge bg-success">Completed</span>
+                                <small class="text-muted">${new Date(completion.timestamp).toLocaleDateString()}</small>
+                            </div>
+                            <h6 class="card-title">${completion.blockTitle}</h6>
+                            <p class="card-text small">
+                                <i class="fas fa-star me-1"></i>Score: ${completion.proficiencyRating}/5<br>
+                                <i class="fas fa-clock me-1"></i>Time: ${formatTime(completion.completionTime)}<br>
+                                <i class="fas fa-calendar me-1"></i>Next: ${new Date(completion.nextReviewDate).toLocaleDateString()}
+                            </p>
+                        </div>
+                        <div class="card-footer">
+                            <button class="btn btn-outline-primary btn-sm w-100" onclick="showCompletionDetails(${completion.blockIndex})">
+                                <i class="fas fa-info me-1"></i>View Details
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
+function populateCalendar(repetitionData) {
+    const container = document.getElementById('calendar-container');
+    
+    // Get upcoming reviews for next 30 days
+    const upcomingReviews = getUpcomingReviews(repetitionData, 30);
+    
+    if (upcomingReviews.length === 0) {
+        container.innerHTML = `
+            <div class="text-center text-muted py-4">
+                <i class="fas fa-calendar-check fa-3x mb-3"></i>
+                <h5>No Upcoming Reviews</h5>
+                <p>Complete some focus blocks to build your review schedule!</p>
+            </div>
+        `;
+        return;
+    }
+    
+    // Group by date
+    const reviewsByDate = groupReviewsByDate(upcomingReviews);
+    
+    container.innerHTML = `
+        <div class="timeline">
+            ${Object.keys(reviewsByDate).map(date => `
+                <div class="timeline-item mb-4">
+                    <div class="timeline-date">
+                        <h6 class="mb-1">${new Date(date).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</h6>
+                        <small class="text-muted">${reviewsByDate[date].length} review(s)</small>
+                    </div>
+                    <div class="timeline-content">
+                        ${reviewsByDate[date].map(review => `
+                            <div class="card mb-2">
+                                <div class="card-body py-2">
+                                    <h6 class="card-title mb-1">${allFocusBlocks[review.blockIndex]?.title || 'Block ' + (review.blockIndex + 1)}</h6>
+                                    <small class="text-muted">
+                                        Review #${review.reviewCount} | Last score: ${review.lastProficiency}/5
+                                    </small>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
+// Helper functions
+function getCompletedBlocksWithData(completionData, repetitionData) {
+    return completionData.map(completion => ({
+        ...completion,
+        repetitionInfo: repetitionData[completion.blockIndex] || {}
+    }));
+}
+
+function getDueBlocks(repetitionData) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    return Object.keys(repetitionData)
+        .map(blockIndex => ({
+            blockIndex: parseInt(blockIndex),
+            ...repetitionData[blockIndex]
+        }))
+        .filter(block => {
+            if (!block.nextReview) return false;
+            const reviewDate = new Date(block.nextReview);
+            reviewDate.setHours(0, 0, 0, 0);
+            return reviewDate <= today;
+        })
+        .map(block => ({
+            ...block,
+            daysOverdue: Math.floor((today - new Date(block.nextReview)) / (1000 * 60 * 60 * 24))
+        }))
+        .sort((a, b) => b.daysOverdue - a.daysOverdue);
+}
+
+function getUpcomingReviews(repetitionData, days) {
+    const today = new Date();
+    const endDate = new Date(today);
+    endDate.setDate(endDate.getDate() + days);
+    
+    return Object.keys(repetitionData)
+        .map(blockIndex => ({
+            blockIndex: parseInt(blockIndex),
+            ...repetitionData[blockIndex]
+        }))
+        .filter(block => {
+            if (!block.nextReview) return false;
+            const reviewDate = new Date(block.nextReview);
+            return reviewDate > today && reviewDate <= endDate;
+        })
+        .sort((a, b) => new Date(a.nextReview) - new Date(b.nextReview));
+}
+
+function groupReviewsByDate(reviews) {
+    return reviews.reduce((groups, review) => {
+        const date = new Date(review.nextReview).toDateString();
+        if (!groups[date]) groups[date] = [];
+        groups[date].push(review);
+        return groups;
+    }, {});
+}
+
+function formatTime(totalSeconds) {
+    if (!totalSeconds) return '0:00';
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+function adjustReview(blockIndex, daysDelta) {
+    const repetitionData = JSON.parse(localStorage.getItem('repetitionData') || '{}');
+    const blockData = repetitionData[blockIndex];
+    
+    if (blockData && blockData.nextReview) {
+        const currentDate = new Date(blockData.nextReview);
+        currentDate.setDate(currentDate.getDate() + daysDelta);
+        blockData.nextReview = currentDate.toISOString();
+        
+        repetitionData[blockIndex] = blockData;
+        localStorage.setItem('repetitionData', JSON.stringify(repetitionData));
+        
+        // Refresh the display
+        loadFocusScheduleData();
+        
+        const action = daysDelta > 0 ? 'postponed' : 'moved up';
+        showToast(`📅 Review ${action} by ${Math.abs(daysDelta)} day(s)`);
+    }
+}
+
+function showCompletionDetails(blockIndex) {
+    const completionData = JSON.parse(localStorage.getItem('focusBlockCompletions') || '[]');
+    const blockCompletions = completionData.filter(c => c.blockIndex === blockIndex);
+    
+    if (blockCompletions.length > 0) {
+        const latest = blockCompletions[blockCompletions.length - 1];
+        const details = `
+📊 Block Completion Details
+
+Block: ${latest.blockTitle}
+Completion Time: ${formatTime(latest.completionTime)}
+Proficiency Score: ${latest.proficiencyRating}/5
+Date: ${new Date(latest.timestamp).toLocaleString()}
+Next Review: ${new Date(latest.nextReviewDate).toLocaleDateString()}
+
+Total Completions: ${blockCompletions.length}
+        `.trim();
+        
+        alert(details);
+    }
+}
+
+function showToast(message, duration = 3000) {
+    const toast = document.createElement('div');
+    toast.className = 'position-fixed top-0 start-50 translate-middle-x alert alert-success alert-dismissible mt-3';
+    toast.style.zIndex = '9999';
+    toast.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" onclick="this.parentElement.remove()"></button>
+    `;
+    document.body.appendChild(toast);
+    
+    setTimeout(() => {
+        if (toast.parentElement) {
+            toast.remove();
+        }
+    }, duration);
+}
+</script>
+
+<style>
+.timeline-item {
+    border-left: 3px solid #dee2e6;
+    padding-left: 20px;
+    position: relative;
+}
+
+.timeline-item::before {
+    content: '';
+    position: absolute;
+    left: -6px;
+    top: 0;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background-color: #007bff;
+}
+
+.timeline-date {
+    margin-bottom: 10px;
+}
+
+.card.border-warning {
+    border-width: 2px !important;
+}
+
+.card.border-danger {
+    border-width: 2px !important;
+}
+</style>
+{% endblock %}

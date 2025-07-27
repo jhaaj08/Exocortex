@@ -46,7 +46,7 @@
                                            multiple 
                                            accept=".pdf"
                                            class="d-none">
-                                    <button type="button" class="btn btn-primary" onclick="document.getElementById('pdf_files').click()">
+                                    <button type="button" class="btn btn-primary" id="choose-files-btn">
                                         <i class="fas fa-folder-open me-1"></i>Choose Files
                                     </button>
                                 </div>
@@ -144,6 +144,7 @@
 document.addEventListener('DOMContentLoaded', function() {
     const dropzone = document.getElementById('dropzone');
     const fileInput = document.getElementById('pdf_files');
+    const chooseBtn = document.getElementById('choose-files-btn');
     const uploadBtn = document.getElementById('uploadBtn');
     const uploadBtnText = document.getElementById('uploadBtnText');
     const selectedFiles = document.getElementById('selected-files');
@@ -151,11 +152,33 @@ document.addEventListener('DOMContentLoaded', function() {
     const uploadProgress = document.getElementById('upload-progress');
     const form = document.getElementById('bulkUploadForm');
 
-    // Drag and drop functionality
-    dropzone.addEventListener('click', function() {
+    console.log('✅ Bulk upload initialized');
+
+    // SIMPLE: Choose files button click
+    chooseBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log('📁 Choose files button clicked');
         fileInput.click();
     });
 
+    // SIMPLE: Dropzone click (but not if clicking the button)
+    dropzone.addEventListener('click', function(e) {
+        // Don't trigger if clicking the choose files button
+        if (e.target === chooseBtn || chooseBtn.contains(e.target)) {
+            return;
+        }
+        console.log('📦 Dropzone clicked');
+        fileInput.click();
+    });
+
+    // SIMPLE: File input change (single event listener)
+    fileInput.addEventListener('change', function(e) {
+        console.log('📄 Files selected:', e.target.files.length);
+        updateFileDisplay();
+    });
+
+    // Drag and drop
     dropzone.addEventListener('dragover', function(e) {
         e.preventDefault();
         dropzone.classList.add('border-success');
@@ -171,38 +194,57 @@ document.addEventListener('DOMContentLoaded', function() {
         dropzone.classList.remove('border-success');
         
         const files = Array.from(e.dataTransfer.files).filter(file => 
-            file.type === 'application/pdf'
+            file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
         );
         
+        console.log('🗂️ Files dropped:', files.length);
+        
         if (files.length > 0) {
-            fileInput.files = createFileList(files);
+            // Set files directly
+            const dt = new DataTransfer();
+            files.forEach(file => dt.items.add(file));
+            fileInput.files = dt.files;
             updateFileDisplay();
+        } else {
+            alert('Please drop only PDF files.');
         }
     });
 
-    // File input change
-    fileInput.addEventListener('change', updateFileDisplay);
-
-    function createFileList(files) {
-        const dt = new DataTransfer();
-        files.forEach(file => dt.items.add(file));
-        return dt.files;
-    }
-
+    // SIMPLE: Update file display
     function updateFileDisplay() {
-        const files = Array.from(fileInput.files);
+        console.log('🔄 Updating display...');
+        
+        const files = fileInput.files ? Array.from(fileInput.files) : [];
+        console.log('📊 Total files:', files.length);
         
         if (files.length > 0) {
+            // Show selected files section
             selectedFiles.style.display = 'block';
             uploadBtn.disabled = false;
             uploadBtnText.textContent = `Upload ${files.length} PDF${files.length > 1 ? 's' : ''}`;
             
-            fileList.innerHTML = files.map(file => `
-                <div class="d-flex justify-content-between align-items-center py-1">
-                    <span><i class="fas fa-file-pdf text-danger me-1"></i>${file.name}</span>
-                    <small class="text-muted">${(file.size / 1024 / 1024).toFixed(1)} MB</small>
+            // Display file list
+            fileList.innerHTML = files.map((file, index) => `
+                <div class="d-flex justify-content-between align-items-center py-2 ${index > 0 ? 'border-top' : ''}">
+                    <span>
+                        <i class="fas fa-file-pdf text-danger me-2"></i>
+                        <strong>${file.name}</strong>
+                    </span>
+                    <span class="text-muted">${(file.size / 1024 / 1024).toFixed(1)} MB</span>
                 </div>
             `).join('');
+            
+            // Add total
+            const totalSize = files.reduce((sum, file) => sum + file.size, 0);
+            fileList.innerHTML += `
+                <div class="text-center mt-2 pt-2 border-top">
+                    <small class="text-primary">
+                        <i class="fas fa-info-circle me-1"></i>
+                        <strong>Total: ${files.length} files (${(totalSize / 1024 / 1024).toFixed(1)} MB)</strong>
+                    </small>
+                </div>
+            `;
+            
         } else {
             selectedFiles.style.display = 'none';
             uploadBtn.disabled = true;
@@ -213,28 +255,59 @@ document.addEventListener('DOMContentLoaded', function() {
     // Form submission
     form.addEventListener('submit', function(e) {
         const files = fileInput.files;
-        if (files.length === 0) {
+        
+        if (!files || files.length === 0) {
             e.preventDefault();
             alert('Please select at least one PDF file.');
-            return;
+            return false;
         }
+
+        console.log('🚀 Submitting form with', files.length, 'files');
 
         // Show progress
         uploadBtn.disabled = true;
         uploadBtnText.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Uploading...';
         uploadProgress.style.display = 'block';
         
-        // Animate progress bar
+        // Progress animation
         let progress = 0;
         const interval = setInterval(() => {
-            progress += Math.random() * 10;
+            progress += Math.random() * 10 + 5;
             if (progress > 90) progress = 90;
             document.querySelector('.progress-bar').style.width = progress + '%';
-        }, 300);
+        }, 500);
 
-        // Clear interval when form actually submits
         setTimeout(() => clearInterval(interval), 10000);
     });
+
+    // DEBUG: Test button
+    const debugBtn = document.createElement('button');
+    debugBtn.type = 'button';
+    debugBtn.className = 'btn btn-warning btn-sm ms-2';
+    debugBtn.innerHTML = '🔧 Debug';
+    debugBtn.onclick = function() {
+        console.log('🔍 DEBUG INFO:');
+        console.log('File input element:', fileInput);
+        console.log('Current files:', fileInput.files ? fileInput.files.length : 'null');
+        console.log('Choose button:', chooseBtn);
+        
+        // Force file selection
+        console.log('🔧 Forcing file selection...');
+        fileInput.click();
+        
+        // Check after delay
+        setTimeout(() => {
+            console.log('🔍 After delay - files:', fileInput.files ? fileInput.files.length : 'null');
+            if (fileInput.files && fileInput.files.length > 0) {
+                console.log('✅ SUCCESS: Files detected!');
+                updateFileDisplay();
+            } else {
+                console.log('❌ PROBLEM: No files detected');
+            }
+        }, 1000);
+    };
+    
+    chooseBtn.parentNode.appendChild(debugBtn);
 });
 </script>
 

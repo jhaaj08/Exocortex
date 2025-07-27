@@ -42,4 +42,5 @@ urlpatterns = [
     
     # Deduplication stats
     path('deduplication-stats/', views.deduplication_stats, name='deduplication_stats'),
+    path('focus-schedule/', views.focus_schedule, name='focus_schedule'),
 ] 

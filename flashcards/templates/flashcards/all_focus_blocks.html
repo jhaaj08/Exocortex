@@ -81,6 +81,29 @@
                         <h5 class="mb-0">
                             <i class="fas fa-play-circle me-2"></i>Interactive Study Session
                         </h5>
+                        
+                        <!-- ADD GLOBAL TIMER SECTION -->
+                        <div class="text-center">
+                            <div id="global-timer" style="font-family: monospace; font-size: 1.3rem; font-weight: bold;">
+                                🕐 00:00:00
+                            </div>
+                            <div class="mt-1">
+                                <button class="btn btn-success btn-sm" id="global-start-btn" onclick="startGlobalTimer()">
+                                    <i class="fas fa-play"></i> Start Session
+                                </button>
+                                <button class="btn btn-warning btn-sm" id="global-pause-btn" onclick="pauseGlobalTimer()" style="display: none;">
+                                    <i class="fas fa-pause"></i> Pause
+                                </button>
+                                <button class="btn btn-danger btn-sm" id="global-stop-btn" onclick="stopGlobalTimer()" style="display: none;">
+                                    <i class="fas fa-stop"></i> End Session
+                                </button>
+                                <!-- ADD THIS VIEW DATA BUTTON -->
+                                <button class="btn btn-info btn-sm" onclick="viewCompletions()" title="View Progress">
+                                    <i class="fas fa-chart-line"></i>
+                                </button>
+                            </div>
+                        </div>
+                        
                         <div class="d-flex align-items-center">
                             <span class="badge bg-light text-dark me-2" id="blockIndicator">Block 1 / {{ total_blocks }}</span>
                             <span class="badge bg-warning" id="currentDuration">6-7 min</span>
@@ -119,8 +142,19 @@
                                             <span class="badge bg-primary me-1">{{ block_data.total_segments }} segments</span>
                                             <span class="badge bg-warning">{{ block_data.total_qa }} Q&A</span>
                                         </div>
-                                        <div>
+                                        <div class="mb-2">
                                             <span class="badge bg-info">{{ block_data.block.get_estimated_duration_display }}</span>
+                                        </div>
+                                        
+                                        <!-- REPLACE the timer section you added with this: -->
+                                        <div class="mb-2">
+                                            <div class="text-center">
+                                                <small class="text-muted">Block Timer</small>
+                                                <div id="timer-{{ forloop.counter0 }}" style="font-family: monospace; font-size: 1.0rem; color: #28a745; font-weight: bold;">
+                                                    ⏱️ 00:00:00
+                                                </div>
+                                                <small class="text-muted">Auto</small>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -276,6 +310,52 @@
         </div>
     </div>
     
+    <!-- ADD THIS COMPLETION MODAL before the closing container div -->
+
+<!-- Focus Block Completion Modal -->
+<div class="modal fade" id="completionModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title">
+                    <i class="fas fa-check-circle me-2"></i>Focus Block Complete!
+                </h5>
+            </div>
+            <div class="modal-body text-center">
+                <div class="mb-4">
+                    <h6>Block: <span id="completed-block-title"></span></h6>
+                    <p class="text-muted">Time: <span id="completed-block-time"></span></p>
+                </div>
+                
+                <div class="mb-4">
+                    <label class="form-label h6">How well did you understand this content?</label>
+                    <div class="rating-scale d-flex justify-content-center gap-2 mt-2">
+                        <input type="radio" class="btn-check" name="proficiency" id="prof1" value="1">
+                        <label class="btn btn-outline-danger" for="prof1">1<br><small>Poor</small></label>
+                        
+                        <input type="radio" class="btn-check" name="proficiency" id="prof2" value="2">
+                        <label class="btn btn-outline-warning" for="prof2">2<br><small>Basic</small></label>
+                        
+                        <input type="radio" class="btn-check" name="proficiency" id="prof3" value="3">
+                        <label class="btn btn-outline-info" for="prof3">3<br><small>Good</small></label>
+                        
+                        <input type="radio" class="btn-check" name="proficiency" id="prof4" value="4">
+                        <label class="btn btn-outline-primary" for="prof4">4<br><small>Strong</small></label>
+                        
+                        <input type="radio" class="btn-check" name="proficiency" id="prof5" value="5">
+                        <label class="btn btn-outline-success" for="prof5">5<br><small>Mastered</small></label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary" onclick="saveCompletion()" id="save-completion-btn" disabled>
+                    <i class="fas fa-save me-2"></i>Save & Continue
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+    
     {% endif %}
 </div>
 
@@ -330,6 +410,9 @@ function createStepDots() {
 function showStep(globalStepIndex) {
     if (globalStepIndex < 0 || globalStepIndex >= allSteps.length) return;
     
+    // CHECK FOR BLOCK COMPLETION before switching
+    checkBlockCompletion(globalStepIndex);
+    
     const stepData = allSteps[globalStepIndex];
     
     // Hide all block containers
@@ -341,6 +424,11 @@ function showStep(globalStepIndex) {
     // Show current block container and step
     stepData.blockContainer.style.display = 'block';
     stepData.element.style.display = 'block';
+    
+    // AUTO-START BLOCK TIMER when switching blocks
+    if (stepData.blockIndex !== currentBlockIndex) {
+        startBlockTimer(stepData.blockIndex);
+    }
     
     // Update current indices
     currentBlockIndex = stepData.blockIndex;
@@ -438,6 +526,437 @@ function revealAnswer(elementId) {
     }
 }
 
+// Enhanced Timer System - REPLACE existing timer code with this:
+
+// Global timer variables
+let globalTimer = 0;
+let globalTimerInterval = null;
+let globalTimerRunning = false;
+
+// Block timer variables  
+let timers = {};
+let timerIntervals = {};
+let currentActiveTimer = null;
+
+// Focus Block Completion System
+let completionData = JSON.parse(localStorage.getItem('focusBlockCompletions') || '[]');
+let currentCompletingBlock = null;
+
+// Global Timer Functions
+function startGlobalTimer() {
+    if (!globalTimerRunning) {
+        globalTimerInterval = setInterval(() => {
+            globalTimer++;
+            updateGlobalTimerDisplay();
+        }, 1000);
+        globalTimerRunning = true;
+    }
+    
+    // AUTO-START FIRST BLOCK TIMER when session starts
+    if (currentActiveTimer === null) {
+        startBlockTimer(currentBlockIndex);
+    }
+    
+    // Update buttons
+    document.getElementById('global-start-btn').style.display = 'none';
+    document.getElementById('global-pause-btn').style.display = 'inline-block';
+    document.getElementById('global-stop-btn').style.display = 'inline-block';
+    
+    console.log('Global session timer started');
+}
+
+function pauseGlobalTimer() {
+    if (globalTimerRunning) {
+        clearInterval(globalTimerInterval);
+        globalTimerRunning = false;
+    }
+    
+    // Update buttons
+    document.getElementById('global-start-btn').style.display = 'inline-block';
+    document.getElementById('global-pause-btn').style.display = 'none';
+    
+    console.log('Global session timer paused');
+}
+
+function stopGlobalTimer() {
+    clearInterval(globalTimerInterval);
+    globalTimerRunning = false;
+    
+    // Stop current block timer too
+    if (currentActiveTimer !== null) {
+        stopBlockTimer(currentActiveTimer);
+    }
+    
+    // Update buttons
+    document.getElementById('global-start-btn').style.display = 'inline-block';
+    document.getElementById('global-pause-btn').style.display = 'none';
+    document.getElementById('global-stop-btn').style.display = 'none';
+    
+    // Show completion message
+    const totalTime = formatTime(globalTimer);
+    alert(`📊 Study Session Complete!\n\nTotal Time: ${totalTime}\n\nGreat job! 🎉`);
+    
+    console.log(`Global session completed. Total time: ${totalTime}`);
+}
+
+function updateGlobalTimerDisplay() {
+    const timerElement = document.getElementById('global-timer');
+    if (timerElement) {
+        timerElement.textContent = `🕐 ${formatTime(globalTimer)}`;
+    }
+}
+
+// Block Timer Functions (Auto Start/Stop)
+function startBlockTimer(blockIndex) {
+    // Stop any currently running block timer
+    if (currentActiveTimer !== null) {
+        stopBlockTimer(currentActiveTimer);
+    }
+    
+    // Initialize or resume timer for this block
+    if (!timers[blockIndex]) {
+        timers[blockIndex] = 0;
+    }
+    
+    // Start interval
+    timerIntervals[blockIndex] = setInterval(() => {
+        timers[blockIndex]++;
+        updateBlockTimerDisplay(blockIndex);
+    }, 1000);
+    
+    currentActiveTimer = blockIndex;
+    updateBlockTimerDisplay(blockIndex);
+    
+    console.log(`Block ${blockIndex} timer started`);
+}
+
+function stopBlockTimer(blockIndex) {
+    if (timerIntervals[blockIndex]) {
+        clearInterval(timerIntervals[blockIndex]);
+        delete timerIntervals[blockIndex];
+    }
+    
+    if (currentActiveTimer === blockIndex) {
+        currentActiveTimer = null;
+    }
+    
+    console.log(`Block ${blockIndex} timer stopped. Time: ${formatTime(timers[blockIndex] || 0)}`);
+}
+
+function updateBlockTimerDisplay(blockIndex) {
+    const timerElement = document.getElementById(`timer-${blockIndex}`);
+    if (timerElement) {
+        timerElement.textContent = `⏱️ ${formatTime(timers[blockIndex] || 0)}`;
+    }
+}
+
+// Utility function
+function formatTime(totalSeconds) {
+    const hours = Math.floor(totalSeconds / 60);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+}
+
+// Track block completion
+function checkBlockCompletion(globalStepIndex) {
+    // Check if we're moving from the last step of a block to the first step of next block
+    if (globalStepIndex > 0) {
+        const currentStep = allSteps[globalStepIndex];
+        const previousStep = allSteps[globalStepIndex - 1];
+        
+        // If we're switching to a new block, the previous block is complete
+        if (currentStep.blockIndex !== previousStep.blockIndex) {
+            const completedBlockIndex = previousStep.blockIndex;
+            const completedBlockTime = timers[completedBlockIndex] || 0;
+            
+            // Show completion modal for the completed block
+            showCompletionModal(completedBlockIndex, completedBlockTime);
+        }
+    }
+}
+
+function showCompletionModal(blockIndex, completionTime) {
+    currentCompletingBlock = {
+        blockIndex: blockIndex,
+        completionTime: completionTime,
+        timestamp: new Date().toISOString()
+    };
+    
+    // Get block title
+    const blockContainer = blockContainers[blockIndex];
+    const blockTitle = blockContainer.querySelector('h3').textContent;
+    
+    // Update modal content
+    document.getElementById('completed-block-title').textContent = blockTitle;
+    document.getElementById('completed-block-time').textContent = formatTime(completionTime);
+    
+    // Reset rating
+    document.querySelectorAll('input[name="proficiency"]').forEach(input => {
+        input.checked = false;
+    });
+    document.getElementById('save-completion-btn').disabled = true;
+    
+    // Show modal
+    const modal = new bootstrap.Modal(document.getElementById('completionModal'));
+    modal.show();
+}
+
+// ADD THIS SPACED REPETITION SYSTEM after the completion system:
+
+// Spaced Repetition Configuration
+const SPACED_REPETITION = {
+    baseIntervals: [1, 3, 7, 21, 52, 120, 300], // days
+    expectedTimes: {}, // will store expected times per block
+    
+    // Proficiency multipliers
+    proficiencyMultipliers: {
+        1: 0.5,  // Poor - review much sooner
+        2: 0.7,  // Basic - review sooner  
+        3: 0.9,  // Good - slight adjustment
+        4: 1.2,  // Strong - extend interval
+        5: 1.5   // Mastered - extend significantly
+    },
+    
+    // Time performance multipliers
+    getTimeMultiplier(actualTime, expectedTime) {
+        if (!expectedTime) return 1.0;
+        
+        const ratio = actualTime / expectedTime;
+        if (ratio < 0.7) return 1.2;      // Much faster = extend
+        if (ratio > 1.5) return 0.8;     // Much slower = reduce
+        return 1.0;                      // Normal time
+    },
+    
+    // Calculate next review date
+    calculateNextReview(blockIndex, proficiencyScore, completionTime) {
+        const blockData = this.getBlockData(blockIndex);
+        const currentLevel = blockData.repetitionLevel || 0;
+        
+        // Get base interval
+        let interval = this.baseIntervals[Math.min(currentLevel, this.baseIntervals.length - 1)];
+        
+        // Apply proficiency multiplier
+        const proficiencyMult = this.proficiencyMultipliers[proficiencyScore] || 1.0;
+        interval *= proficiencyMult;
+        
+        // Apply time performance multiplier
+        const expectedTime = this.getExpectedTime(blockIndex);
+        const timeMult = this.getTimeMultiplier(completionTime, expectedTime);
+        interval *= timeMult;
+        
+        // Calculate review date
+        const reviewDate = new Date();
+        reviewDate.setDate(reviewDate.getDate() + Math.round(interval));
+        
+        return {
+            reviewDate: reviewDate,
+            interval: Math.round(interval),
+            nextLevel: this.getNextLevel(currentLevel, proficiencyScore)
+        };
+    },
+    
+    getNextLevel(currentLevel, proficiencyScore) {
+        if (proficiencyScore >= 4) {
+            return Math.min(currentLevel + 1, this.baseIntervals.length - 1);
+        } else if (proficiencyScore <= 2) {
+            return Math.max(currentLevel - 1, 0);
+        }
+        return currentLevel;
+    },
+    
+    getBlockData(blockIndex) {
+        const repetitionData = JSON.parse(localStorage.getItem('repetitionData') || '{}');
+        return repetitionData[blockIndex] || { repetitionLevel: 0, reviewCount: 0 };
+    },
+    
+    saveBlockData(blockIndex, data) {
+        const repetitionData = JSON.parse(localStorage.getItem('repetitionData') || '{}');
+        repetitionData[blockIndex] = data;
+        localStorage.setItem('repetitionData', JSON.stringify(repetitionData));
+    },
+    
+    getExpectedTime(blockIndex) {
+        // Use the block's estimated duration or average from previous completions
+        const blockContainer = blockContainers[blockIndex];
+        const estimatedBadge = blockContainer.querySelector('.badge.bg-info');
+        if (estimatedBadge) {
+            const text = estimatedBadge.textContent;
+            const minutes = parseInt(text.match(/(\d+)m/)?.[1] || '7');
+            return minutes * 60; // Convert to seconds
+        }
+        return 420; // Default 7 minutes
+    }
+};
+
+// Enhanced saveCompletion function
+function saveCompletion() {
+    const selectedRating = document.querySelector('input[name="proficiency"]:checked');
+    
+    if (selectedRating && currentCompletingBlock) {
+        const proficiencyScore = parseInt(selectedRating.value);
+        const blockIndex = currentCompletingBlock.blockIndex;
+        const completionTime = currentCompletingBlock.completionTime;
+        
+        // Calculate spaced repetition schedule
+        const repetitionInfo = SPACED_REPETITION.calculateNextReview(
+            blockIndex, 
+            proficiencyScore, 
+            completionTime
+        );
+        
+        // Update block repetition data
+        const blockData = SPACED_REPETITION.getBlockData(blockIndex);
+        blockData.repetitionLevel = repetitionInfo.nextLevel;
+        blockData.reviewCount = (blockData.reviewCount || 0) + 1;
+        blockData.lastReview = new Date().toISOString();
+        blockData.nextReview = repetitionInfo.reviewDate.toISOString();
+        blockData.lastProficiency = proficiencyScore;
+        blockData.averageTime = blockData.averageTime ? 
+            (blockData.averageTime + completionTime) / 2 : completionTime;
+        
+        SPACED_REPETITION.saveBlockData(blockIndex, blockData);
+        
+        // Save completion with repetition info
+        const completion = {
+            ...currentCompletingBlock,
+            proficiencyRating: proficiencyScore,
+            blockTitle: document.getElementById('completed-block-title').textContent,
+            nextReviewDate: repetitionInfo.reviewDate.toISOString(),
+            reviewInterval: repetitionInfo.interval,
+            repetitionLevel: repetitionInfo.nextLevel
+        };
+        
+        completionData.push(completion);
+        localStorage.setItem('focusBlockCompletions', JSON.stringify(completionData));
+        
+        // Enhanced success message
+        const reviewDateStr = repetitionInfo.reviewDate.toLocaleDateString();
+        showToast(`✅ Block completed! Rating: ${proficiencyScore}/5<br>📅 Next review: ${reviewDateStr} (${repetitionInfo.interval} days)`);
+        
+        console.log('Focus block completed with spaced repetition:', completion);
+        
+        // Close modal
+        const modal = bootstrap.Modal.getInstance(document.getElementById('completionModal'));
+        modal.hide();
+        
+        currentCompletingBlock = null;
+    }
+}
+
+function showToast(message) {
+    // Simple toast notification
+    const toast = document.createElement('div');
+    toast.className = 'position-fixed top-0 start-50 translate-middle-x alert alert-success alert-dismissible mt-3';
+    toast.style.zIndex = '9999';
+    toast.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" onclick="this.parentElement.remove()"></button>
+    `;
+    document.body.appendChild(toast);
+    
+    // Auto-remove after 3 seconds
+    setTimeout(() => {
+        if (toast.parentElement) {
+            toast.remove();
+        }
+    }, 3000);
+}
+
+// Enable save button when rating is selected
+document.addEventListener('change', function(e) {
+    if (e.target.name === 'proficiency') {
+        document.getElementById('save-completion-btn').disabled = false;
+    }
+});
+
+function viewCompletions() {
+    const completions = JSON.parse(localStorage.getItem('focusBlockCompletions') || '[]');
+    const dueBlocks = getBlocksDueForReview();
+    
+    if (completions.length === 0) {
+        alert('No completed focus blocks yet. Complete some blocks to see your progress!');
+        return;
+    }
+    
+    let report = '📊 FOCUS BLOCK PROGRESS & SPACED REPETITION\n\n';
+    
+    // Due for review section
+    if (dueBlocks.length > 0) {
+        report += '🔔 DUE FOR REVIEW TODAY:\n';
+        dueBlocks.forEach((block, index) => {
+            const overdueText = block.daysOverdue > 0 ? ` (${block.daysOverdue} days overdue)` : '';
+            report += `${index + 1}. Block ${block.blockIndex + 1}${overdueText}\n`;
+            report += `   Last: ${block.lastProficiency}/5, Review #${block.reviewCount}\n`;
+        });
+        report += '\n';
+    }
+    
+    // Completion history
+    report += '📈 RECENT COMPLETIONS:\n';
+    completions.slice(-5).forEach((completion, index) => {
+        const timeStr = formatTime(completion.completionTime);
+        const reviewDate = new Date(completion.nextReviewDate).toLocaleDateString();
+        report += `${completions.length - 4 + index}. ${completion.blockTitle}\n`;
+        report += `   ⏱️ ${timeStr} | ⭐ ${completion.proficiencyRating}/5\n`;
+        report += `   📅 Next review: ${reviewDate}\n\n`;
+    });
+    
+    // Summary statistics
+    const avgRating = (completions.reduce((sum, c) => sum + c.proficiencyRating, 0) / completions.length).toFixed(1);
+    const totalTime = completions.reduce((sum, c) => sum + c.completionTime, 0);
+    
+    report += `📊 SUMMARY:\n`;
+    report += `✅ Total Completions: ${completions.length}\n`;
+    report += `⭐ Average Rating: ${avgRating}/5\n`;
+    report += `⏱️ Total Study Time: ${formatTime(totalTime)}\n`;
+    report += `🔔 Due Today: ${dueBlocks.length} blocks`;
+    
+    alert(report);
+}
+
+// Function to get blocks due for review
+function getBlocksDueForReview() {
+    const repetitionData = JSON.parse(localStorage.getItem('repetitionData') || '{}');
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const dueBlocks = [];
+    
+    Object.keys(repetitionData).forEach(blockIndex => {
+        const blockData = repetitionData[blockIndex];
+        if (blockData.nextReview) {
+            const reviewDate = new Date(blockData.nextReview);
+            reviewDate.setHours(0, 0, 0, 0);
+            
+            if (reviewDate <= today) {
+                dueBlocks.push({
+                    blockIndex: parseInt(blockIndex),
+                    ...blockData,
+                    daysOverdue: Math.floor((today - reviewDate) / (1000 * 60 * 60 * 24))
+                });
+            }
+        }
+    });
+    
+    return dueBlocks.sort((a, b) => a.daysOverdue - b.daysOverdue);
+}
+
+// Manual adjustment function for review dates
+function adjustReviewDate(blockIndex, daysDelta) {
+    const blockData = SPACED_REPETITION.getBlockData(blockIndex);
+    if (blockData.nextReview) {
+        const currentDate = new Date(blockData.nextReview);
+        currentDate.setDate(currentDate.getDate() + daysDelta);
+        blockData.nextReview = currentDate.toISOString();
+        SPACED_REPETITION.saveBlockData(blockIndex, blockData);
+        
+        const action = daysDelta > 0 ? 'postponed' : 'brought closer';
+        showToast(`📅 Review ${action} by ${Math.abs(daysDelta)} days`);
+    }
+}
+
 // Initialize when page loads
 document.addEventListener('DOMContentLoaded', function() {
     initializeUnifiedStudy();
@@ -452,6 +971,14 @@ document.addEventListener('DOMContentLoaded', function() {
             previousStep();
         }
     });
+
+    // Check for due reviews
+    setTimeout(() => {
+        const dueBlocks = getBlocksDueForReview();
+        if (dueBlocks.length > 0) {
+            showToast(`🔔 ${dueBlocks.length} focus block(s) due for review today!`, 5000);
+        }
+    }, 2000);
 });
 </script>
 
