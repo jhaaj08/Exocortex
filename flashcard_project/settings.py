@@ -84,14 +84,20 @@ WSGI_APPLICATION = 'flashcard_project.wsgi.application'
 import os
 import dj_database_url
 
-# Database configuration
+# Database configuration with modern psycopg3
 if os.environ.get('DATABASE_URL'):
-    # Production - use PostgreSQL
+    # Production - PostgreSQL on Render
     DATABASES = {
-        'default': dj_database_url.parse(os.environ.get('DATABASE_URL'))
+        'default': dj_database_url.parse(
+            os.environ.get('DATABASE_URL'),
+            conn_max_age=600,
+            conn_health_checks=True,
+        )
     }
+    # Use modern PostgreSQL backend for psycopg3
+    DATABASES['default']['ENGINE'] = 'django.db.backends.postgresql'
 else:
-    # Development - use SQLite
+    # Local development - SQLite
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
