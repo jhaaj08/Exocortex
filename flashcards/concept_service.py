@@ -15,7 +15,7 @@ class ConceptAnalyzer:
     """Service class to analyze text chunks and create concept units using LLM"""
     
     def __init__(self):
-        # Initialize OpenAI client with Render-specific proxy handling
+        # Initialize OpenAI client with Render proxy handling
         api_key = os.getenv('OPENAI_API_KEY')
         
         print(f"🔍 DEBUG: API key exists: {bool(api_key)}")
@@ -26,16 +26,21 @@ class ConceptAnalyzer:
             print("❌ DEBUG: OpenAI API not available")
         else:
             try:
-                # Clear any proxy environment variables that might interfere
+                # RENDER FIX: Remove proxy environment variables that cause issues
                 proxy_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy']
                 original_proxies = {}
+                
                 for var in proxy_vars:
                     if var in os.environ:
                         original_proxies[var] = os.environ[var]
                         del os.environ[var]
                 
-                # Initialize OpenAI client without proxy interference
-                self.client = OpenAI(api_key=api_key)
+                # Initialize OpenAI client with explicit settings
+                self.client = OpenAI(
+                    api_key=api_key,
+                    timeout=120.0,  # Increased timeout for Render
+                    max_retries=3
+                )
                 self.api_available = True
                 print("✅ DEBUG: OpenAI client initialized successfully")
                 

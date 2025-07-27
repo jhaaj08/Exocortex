@@ -13,14 +13,37 @@ class FocusBlockGenerator:
     """Service to generate Compact7 format focus blocks using LLM"""
     
     def __init__(self):
-        # Initialize OpenAI client
+        # Initialize OpenAI client with Render proxy handling
         api_key = os.getenv('OPENAI_API_KEY')
         if not api_key or api_key == 'your_openai_api_key_here':
             self.client = None
             self.api_available = False
         else:
-            self.client = OpenAI(api_key=api_key)
-            self.api_available = True
+            try:
+                # RENDER FIX: Remove proxy environment variables
+                proxy_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy']
+                original_proxies = {}
+                
+                for var in proxy_vars:
+                    if var in os.environ:
+                        original_proxies[var] = os.environ[var]
+                        del os.environ[var]
+                
+                self.client = OpenAI(
+                    api_key=api_key,
+                    timeout=120.0,
+                    max_retries=3
+                )
+                self.api_available = True
+                
+                # Restore proxy variables
+                for var, value in original_proxies.items():
+                    os.environ[var] = value
+                    
+            except Exception as e:
+                print(f"❌ Focus block service OpenAI init failed: {e}")
+                self.client = None
+                self.api_available = False
         
         self.model = "gpt-4o-mini"  # Using the model specified in metadata
         self.target_duration = 420  # 7 minutes in seconds

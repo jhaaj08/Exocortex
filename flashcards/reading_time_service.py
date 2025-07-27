@@ -12,19 +12,34 @@ class ReadingTimeEstimator:
     """Service to estimate reading time and optimize concept units using LLM"""
     
     def __init__(self):
-        # Initialize OpenAI client
+        # Initialize OpenAI client with Render proxy handling
         api_key = os.getenv('OPENAI_API_KEY')
         
-        print(f"⏱️ DEBUG: ReadingTimeEstimator - API key exists: {bool(api_key)}")  # ✅ Debug print
+        print(f"🔍 DEBUG: API key exists: {bool(api_key)}")
         
         if not api_key or api_key == 'your_openai_api_key_here':
             self.client = None
             self.api_available = False
-            print("❌ DEBUG: ReadingTimeEstimator - OpenAI API not available")  # ✅ Debug print
+            print("❌ DEBUG: OpenAI API not available")
         else:
-            self.client = OpenAI(api_key=api_key)
-            self.api_available = True
-            print("✅ DEBUG: ReadingTimeEstimator - OpenAI client initialized")  # ✅ Debug print
+            try:
+                # RENDER FIX: Clear proxy variables
+                proxy_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy']
+                for var in proxy_vars:
+                    if var in os.environ:
+                        del os.environ[var]
+                
+                self.client = OpenAI(
+                    api_key=api_key,
+                    timeout=120.0,
+                    max_retries=3
+                )
+                self.api_available = True
+                
+            except Exception as e:
+                print(f"❌ Reading time service OpenAI init failed: {e}")
+                self.client = None
+                self.api_available = False
         
         self.model = "gpt-3.5-turbo"
         self.target_time = 10.0  # Target 10 minutes per concept unit
