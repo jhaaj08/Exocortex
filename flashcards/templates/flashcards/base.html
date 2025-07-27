@@ -181,18 +181,42 @@
             });
         }
 
-        // PWA Install Prompt
+        // PWA Install Prompt - Updated for iOS support
         let deferredPrompt;
         const installButton = document.getElementById('pwa-install-banner');
 
+        // Check if user is on iOS
+        function isIOS() {
+            return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+        }
+
+        // Check if PWA is already installed on iOS
+        function isStandalone() {
+            return window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+        }
+
+        // Android/Desktop install prompt
         window.addEventListener('beforeinstallprompt', (e) => {
             e.preventDefault();
             deferredPrompt = e;
             installButton.style.display = 'block';
         });
 
+        // iOS install prompt
+        function showIOSInstallPrompt() {
+            if (isIOS() && !isStandalone()) {
+                // Show iOS-specific install banner
+                installButton.innerHTML = '<i class="fas fa-share me-2"></i>Tap Share → Add to Home Screen';
+                installButton.style.display = 'block';
+                installButton.onclick = function() {
+                    alert('To install this app on your iPhone:\n\n1. Tap the Share button (⬆️) at the bottom of Safari\n2. Scroll down and tap "Add to Home Screen"\n3. Tap "Add" to install');
+                };
+            }
+        }
+
         function installPWA() {
             if (deferredPrompt) {
+                // Android/Desktop
                 deferredPrompt.prompt();
                 deferredPrompt.userChoice.then((choiceResult) => {
                     if (choiceResult.outcome === 'accepted') {
@@ -201,6 +225,9 @@
                     }
                     deferredPrompt = null;
                 });
+            } else if (isIOS()) {
+                // iOS fallback
+                alert('To install this app on your iPhone:\n\n1. Tap the Share button (⬆️) at the bottom of Safari\n2. Scroll down and tap "Add to Home Screen"\n3. Tap "Add" to install');
             }
         }
 
@@ -208,6 +235,11 @@
         window.addEventListener('appinstalled', () => {
             installButton.style.display = 'none';
             console.log('PWA was installed');
+        });
+
+        // Check for iOS on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            showIOSInstallPrompt();
         });
 
         // Online/Offline Detection

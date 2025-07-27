@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Create PWA Icons for Exocortex</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .icon-preview { margin: 20px 0; }
+        canvas { border: 1px solid #ccc; margin: 10px; }
+        button { padding: 10px 20px; background: #0d6efd; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        .download-link { display: inline-block; margin: 5px; padding: 8px; background: #28a745; color: white; text-decoration: none; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <h1>Create PWA Icons for Exocortex</h1>
+    <p>This will generate the required PNG icons for your PWA. Click the button below:</p>
+    
+    <button onclick="generateIcons()">Generate Icons</button>
+    
+    <div id="icons-container"></div>
+
+    <script>
+        function generateIcons() {
+            const sizes = [
+                { width: 192, height: 192, name: 'icon-192.png' },
+                { width: 512, height: 512, name: 'icon-512.png' },
+                { width: 192, height: 192, name: 'maskable-192.png' },
+                { width: 512, height: 512, name: 'maskable-512.png' }
+            ];
+            
+            const container = document.getElementById('icons-container');
+            container.innerHTML = '<h2>Generated Icons:</h2>';
+            
+            sizes.forEach(size => {
+                const canvas = document.createElement('canvas');
+                canvas.width = size.width;
+                canvas.height = size.height;
+                
+                const ctx = canvas.getContext('2d');
+                
+                // Background circle
+                ctx.fillStyle = '#0d6efd';
+                ctx.beginPath();
+                ctx.arc(size.width/2, size.height/2, size.width/2 - 10, 0, 2 * Math.PI);
+                ctx.fill();
+                
+                // White border
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 8;
+                ctx.stroke();
+                
+                // Letter E
+                ctx.fillStyle = '#ffffff';
+                ctx.font = `bold ${size.width/4}px Arial`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('E', size.width/2, size.height/2);
+                
+                // Add brain symbol for larger icons
+                if (size.width >= 512) {
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = `${size.width/8}px Arial`;
+                    ctx.fillText('🧠', size.width/2, size.height/2 + size.height/4);
+                }
+                
+                // Create download link
+                const link = document.createElement('a');
+                link.download = size.name;
+                link.href = canvas.toDataURL('image/png');
+                link.className = 'download-link';
+                link.textContent = `Download ${size.name}`;
+                
+                const div = document.createElement('div');
+                div.className = 'icon-preview';
+                div.appendChild(canvas);
+                div.appendChild(document.createElement('br'));
+                div.appendChild(link);
+                
+                container.appendChild(div);
+            });
+            
+            const instructions = document.createElement('div');
+            instructions.innerHTML = `
+                <h3>Instructions:</h3>
+                <ol>
+                    <li>Download all 4 icon files above</li>
+                    <li>Save them in your <code>static/icons/</code> folder</li>
+                    <li>Remove the README.md file from the icons folder</li>
+                    <li>Restart your Django server</li>
+                    <li>The PWA install button should now appear!</li>
+                </ol>
+            `;
+            container.appendChild(instructions);
+        }
+    </script>
+</body>
+</html> 
