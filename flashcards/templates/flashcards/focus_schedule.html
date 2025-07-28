@@ -32,7 +32,7 @@
             <div class="card text-center bg-warning text-dark h-100">
                 <div class="card-body">
                     <i class="fas fa-hourglass-start fa-2x mb-2"></i>
-                    <h4 id="new-blocks">0</h4>
+                    <h4 id="new-blocks">{{ total_new }}</h4>
                     <p class="mb-0">New Blocks</p>
                 </div>
             </div>
@@ -50,7 +50,7 @@
             <div class="card text-center bg-success text-white h-100">
                 <div class="card-body">
                     <i class="fas fa-check-circle fa-2x mb-2"></i>
-                    <h4 id="completed-blocks">0</h4>
+                    <h4 id="completed-blocks">{{ total_completed }}</h4>
                     <p class="mb-0">Completed</p>
                 </div>
             </div>
@@ -149,9 +149,9 @@
 
 <script>
 // Focus Schedule Dashboard JavaScript
-document.addEventListener('DOMContentLoaded', function() {
-    loadFocusScheduleData();
-});
+// document.addEventListener('DOMContentLoaded', function() {
+//    loadFocusScheduleData();
+//});
 
 // All focus blocks data from Django
 const allFocusBlocks = [
