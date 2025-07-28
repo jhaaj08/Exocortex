@@ -823,7 +823,6 @@ async function saveCompletion() {
     const completionTime = currentCompletingBlock.completionTime;
     const blockIndex = currentCompletingBlock.blockIndex;
     
-    // Get the focus block ID from the current block
     const currentBlock = allSteps.find(step => step.blockIndex === blockIndex);
     const focusBlockId = currentBlock ? currentBlock.focusBlockId : null;
     
@@ -836,7 +835,6 @@ async function saveCompletion() {
     console.log('📊 Saving to database:', { proficiencyScore, completionTime, blockIndex, focusBlockId });
     
     try {
-        // ✅ SAVE TO DATABASE
         const response = await fetch(`/api/focus-block/${focusBlockId}/complete/`, {
             method: 'POST',
             headers: {
@@ -848,25 +846,34 @@ async function saveCompletion() {
             })
         });
         
-        const result = await response.json();
+        console.log('📡 Response status:', response.status);
+        console.log('📡 Response headers:', response.headers);
         
-        if (result.success) {
-            console.log('✅ Saved to database successfully:', result);
+        // ✅ DEBUG: Get the raw response text first
+        const responseText = await response.text();
+        console.log('📄 Raw response:', responseText);
+        
+        // Check if it's actually JSON
+        if (response.headers.get('content-type')?.includes('application/json')) {
+            const result = JSON.parse(responseText);
+            console.log('✅ Parsed JSON:', result);
             
-            const nextReviewDate = new Date(result.next_review_date).toLocaleDateString();
-            showToast(`✅ Saved to database! Rating: ${proficiencyScore}/5<br>📅 Next review: ${nextReviewDate} (${result.interval_days} days)`);
-            
-            // Also save locally for immediate UI updates (as backup)
-            saveToLocalStorageBackup(blockIndex, proficiencyScore, completionTime, result);
-            
+            if (result.success) {
+                const nextReviewDate = new Date(result.next_review_date).toLocaleDateString();
+                showToast(`✅ Saved to database! Rating: ${proficiencyScore}/5<br>📅 Next review: ${nextReviewDate}`);
+            } else {
+                throw new Error(result.error || 'API returned success: false');
+            }
         } else {
-            throw new Error(result.error || 'Unknown error');
+            // It's HTML (error page) - show the beginning
+            console.error('❌ Server returned HTML instead of JSON:', responseText.substring(0, 500));
+            throw new Error(`Server error (${response.status}): Expected JSON but got HTML`);
         }
         
     } catch (error) {
         console.error('❌ Database save failed:', error);
-        showToast(`❌ Failed to save to database: ${error.message}`, 'error');
-        return; // Don't close modal on error
+        showToast(`❌ Failed to save: ${error.message}`, 'error');
+        return;
     }
     
     // Close modal and continue
@@ -875,7 +882,6 @@ async function saveCompletion() {
         modal.hide();
     }
     
-    // Continue to next block
     setTimeout(() => {
         nextStep();
     }, 1000);
