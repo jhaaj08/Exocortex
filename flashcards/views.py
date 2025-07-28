@@ -863,21 +863,19 @@ def deduplication_stats(request):
     return render(request, 'flashcards/deduplication_stats.html', context)
 
 def all_focus_blocks(request):
-    """Display all focus blocks from all PDFs in a unified teaching interface"""
+    """Unified view to display all focus blocks"""
     
-    # Get all focus blocks ordered by creation and block order
-    all_blocks = FocusBlock.objects.select_related(
-        'pdf_document', 'main_concept_unit'
-    ).order_by('pdf_document__created_at', 'block_order')
+    # Get all focus blocks
+    all_blocks = FocusBlock.objects.select_related('pdf_document').order_by(
+        'pdf_document__created_at', 'block_order'
+    )
     
     if not all_blocks.exists():
-        context = {'no_blocks': True}
-        return render(request, 'flashcards/all_focus_blocks.html', context)
+        return render(request, 'flashcards/all_focus_blocks.html', {'no_blocks': True})
     
-    # Prepare blocks for display
+    # Format blocks for display (simple version)
     formatted_blocks = []
     for block in all_blocks:
-        # Get all content for this block
         segments = block.get_segments()
         qa_items = block.get_qa_items()
         revision_data = block.get_revision_data()
@@ -897,7 +895,7 @@ def all_focus_blocks(request):
         })
     
     # Calculate total study time
-    total_time = sum(block.target_duration for block in all_blocks) / 60  # Convert to minutes
+    total_time = sum(block.target_duration for block in all_blocks) / 60
     
     context = {
         'formatted_blocks': formatted_blocks,

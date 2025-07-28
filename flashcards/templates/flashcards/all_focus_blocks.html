@@ -809,9 +809,9 @@ const SPACED_REPETITION = {
     }
 };
 
-// Enhanced saveCompletion function
+// REPLACE the saveCompletion function with this WORKING version:
 async function saveCompletion() {
-    console.log('💾 saveCompletion called - DATABASE VERSION');
+    console.log('💾 saveCompletion called - HYBRID VERSION');
     
     const selectedRating = document.querySelector('input[name="proficiency"]:checked');
     if (!selectedRating) {
@@ -823,58 +823,27 @@ async function saveCompletion() {
     const completionTime = currentCompletingBlock.completionTime;
     const blockIndex = currentCompletingBlock.blockIndex;
     
+    console.log('📊 Saving completion:', { proficiencyScore, completionTime, blockIndex });
+    
+    // ✅ STEP 1: Save to localStorage immediately (for progress tracking)
+    saveToLocalStorageImmediate(blockIndex, proficiencyScore, completionTime);
+    
+    // ✅ STEP 2: Save to database (for cross-platform sync)
     const currentBlock = allSteps.find(step => step.blockIndex === blockIndex);
     const focusBlockId = currentBlock ? currentBlock.focusBlockId : null;
     
-    if (!focusBlockId) {
-        console.error('❌ Focus block ID not found');
-        showToast('❌ Error: Focus block ID not found', 'error');
-        return;
-    }
-    
-    console.log('📊 Saving to database:', { proficiencyScore, completionTime, blockIndex, focusBlockId });
-    
-    try {
-        const response = await fetch(`/api/focus-block/${focusBlockId}/complete/`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                'proficiency_score': proficiencyScore,
-                'completion_time': completionTime
-            })
-        });
-        
-        console.log('📡 Response status:', response.status);
-        console.log('📡 Response headers:', response.headers);
-        
-        // ✅ DEBUG: Get the raw response text first
-        const responseText = await response.text();
-        console.log('📄 Raw response:', responseText);
-        
-        // Check if it's actually JSON
-        if (response.headers.get('content-type')?.includes('application/json')) {
-            const result = JSON.parse(responseText);
-            console.log('✅ Parsed JSON:', result);
-            
-            if (result.success) {
-                const nextReviewDate = new Date(result.next_review_date).toLocaleDateString();
-                showToast(`✅ Saved to database! Rating: ${proficiencyScore}/5<br>📅 Next review: ${nextReviewDate}`);
-            } else {
-                throw new Error(result.error || 'API returned success: false');
-            }
-        } else {
-            // It's HTML (error page) - show the beginning
-            console.error('❌ Server returned HTML instead of JSON:', responseText.substring(0, 500));
-            throw new Error(`Server error (${response.status}): Expected JSON but got HTML`);
+    if (focusBlockId) {
+        try {
+            await saveToDatabaseAsync(focusBlockId, proficiencyScore, completionTime);
+            console.log('✅ Saved to both localStorage and database');
+        } catch (error) {
+            console.log('⚠️ Database save failed, but localStorage save succeeded:', error);
+            showToast('✅ Progress saved locally. Will sync when online.', 'warning');
         }
-        
-    } catch (error) {
-        console.error('❌ Database save failed:', error);
-        showToast(`❌ Failed to save: ${error.message}`, 'error');
-        return;
     }
+    
+    // ✅ Show success and continue (regardless of database result)
+    showToast(`✅ Block completed! Rating: ${proficiencyScore}/5`);
     
     // Close modal and continue
     const modal = bootstrap.Modal.getInstance(document.getElementById('completionModal'));
@@ -885,6 +854,79 @@ async function saveCompletion() {
     setTimeout(() => {
         nextStep();
     }, 1000);
+}
+
+// ✅ IMMEDIATE localStorage save (for progress tracking)
+function saveToLocalStorageImmediate(blockIndex, proficiencyScore, completionTime) {
+    console.log('💾 Saving to localStorage immediately');
+    
+    // Get current completion data
+    let completionData = JSON.parse(localStorage.getItem('focusBlockCompletions') || '[]');
+    
+    // Calculate next review using spaced repetition
+    const repetitionInfo = SPACED_REPETITION.calculateNextReview(
+        blockIndex, 
+        proficiencyScore, 
+        completionTime
+    );
+    
+    // Update repetition data
+    let repetitionData = JSON.parse(localStorage.getItem('repetitionData') || '{}');
+    repetitionData[blockIndex] = {
+        lastCompleted: new Date().toISOString(),
+        lastProficiency: proficiencyScore,
+        averageTime: repetitionData[blockIndex] ? 
+            (repetitionData[blockIndex].averageTime + completionTime) / 2 : completionTime,
+        repetitionLevel: repetitionInfo.nextLevel,
+        nextReview: repetitionInfo.reviewDate.toISOString()
+    };
+    localStorage.setItem('repetitionData', JSON.stringify(repetitionData));
+    
+    // Save completion record
+    const completion = {
+        blockIndex: blockIndex,
+        blockTitle: allSteps.find(step => step.blockIndex === blockIndex)?.title || `Block ${blockIndex + 1}`,
+        proficiencyRating: proficiencyScore,
+        completionTime: completionTime,
+        completedAt: new Date().toISOString(),
+        nextReviewDate: repetitionInfo.reviewDate.toISOString(),
+        interval: repetitionInfo.interval,
+        repetitionLevel: repetitionInfo.nextLevel
+    };
+    
+    completionData.push(completion);
+    localStorage.setItem('focusBlockCompletions', JSON.stringify(completionData));
+    
+    console.log('✅ Saved to localStorage:', completion);
+    return completion;
+}
+
+// ✅ Async database save (doesn't block progress)
+async function saveToDatabaseAsync(focusBlockId, proficiencyScore, completionTime) {
+    console.log('🌐 Saving to database (async)...');
+    
+    const response = await fetch(`/api/focus-block/${focusBlockId}/complete/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            'proficiency_score': proficiencyScore,
+            'completion_time': completionTime
+        })
+    });
+    
+    if (!response.ok) {
+        throw new Error(`Database save failed: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    if (!result.success) {
+        throw new Error(result.error || 'Database save failed');
+    }
+    
+    console.log('✅ Database save successful:', result);
+    return result;
 }
 
 // Helper function to save locally as backup only
@@ -1038,26 +1080,29 @@ function adjustReviewDate(blockIndex, daysDelta) {
 
 // Initialize when page loads
 document.addEventListener('DOMContentLoaded', function() {
+    console.log('🚀 Initializing focus blocks - SIMPLE VERSION');
+    
+    // ✅ Initialize steps
     initializeUnifiedStudy();
     
-    // Keyboard navigation
-    document.addEventListener('keydown', function(e) {
-        if (e.key === 'ArrowRight' || e.key === ' ') {
-            e.preventDefault();
-            nextStep();
-        } else if (e.key === 'ArrowLeft') {
-            e.preventDefault();
-            previousStep();
+    // ✅ Start from where localStorage says we left off (WORKING LOGIC)
+    const completions = JSON.parse(localStorage.getItem('focusBlockCompletions') || '[]');
+    const completedBlocks = new Set(completions.map(c => c.blockIndex));
+    
+    // Find first incomplete block
+    let startStep = 0;
+    for (let i = 0; i < allSteps.length; i++) {
+        const step = allSteps[i];
+        if (!completedBlocks.has(step.blockIndex)) {
+            startStep = i;
+            break;
         }
-    });
-
-    // Check for due reviews
-    setTimeout(() => {
-        const dueBlocks = getBlocksDueForReview();
-        if (dueBlocks.length > 0) {
-            showToast(`🔔 ${dueBlocks.length} focus block(s) due for review today!`, 5000);
-        }
-    }, 2000);
+    }
+    
+    console.log(`🎯 Starting from step ${startStep} (completed blocks: ${Array.from(completedBlocks)})`);
+    
+    // Start from the right place
+    showStep(startStep);
 });
 
 // Swipe gesture support
