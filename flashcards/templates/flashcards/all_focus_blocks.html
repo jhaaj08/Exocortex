@@ -104,9 +104,11 @@
                             </div>
                         </div>
                         
+                        <!-- REPLACE line 107 with better block indicator: -->
                         <div class="d-flex align-items-center">
-                            <span class="badge bg-light text-dark me-2" id="blockIndicator">Block 1 / {{ total_blocks }}</span>
+                            <span class="badge bg-primary me-2" id="blockIndicator">Block 1</span>
                             <span class="badge bg-warning" id="currentDuration">6-7 min</span>
+                            <small class="text-muted ms-2" id="blockProgress">Step 1 of 5</small>
                         </div>
                     </div>
                 </div>
@@ -291,19 +293,32 @@
                 
                 <!-- Navigation Footer -->
                 <div class="card-footer bg-light">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <button class="btn btn-outline-secondary" id="prevBtn" onclick="previousStep()" disabled>
-                            <i class="fas fa-chevron-left me-1"></i>Previous
-                        </button>
-                        
-                        <div class="text-center">
-                            <div class="step-dots mb-2" id="stepDots"></div>
-                            <small class="text-muted" id="stepInfo">Step 1</small>
+                    <!-- Mobile-friendly navigation -->
+                    <div class="row align-items-center">
+                        <div class="col-3">
+                            <button class="btn btn-outline-secondary btn-lg w-100" id="prevBtn" onclick="previousStep()" disabled>
+                                <i class="fas fa-chevron-left"></i>
+                            </button>
                         </div>
-                        
-                        <button class="btn btn-primary" id="nextBtn" onclick="nextStep()">
-                            Next <i class="fas fa-chevron-right ms-1"></i>
-                        </button>
+                        <div class="col-6 text-center">
+                            <!-- Visual progress for current block -->
+                            <div class="progress mb-2" style="height: 8px;">
+                                <div class="progress-bar" id="blockProgressBar" style="width: 20%"></div>
+                            </div>
+                            <small class="text-muted" id="stepInfo">Revision • 1/5</small>
+                        </div>
+                        <div class="col-3">
+                            <button class="btn btn-primary btn-lg w-100" id="nextBtn" onclick="nextStep()">
+                                <i class="fas fa-chevron-right"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Swipe hint -->
+                    <div class="text-center mt-2">
+                        <small class="text-muted">
+                            <i class="fas fa-hand-point-right me-1"></i>Swipe or tap to navigate
+                        </small>
                     </div>
                 </div>
             </div>
@@ -440,8 +455,8 @@ function showStep(globalStepIndex) {
 
 function updateUI(globalStepIndex) {
     // Update indicators
-    document.getElementById('blockIndicator').textContent = `Block ${currentBlockIndex + 1} / ${totalBlocks}`;
-    document.getElementById('stepInfo').textContent = `Step ${globalStepIndex + 1} of ${allSteps.length}`;
+    document.getElementById('blockIndicator').textContent = `Block ${currentBlockIndex + 1}`;
+    document.getElementById('blockProgress').textContent = `Step ${currentStepIndex + 1} of ${blockContainers[currentBlockIndex].querySelectorAll('.study-step').length}`;
     
     // Update progress
     const progress = ((globalStepIndex + 1) / allSteps.length) * 100;
@@ -791,64 +806,81 @@ const SPACED_REPETITION = {
 };
 
 // Enhanced saveCompletion function
-function saveCompletion() {
+async function saveCompletion() {
     const selectedRating = document.querySelector('input[name="proficiency"]:checked');
+    if (!selectedRating) return;
     
-    if (selectedRating && currentCompletingBlock) {
-        const proficiencyScore = parseInt(selectedRating.value);
-        const blockIndex = currentCompletingBlock.blockIndex;
-        const completionTime = currentCompletingBlock.completionTime;
+    const proficiencyScore = parseInt(selectedRating.value);
+    const completionTime = currentCompletingBlock.completionTime;
+    const blockIndex = currentCompletingBlock.blockIndex;
+    
+    // Get the focus block ID from the DOM
+    const focusBlockId = allSteps[globalStepIndex].focusBlockId; // Need to add this to step data
+    
+    try {
+        // ✅ SAVE TO DATABASE instead of localStorage
+        const response = await fetch(`/flashcards/focus/${focusBlockId}/complete/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-CSRFToken': getCookie('csrftoken') // Add CSRF token
+            },
+            body: new URLSearchParams({
+                'proficiency_score': proficiencyScore,
+                'total_study_time': completionTime,
+                'status': 'completed'
+            })
+        });
         
-        // Calculate spaced repetition schedule
-        const repetitionInfo = SPACED_REPETITION.calculateNextReview(
-            blockIndex, 
-            proficiencyScore, 
-            completionTime
-        );
+        if (response.ok) {
+            // Calculate next review date (still client-side for immediate feedback)
+            const repetitionInfo = SPACED_REPETITION.calculateNextReview(
+                blockIndex, 
+                proficiencyScore, 
+                completionTime
+            );
+            
+            showToast(`✅ Saved to database! Rating: ${proficiencyScore}/5<br>📅 Next review: ${repetitionInfo.reviewDate.toLocaleDateString()}`);
+            
+            // Optionally keep some data locally for immediate UI updates
+            updateLocalCache(blockIndex, proficiencyScore, completionTime, repetitionInfo);
+        } else {
+            throw new Error('Failed to save to database');
+        }
         
-        // Update block repetition data
-        const blockData = SPACED_REPETITION.getBlockData(blockIndex);
-        blockData.repetitionLevel = repetitionInfo.nextLevel;
-        blockData.reviewCount = (blockData.reviewCount || 0) + 1;
-        blockData.lastReview = new Date().toISOString();
-        blockData.nextReview = repetitionInfo.reviewDate.toISOString();
-        blockData.lastProficiency = proficiencyScore;
-        blockData.averageTime = blockData.averageTime ? 
-            (blockData.averageTime + completionTime) / 2 : completionTime;
+    } catch (error) {
+        console.error('Error saving completion:', error);
+        showToast('❌ Failed to save to database. Check connection.', 'error');
         
-        SPACED_REPETITION.saveBlockData(blockIndex, blockData);
-        
-        // Save completion with repetition info
-        const completion = {
-            ...currentCompletingBlock,
-            proficiencyRating: proficiencyScore,
-            blockTitle: document.getElementById('completed-block-title').textContent,
-            nextReviewDate: repetitionInfo.reviewDate.toISOString(),
-            reviewInterval: repetitionInfo.interval,
-            repetitionLevel: repetitionInfo.nextLevel
-        };
-        
-        completionData.push(completion);
-        localStorage.setItem('focusBlockCompletions', JSON.stringify(completionData));
-        
-        // Enhanced success message
-        const reviewDateStr = repetitionInfo.reviewDate.toLocaleDateString();
-        showToast(`✅ Block completed! Rating: ${proficiencyScore}/5<br>📅 Next review: ${reviewDateStr} (${repetitionInfo.interval} days)`);
-        
-        console.log('Focus block completed with spaced repetition:', completion);
-        
-        // Close modal
-        const modal = bootstrap.Modal.getInstance(document.getElementById('completionModal'));
-        modal.hide();
-        
-        currentCompletingBlock = null;
+        // Fallback to localStorage if API fails
+        saveToLocalStorage(blockIndex, proficiencyScore, completionTime);
     }
+    
+    // Close modal
+    const modal = bootstrap.Modal.getInstance(document.getElementById('completionModal'));
+    modal.hide();
 }
 
-function showToast(message) {
+// Helper function for CSRF token
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+function showToast(message, type = 'success') {
     // Simple toast notification
     const toast = document.createElement('div');
-    toast.className = 'position-fixed top-0 start-50 translate-middle-x alert alert-success alert-dismissible mt-3';
+    toast.className = `position-fixed top-0 start-50 translate-middle-x alert alert-${type} alert-dismissible mt-3`;
     toast.style.zIndex = '9999';
     toast.innerHTML = `
         ${message}
@@ -980,43 +1012,69 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }, 2000);
 });
-</script>
 
-<style>
-/* Step indicator dots */
-.step-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background-color: #dee2e6;
-    display: inline-block;
-    margin: 0 2px;
-    cursor: pointer;
-    transition: all 0.3s;
+// Swipe gesture support
+let startX = 0;
+let startY = 0;
+
+document.addEventListener('touchstart', function(e) {
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+});
+
+document.addEventListener('touchend', function(e) {
+    if (!startX || !startY) return;
+    
+    let endX = e.changedTouches[0].clientX;
+    let endY = e.changedTouches[0].clientY;
+    
+    let diffX = startX - endX;
+    let diffY = startY - endY;
+    
+    // Only trigger if horizontal swipe is stronger than vertical
+    if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 50) {
+        if (diffX > 0) {
+            // Swipe left - next step
+            nextStep();
+        } else {
+            // Swipe right - previous step  
+            previousStep();
+        }
+    }
+    
+    // Reset
+    startX = 0;
+    startY = 0;
+});
+
+// Keyboard support (left/right arrows)
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        nextStep();
+    } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        previousStep();
+    }
+});
+
+// ADD: Create database session when starting a block
+async function startBlockSession(focusBlockId) {
+    try {
+        const response = await fetch(`/flashcards/focus/${focusBlockId}/start/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            return data.session_id; // Return the session ID for later use
+        }
+    } catch (error) {
+        console.error('Error starting session:', error);
+        return null;
+    }
 }
-
-.step-dot.active {
-    background-color: #0d6efd;
-    transform: scale(1.3);
-}
-
-.step-dot.completed {
-    background-color: #198754;
-}
-
-/* Enhanced backgrounds */
-.bg-light-blue { background-color: #e3f2fd !important; }
-.bg-light-green { background-color: #e8f5e8 !important; }
-.bg-light-warning { background-color: #fff3cd !important; }
-
-/* Smooth transitions */
-.focus-block-container, .study-step {
-    animation: fadeIn 0.5s ease-in;
-}
-
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-</style>
-{% endblock %}

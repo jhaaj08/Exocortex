@@ -24,29 +24,42 @@ class PDFDocument(models.Model):
     """Model to store uploaded PDF documents"""
     name = models.CharField(max_length=255, blank=True)
     pdf_file = models.FileField(upload_to='pdfs/')
-    extracted_text = models.TextField(blank=True)
-    cleaned_text = models.TextField(blank=True, help_text="Processed and cleaned text")
     
-    # ✅ NEW: Content deduplication fields
-    content_hash = models.CharField(max_length=64, blank=True, help_text="SHA256 hash of cleaned text")
-    content_fingerprint = models.TextField(blank=True, help_text="Short text fingerprint for fuzzy matching")
-    is_duplicate = models.BooleanField(default=False, help_text="Whether this is a duplicate of another PDF")
-    duplicate_of = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, 
-                                   related_name='duplicates', help_text="Original PDF this is a duplicate of")
-    similarity_score = models.FloatField(default=0.0, help_text="Similarity score with original (0-1)")
-    
-    created_at = models.DateTimeField(auto_now_add=True)
+    # Basic fields
+    content_hash = models.CharField(max_length=64, db_index=True, blank=True)
     file_size = models.IntegerField(default=0)
     page_count = models.IntegerField(default=0)
-    word_count = models.IntegerField(default=0, help_text="Word count of cleaned text")
+    word_count = models.IntegerField(default=0)
     processed = models.BooleanField(default=False)
-    concepts_analyzed = models.BooleanField(default=False, help_text="Whether concept analysis has been completed")
+    
+    # Timestamp
+    created_at = models.DateTimeField(auto_now_add=True)
     processing_error = models.TextField(blank=True)
     
-    def calculate_content_hash(self):
-        """Calculate SHA256 hash of cleaned text"""
-        if self.cleaned_text:
-            return hashlib.sha256(self.cleaned_text.encode('utf-8')).hexdigest()
+    # Text fields (for now)
+    extracted_text = models.TextField(blank=True)
+    cleaned_text = models.TextField(blank=True)  # ✅ ADD BACK
+    
+    # ✅ ADD: Deduplication fields
+    is_duplicate = models.BooleanField(default=False)
+    duplicate_of = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='duplicates')
+    similarity_score = models.FloatField(default=0.0)
+    
+    def get_file_size_display(self):
+        size = self.file_size
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if size < 1024.0:
+                return f"{size:.1f} {unit}"
+            size /= 1024.0
+        return f"{size:.1f} TB"
+    
+    def __str__(self):
+        return self.name or "Untitled PDF"
+    
+    def get_extracted_text(self):
+        """Read text from file when needed"""
+        if self.extracted_text_file:
+            return self.extracted_text_file.read().decode('utf-8')
         return ""
     
     def create_content_fingerprint(self, length=1000):
@@ -92,14 +105,6 @@ class PDFDocument(models.Model):
         # Sort by similarity (highest first)
         similar_pdfs.sort(key=lambda x: x['similarity'], reverse=True)
         return similar_pdfs
-    
-    def get_file_size_display(self):
-        size = self.file_size
-        for unit in ['B', 'KB', 'MB', 'GB']:
-            if size < 1024.0:
-                return f"{size:.1f} {unit}"
-            size /= 1024.0
-        return f"{size:.1f} TB"
     
     def delete(self, *args, **kwargs):
         """Delete the actual file when model is deleted"""

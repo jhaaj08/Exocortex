@@ -226,114 +226,112 @@ def save_basic_flashcards(raw_content, folder):
     
     return saved_count
 
-def process_pdf_complete(pdf_document: PDFDocument) -> Tuple[bool, str, Dict]:
-    """PDF processing with working deduplication"""
+def process_pdf_complete(pdf_document):
+    """Check duplicates FIRST with lightweight text extraction"""
+    import hashlib
+    
     try:
         print(f"🚀 Processing: {pdf_document.name}")
         
-        # Step 1: Basic text extraction first
-        print("📄 Step 1: Text extraction...")
-        from .pdf_service import extract_pdf_text
-        text, page_count, extract_success, extract_error = extract_pdf_text(pdf_document)
+        # ✅ STEP 1: LIGHTWEIGHT text extraction (no concept analysis!)
+        print("📄 Step 1: Extracting text for duplicate check...")
         
-        if not extract_success:
-            return False, extract_error, {}
+        from .pdf_service import PDFTextExtractor
+        extractor = PDFTextExtractor()
         
-        print("✅ Text extraction successful")
+        # ✅ JUST extract text, no processing
+        pdf_path = pdf_document.pdf_file.path
+        text, page_count = extractor.extract_text_pdfplumber(pdf_path)
         
-        # Step 2: Update basic PDF info
+        if not text:
+            text, page_count = extractor.extract_text_pypdf2(pdf_path)
+        
+        if not text:
+            return False, "Could not extract text from PDF", {}
+        
+        # ✅ STEP 2: Immediate hash check
+        content_hash = hashlib.sha256(text.encode('utf-8')).hexdigest()
+        print(f"🔍 Hash: {content_hash[:12]}...")
+        
+        # ✅ STEP 3: Check for duplicates BEFORE any processing
+        existing_pdf = PDFDocument.objects.filter(
+            content_hash=content_hash,
+            processed=True,
+            focus_blocks__isnull=False
+        ).exclude(id=pdf_document.id).first()
+        
+        if existing_pdf:
+            print(f"🛑 DUPLICATE FOUND: {existing_pdf.name} - STOPPING ALL PROCESSING")
+            
+            # Mark as duplicate and exit immediately
+            pdf_document.content_hash = content_hash
+            pdf_document.page_count = page_count
+            pdf_document.word_count = len(text.split())
+            pdf_document.is_duplicate = True
+            pdf_document.duplicate_of = existing_pdf
+            pdf_document.processed = True
+            pdf_document.save()
+            
+            focus_count = existing_pdf.focus_blocks.count()
+            return True, f"📚 Content already exists as '{existing_pdf.name}' with {focus_count} focus blocks!", {}
+        
+        # ✅ STEP 4: No duplicates - NOW do the heavy processing
+        print("🆕 Unique content - starting heavy processing...")
+        
+        # Store basic info
         pdf_document.extracted_text = text
+        pdf_document.content_hash = content_hash
         pdf_document.page_count = page_count
         pdf_document.word_count = len(text.split())
         pdf_document.save()
         
-        # Step 3: ✅ CHECK FOR DUPLICATES
-        print("🔍 Checking for duplicates...")
-        duplicate_pdf = check_for_duplicate_content(pdf_document)
-        
-        if duplicate_pdf:
-            print(f"📋 Duplicate detected! Copying from: {duplicate_pdf.name}")
-            copy_stats = copy_pdf_data(duplicate_pdf, pdf_document)
-            
-            return True, f"Duplicate detected! Copied from '{duplicate_pdf.name}'", copy_stats
-        
-        # Step 4: Process as unique PDF
-        print("🆕 Processing as unique PDF...")
-        from .pdf_service import PDFTextExtractor
-        extractor = PDFTextExtractor()
-        
-        success, error_msg, stats = extractor.extract_and_process_pdf(
-            pdf_document, analyze_concepts=True
-        )
-        
+        # ✅ NOW do the heavy processing (only if unique)
+        success, error_msg, stats = extractor.extract_and_process_pdf(pdf_document, analyze_concepts=True)
         if not success:
             return False, error_msg, {}
         
-        # Step 5: Generate focus blocks
-        print("🎯 Generating focus blocks...")
+        # Generate focus blocks
         from .focus_block_service import generate_focus_blocks
         blocks_success, blocks_message = generate_focus_blocks(pdf_document)
-        
         if not blocks_success:
-            return False, f"Focus block generation failed: {blocks_message}", stats
+            return False, f"Focus blocks failed: {blocks_message}", stats
         
-        stats.update({
-            'focus_blocks': pdf_document.focus_blocks.count(),
-            'is_duplicate': False
-        })
-        
-        return True, blocks_message, stats
+        return True, f"✅ Processed! Generated {pdf_document.focus_blocks.count()} focus blocks.", stats
         
     except Exception as e:
-        error_msg = f"Processing error: {str(e)}"
-        print(f"💥 Error: {error_msg}")
-        pdf_document.processing_error = error_msg
-        pdf_document.save()
-        return False, error_msg, {}
+        return False, f"Error: {str(e)}", {}
 
 
 def check_for_duplicate_content(pdf_document: PDFDocument) -> Optional[PDFDocument]:
-    """Simple duplicate detection based on content"""
+    """Ultra-fast duplicate detection using stored extracted text"""
     import hashlib
-    from difflib import SequenceMatcher
     
+    # ✅ Use the ALREADY extracted text (not extract again!)
     if not pdf_document.extracted_text:
+        print("❌ No extracted text available for hash calculation")
         return None
     
-    # Create content hash
+    # Calculate hash from the SAME text we just extracted
     content_hash = hashlib.sha256(pdf_document.extracted_text.encode('utf-8')).hexdigest()
     
-    # Check for exact match first
-    exact_match = PDFDocument.objects.filter(
+    # Store the hash
+    pdf_document.content_hash = content_hash
+    pdf_document.save()
+    
+    print(f"🔍 Calculated hash: {content_hash[:12]}... for PDF: {pdf_document.name}")
+    
+    # ✅ Check for duplicates (exclude current PDF)
+    duplicate = PDFDocument.objects.filter(
+        content_hash=content_hash,
         processed=True,
-        focus_blocks__isnull=False  # Only match PDFs that have focus blocks
+        focus_blocks__isnull=False  # Only consider PDFs with focus blocks
     ).exclude(id=pdf_document.id).first()
     
-    if exact_match and exact_match.extracted_text:
-        exact_hash = hashlib.sha256(exact_match.extracted_text.encode('utf-8')).hexdigest()
-        if content_hash == exact_hash:
-            print(f"✅ Found exact hash match: {exact_match.name}")
-            return exact_match
+    if duplicate:
+        print(f"✅ DUPLICATE FOUND: {duplicate.name} (hash: {duplicate.content_hash[:12]}...)")
+        return duplicate
     
-    # Check for similarity (80%+ match)
-    threshold = 0.8
-    existing_pdfs = PDFDocument.objects.filter(
-        processed=True,
-        focus_blocks__isnull=False
-    ).exclude(id=pdf_document.id)
-    
-    for existing_pdf in existing_pdfs:
-        if existing_pdf.extracted_text:
-            similarity = SequenceMatcher(
-                None, 
-                pdf_document.extracted_text[:2000],  # First 2000 chars
-                existing_pdf.extracted_text[:2000]
-            ).ratio()
-            
-            if similarity >= threshold:
-                print(f"📊 Found similar PDF: {existing_pdf.name} ({similarity:.1%} similar)")
-                return existing_pdf
-    
+    print("🆕 No duplicates found - this is unique content")
     return None
 
 
@@ -341,14 +339,22 @@ def copy_pdf_data(source_pdf: PDFDocument, target_pdf: PDFDocument) -> Dict:
     """Copy all data from source PDF to target PDF"""
     from .models import TextChunk, ConceptUnit, ChunkLabel, FocusBlock
     
+    print(f"📋 Copying data from '{source_pdf.name}' to '{target_pdf.name}'")
+    
+    # ✅ CLEAR existing data first to avoid constraint violations
+    print("🧹 Clearing existing data...")
+    target_pdf.text_chunks.all().delete()
+    target_pdf.concept_units.all().delete() 
+    target_pdf.focus_blocks.all().delete()
+    
     # Copy basic info
     target_pdf.cleaned_text = source_pdf.cleaned_text
     target_pdf.processed = True
-    target_pdf.concepts_analyzed = True
     target_pdf.is_duplicate = True
     target_pdf.duplicate_of = source_pdf
     target_pdf.save()
     
+    print("📄 Copying text chunks...")
     # Copy text chunks
     chunks_copied = 0
     source_chunks = source_pdf.text_chunks.all().order_by('chunk_order')
@@ -366,7 +372,10 @@ def copy_pdf_data(source_pdf: PDFDocument, target_pdf: PDFDocument) -> Dict:
         chunk_mapping[chunk.id] = new_chunk
         chunks_copied += 1
     
+    print(f"✅ Copied {chunks_copied} text chunks")
+    
     # Copy concept units and labels
+    print("🧠 Copying concept units...")
     concepts_copied = 0
     for concept in source_pdf.concept_units.all().order_by('concept_order'):
         new_concept = ConceptUnit.objects.create(
@@ -392,34 +401,32 @@ def copy_pdf_data(source_pdf: PDFDocument, target_pdf: PDFDocument) -> Dict:
         
         concepts_copied += 1
     
+    print(f"✅ Copied {concepts_copied} concept units")
+    
     # Copy focus blocks
-    blocks_copied = 0
-    target_concepts = list(target_pdf.concept_units.all().order_by('concept_order'))
-    
-    for i, block in enumerate(source_pdf.focus_blocks.all().order_by('block_order')):
-        main_concept = target_concepts[i] if i < len(target_concepts) else target_concepts[0]
-        revision_concept = target_concepts[i-1] if i > 0 and i-1 < len(target_concepts) else None
-        
-        FocusBlock.objects.create(
+    print("🎯 Copying focus blocks...")
+    focus_blocks_copied = 0
+    for focus_block in source_pdf.focus_blocks.all().order_by('block_order'):
+        new_focus_block = FocusBlock.objects.create(
             pdf_document=target_pdf,
-            main_concept_unit=main_concept,
-            revision_concept_unit=revision_concept,
-            block_order=block.block_order,
-            title=block.title,
-            target_duration=block.target_duration,
-            compact7_data=block.compact7_data,  # Copy the complete Compact7 JSON
-            difficulty_level=block.difficulty_level,
-            learning_objectives=block.learning_objectives
+            main_concept_unit=None,  # Will link after concept units are created
+            title=focus_block.title,
+            block_order=focus_block.block_order,
+            estimated_duration_minutes=focus_block.estimated_duration_minutes,
+            compact7_data=focus_block.compact7_data,
+            teacher_script=focus_block.teacher_script,
+            rescue_reset=focus_block.rescue_reset,
+            recap_summary=focus_block.recap_summary
         )
-        blocks_copied += 1
+        focus_blocks_copied += 1
     
-    print(f"📋 Copied: {chunks_copied} chunks, {concepts_copied} concepts, {blocks_copied} focus blocks")
+    print(f"✅ Copied {focus_blocks_copied} focus blocks")
     
     return {
-        'is_duplicate': True,
-        'chunks': chunks_copied,
-        'concepts': concepts_copied,
-        'focus_blocks': blocks_copied
+        'chunks_copied': chunks_copied,
+        'concepts_copied': concepts_copied,
+        'focus_blocks_copied': focus_blocks_copied,
+        'duplicate_source': source_pdf.name
     }
 
 def study_flashcards(request, folder_id):
@@ -556,7 +563,7 @@ def pdf_processing_details(request, pdf_id):
         'chunks_exist': text_chunks.exists(),
         'chunk_labels_exist': chunk_labels.exists(),
         'concept_units_exist': concept_units.exists(),
-        'concepts_analyzed_flag': pdf_document.concepts_analyzed,
+        'concepts_analyzed_flag': pdf_document.concept_units.exists(),
         'chunks_with_labels': chunk_labels.count(),
         'chunks_without_labels': text_chunks.exclude(chunk_label__isnull=False).count(),
         'concept_units_with_chunks': concept_units.filter(chunk_labels__isnull=False).distinct().count(),
@@ -971,7 +978,7 @@ def bulk_manage(request):
     
     # Apply filters
     if status_filter == 'ready':
-        pdfs = pdfs.filter(processed=True, concepts_analyzed=True)
+        pdfs = pdfs.filter(processed=True, concept_units__isnull=False)
     elif status_filter == 'processing':
         pdfs = pdfs.filter(processed=False)
     elif status_filter == 'duplicates':
@@ -985,7 +992,7 @@ def bulk_manage(request):
     
     # Get statistics
     total_pdfs = PDFDocument.objects.count()
-    ready_pdfs = PDFDocument.objects.filter(processed=True, concepts_analyzed=True).count()
+    ready_pdfs = PDFDocument.objects.filter(processed=True, concept_units__isnull=False).count()
     processing_pdfs = PDFDocument.objects.filter(processed=False).count()
     duplicate_pdfs = PDFDocument.objects.filter(is_duplicate=True).count()
     error_pdfs = PDFDocument.objects.exclude(processing_error__isnull=True).exclude(processing_error='').count()
@@ -1120,36 +1127,50 @@ def complete_focus_session(request, session_id):
         try:
             session = FocusSession.objects.get(id=session_id)
             
-            # Get proficiency data
+            # Get completion data
             proficiency_score = request.POST.get('proficiency_score')
-            difficulty_rating = request.POST.get('difficulty_rating')
-            learning_notes = request.POST.get('learning_notes', '')
-            confusion_points = request.POST.getlist('confusion_points')
+            total_study_time = request.POST.get('total_study_time')  # in seconds
             
             # Update session
             session.proficiency_score = int(proficiency_score) if proficiency_score else None
-            session.difficulty_rating = int(difficulty_rating) if difficulty_rating else None
-            session.learning_notes = learning_notes
-            session.confusion_points = confusion_points
+            session.total_study_time = float(total_study_time) if total_study_time else None
             session.status = 'completed'
             session.completed_at = timezone.now()
             session.save()
             
-            messages.success(request, f"Session completed! Proficiency score: {proficiency_score}/5")
-            return redirect('flashcards:all_focus_blocks')
+            # Return success with next review calculation
+            return JsonResponse({
+                'success': True,
+                'proficiency_score': proficiency_score,
+                'completion_time': total_study_time
+            })
             
+        except FocusSession.DoesNotExist:
+            return JsonResponse({'success': False, 'error': 'Session not found'})
         except Exception as e:
-            messages.error(request, f"Error saving session: {e}")
-            return redirect('flashcards:focus_mode', session_id=session_id)
+            return JsonResponse({'success': False, 'error': str(e)})
     
-    # GET request - show completion form
-    try:
-        session = FocusSession.objects.get(id=session_id)
-        context = {
-            'session': session,
-            'focus_block': session.focus_block,
-        }
-        return render(request, 'flashcards/complete_session.html', context)
-    except FocusSession.DoesNotExist:
-        messages.error(request, "Session not found")
-        return redirect('flashcards:all_focus_blocks')
+    return JsonResponse({'success': False, 'error': 'Invalid request'})
+
+def start_block_session(request, focus_block_id):
+    """Start a new FocusSession for tracking"""
+    if request.method == 'POST':
+        try:
+            focus_block = FocusBlock.objects.get(id=focus_block_id)
+            
+            session = FocusSession.objects.create(
+                focus_block=focus_block,
+                status='active'
+            )
+            
+            return JsonResponse({
+                'success': True,
+                'session_id': str(session.id)
+            })
+            
+        except FocusBlock.DoesNotExist:
+            return JsonResponse({'success': False, 'error': 'Focus block not found'})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+    
+    return JsonResponse({'success': False, 'error': 'Invalid request'})

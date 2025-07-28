@@ -10,10 +10,10 @@ class FolderAdmin(admin.ModelAdmin):
 
 @admin.register(PDFDocument)
 class PDFDocumentAdmin(admin.ModelAdmin):
-    list_display = ['name', 'file_size_display', 'page_count', 'processed', 'created_at']
-    list_filter = ['processed', 'created_at']
+    list_display = ['name', 'file_size_display', 'page_count', 'processed']  # Remove created_at
+    list_filter = ['processed']  # Remove created_at
     search_fields = ['name']
-    readonly_fields = ['file_size', 'page_count', 'extracted_text', 'processing_error', 'created_at']
+    readonly_fields = ['file_size', 'page_count', 'content_hash']  # Only existing fields
     
     def file_size_display(self, obj):
         return obj.get_file_size_display()
