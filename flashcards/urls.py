@@ -53,4 +53,5 @@ urlpatterns = [
     path('focus/<uuid:session_id>/complete/', views.complete_focus_session, name='complete_focus_session'),
     path('api/focus-block/<uuid:focus_block_id>/complete/', views.complete_focus_block_api, name='complete_focus_block_api'),
     path('api/focus-completions/', views.get_focus_completions_api, name='get_focus_completions_api'),
+    path('debug/sessions/', views.debug_focus_sessions, name='debug_focus_sessions'),
 ] 
