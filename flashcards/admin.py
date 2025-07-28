@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Folder, Flashcard, StudySession, PDFDocument
+from .models import Folder, Flashcard, StudySession, PDFDocument, FocusBlock, FocusSession
 
 @admin.register(Folder)
 class FolderAdmin(admin.ModelAdmin):
@@ -61,3 +61,23 @@ class StudySessionAdmin(admin.ModelAdmin):
             return f"PDF: {obj.pdf_document.name}"
         return "Unknown"
     source_name.short_description = 'Source'
+
+@admin.register(FocusBlock)
+class FocusBlockAdmin(admin.ModelAdmin):
+    list_display = ['title', 'pdf_document', 'block_order', 'estimated_duration_minutes']
+    list_filter = ['pdf_document', 'estimated_duration_minutes']
+    search_fields = ['title', 'pdf_document__name']
+    readonly_fields = ['id', 'block_order']
+    ordering = ['pdf_document__created_at', 'block_order']
+
+@admin.register(FocusSession)
+class FocusSessionAdmin(admin.ModelAdmin):
+    list_display = ['focus_block_title', 'proficiency_score', 'total_study_time', 'status', 'completed_at']
+    list_filter = ['status', 'proficiency_score', 'completed_at']
+    search_fields = ['focus_block__title', 'focus_block__pdf_document__name']
+    readonly_fields = ['id', 'started_at', 'focus_block']
+    ordering = ['-completed_at']
+    
+    def focus_block_title(self, obj):
+        return obj.focus_block.title
+    focus_block_title.short_description = 'Focus Block'
