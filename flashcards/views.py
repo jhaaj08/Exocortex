@@ -1299,3 +1299,49 @@ def complete_focus_block_api(request, focus_block_id):
             return JsonResponse({'success': False, 'error': f'Server error: {str(e)}'})
     
     return JsonResponse({'success': False, 'error': 'Invalid request method'})
+
+@csrf_exempt
+def get_focus_completions_api(request):
+    """API endpoint to load user's focus block completions"""
+    if request.method == 'GET':
+        try:
+            # Get all completed sessions for this user
+            completed_sessions = FocusSession.objects.filter(
+                status='completed'
+            ).select_related('focus_block').order_by('completed_at')
+            
+            # Convert to simple format
+            completions = []
+            for session in completed_sessions:
+                # Find block index (position in the sequence)
+                block_index = None
+                try:
+                    # Get all blocks in order
+                    all_blocks = FocusBlock.objects.order_by('pdf_document__created_at', 'block_order')
+                    for idx, block in enumerate(all_blocks):
+                        if block.id == session.focus_block.id:
+                            block_index = idx
+                            break
+                except:
+                    block_index = 0
+                
+                completions.append({
+                    'session_id': str(session.id),
+                    'block_index': block_index,
+                    'block_title': session.focus_block.title,
+                    'focus_block_id': str(session.focus_block.id),
+                    'proficiency_score': session.proficiency_score,
+                    'total_study_time': session.total_study_time,
+                    'completed_at': session.completed_at.isoformat(),
+                })
+            
+            return JsonResponse({
+                'success': True,
+                'completions': completions,
+                'total_count': len(completions)
+            })
+            
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+    
+    return JsonResponse({'success': False, 'error': 'Invalid request method'})

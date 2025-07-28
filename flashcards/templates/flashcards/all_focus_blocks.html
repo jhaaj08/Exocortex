@@ -1078,18 +1078,88 @@ function adjustReviewDate(blockIndex, daysDelta) {
     }
 }
 
-// Initialize when page loads
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('🚀 Initializing focus blocks - SIMPLE VERSION');
+// ADD this new function to sync database progress to localStorage on new devices:
+async function syncProgressFromDatabase() {
+    console.log('🔄 Checking if we need to sync from database...');
     
-    // ✅ Initialize steps
+    // Check if localStorage has any completions
+    const localCompletions = JSON.parse(localStorage.getItem('focusBlockCompletions') || '[]');
+    
+    if (localCompletions.length > 0) {
+        console.log('📱 Local progress found, using localStorage data');
+        return localCompletions; // Use existing local data
+    }
+    
+    console.log('🌐 No local progress, loading from database...');
+    
+    try {
+        // ✅ LOAD COMPLETIONS FROM DATABASE
+        const response = await fetch('/api/focus-completions/', {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Failed to load from database: ${response.status}`);
+        }
+        
+        const databaseData = await response.json();
+        console.log('📊 Loaded from database:', databaseData);
+        
+        if (databaseData.success && databaseData.completions.length > 0) {
+            // Convert database format to localStorage format
+            const convertedCompletions = databaseData.completions.map((completion, index) => ({
+                blockIndex: completion.block_index,
+                blockTitle: completion.block_title || `Block ${completion.block_index + 1}`,
+                proficiencyRating: completion.proficiency_score,
+                completionTime: completion.total_study_time,
+                completedAt: completion.completed_at,
+                syncedFromDatabase: true,
+                sessionId: completion.session_id
+            }));
+            
+            // Save to localStorage for future use
+            localStorage.setItem('focusBlockCompletions', JSON.stringify(convertedCompletions));
+            
+            // Also rebuild repetition data
+            const repetitionData = {};
+            convertedCompletions.forEach(completion => {
+                repetitionData[completion.blockIndex] = {
+                    lastCompleted: completion.completedAt,
+                    lastProficiency: completion.proficiencyRating,
+                    averageTime: completion.completionTime,
+                    syncedFromDatabase: true
+                };
+            });
+            localStorage.setItem('repetitionData', JSON.stringify(repetitionData));
+            
+            console.log('✅ Synced database progress to localStorage:', convertedCompletions);
+            return convertedCompletions;
+        }
+        
+    } catch (error) {
+        console.log('⚠️ Failed to load from database:', error);
+    }
+    
+    console.log('📱 No progress found anywhere, starting fresh');
+    return []; // No progress anywhere
+}
+
+// ✅ UPDATE the initialization to include database sync:
+document.addEventListener('DOMContentLoaded', async function() {
+    console.log('🚀 Initializing focus blocks - CROSS-DEVICE VERSION');
+    
+    // ✅ STEP 1: Sync progress from database if needed
+    const completions = await syncProgressFromDatabase();
+    
+    // ✅ STEP 2: Initialize steps
     initializeUnifiedStudy();
     
-    // ✅ Start from where localStorage says we left off (WORKING LOGIC)
-    const completions = JSON.parse(localStorage.getItem('focusBlockCompletions') || '[]');
+    // ✅ STEP 3: Find where to continue based on completions
     const completedBlocks = new Set(completions.map(c => c.blockIndex));
     
-    // Find first incomplete block
     let startStep = 0;
     for (let i = 0; i < allSteps.length; i++) {
         const step = allSteps[i];
@@ -1099,10 +1169,15 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    console.log(`🎯 Starting from step ${startStep} (completed blocks: ${Array.from(completedBlocks)})`);
+    console.log(`🎯 Starting from step ${startStep} (completed: ${Array.from(completedBlocks)})`);
     
-    // Start from the right place
+    // ✅ STEP 4: Start from the right place
     showStep(startStep);
+    
+    // Show sync status
+    if (completions.some(c => c.syncedFromDatabase)) {
+        showToast('📱 Progress synced from your other devices!', 'info');
+    }
 });
 
 // Swipe gesture support
