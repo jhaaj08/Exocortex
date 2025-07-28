@@ -396,7 +396,7 @@ function testSync() {
         console.log('🧪 TEST: API response:', data);
         if (data.success && data.completions.length > 0) {
             console.log(`🧪 TEST: Found ${data.completions.length} completions`);
-            alert(`Found ${data.completions.length} completions in database!`);
+            // alert(`Found ${data.completions.length} completions in database!`); // REMOVED
         } else {
             console.log('🧪 TEST: No completions found');
         }
@@ -728,6 +728,12 @@ function formatTime(totalSeconds) {
 
 // Track block completion
 function checkBlockCompletion(globalStepIndex) {
+    // ✅ Don't show completion modal during initialization
+    if (isInitializing) {
+        console.log('🔄 Skipping completion check during initialization');
+        return;
+    }
+    
     // Check if we're moving from the last step of a block to the first step of next block
     if (globalStepIndex > 0) {
         const currentStep = allSteps[globalStepIndex];
@@ -745,6 +751,12 @@ function checkBlockCompletion(globalStepIndex) {
 }
 
 function showCompletionModal(blockIndex, completionTime) {
+    // ✅ Don't show modal during initialization
+    if (isInitializing) {
+        console.log('🔄 Skipping completion modal during initialization');
+        return;
+    }
+    
     currentCompletingBlock = {
         blockIndex: blockIndex,
         completionTime: completionTime,
@@ -1055,215 +1067,4 @@ function viewCompletions() {
     if (dueBlocks.length > 0) {
         report += '🔔 DUE FOR REVIEW TODAY:\n';
         dueBlocks.forEach((block, index) => {
-            const overdueText = block.daysOverdue > 0 ? ` (${block.daysOverdue} days overdue)` : '';
-            report += `${index + 1}. Block ${block.blockIndex + 1}${overdueText}\n`;
-            report += `   Last: ${block.lastProficiency}/5, Review #${block.reviewCount}\n`;
-        });
-        report += '\n';
-    }
-    
-    // Completion history
-    report += '📈 RECENT COMPLETIONS:\n';
-    completions.slice(-5).forEach((completion, index) => {
-        const timeStr = formatTime(completion.completionTime);
-        const reviewDate = new Date(completion.nextReviewDate).toLocaleDateString();
-        report += `${completions.length - 4 + index}. ${completion.blockTitle}\n`;
-        report += `   ⏱️ ${timeStr} | ⭐ ${completion.proficiencyRating}/5\n`;
-        report += `   📅 Next review: ${reviewDate}\n\n`;
-    });
-    
-    // Summary statistics
-    const avgRating = (completions.reduce((sum, c) => sum + c.proficiencyRating, 0) / completions.length).toFixed(1);
-    const totalTime = completions.reduce((sum, c) => sum + c.completionTime, 0);
-    
-    report += `📊 SUMMARY:\n`;
-    report += `✅ Total Completions: ${completions.length}\n`;
-    report += `⭐ Average Rating: ${avgRating}/5\n`;
-    report += `⏱️ Total Study Time: ${formatTime(totalTime)}\n`;
-    report += `🔔 Due Today: ${dueBlocks.length} blocks`;
-    
-    alert(report);
-}
-
-// Function to get blocks due for review
-function getBlocksDueForReview() {
-    const repetitionData = JSON.parse(localStorage.getItem('repetitionData') || '{}');
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    const dueBlocks = [];
-    
-    Object.keys(repetitionData).forEach(blockIndex => {
-        const blockData = repetitionData[blockIndex];
-        if (blockData.nextReview) {
-            const reviewDate = new Date(blockData.nextReview);
-            reviewDate.setHours(0, 0, 0, 0);
-            
-            if (reviewDate <= today) {
-                dueBlocks.push({
-                    blockIndex: parseInt(blockIndex),
-                    ...blockData,
-                    daysOverdue: Math.floor((today - reviewDate) / (1000 * 60 * 60 * 24))
-                });
-            }
-        }
-    });
-    
-    return dueBlocks.sort((a, b) => a.daysOverdue - b.daysOverdue);
-}
-
-// Manual adjustment function for review dates
-function adjustReviewDate(blockIndex, daysDelta) {
-    const blockData = SPACED_REPETITION.getBlockData(blockIndex);
-    if (blockData.nextReview) {
-        const currentDate = new Date(blockData.nextReview);
-        currentDate.setDate(currentDate.getDate() + daysDelta);
-        blockData.nextReview = currentDate.toISOString();
-        SPACED_REPETITION.saveBlockData(blockIndex, blockData);
-        
-        const action = daysDelta > 0 ? 'postponed' : 'brought closer';
-        showToast(`📅 Review ${action} by ${Math.abs(daysDelta)} days`);
-    }
-}
-
-// REPLACE the database sync with this IMPROVED version:
-document.addEventListener('DOMContentLoaded', async function() {
-    console.log('🚀 IMPROVED CROSS-DEVICE SYNC');
-    
-    // Step 1: Get current localStorage data
-    let localCompletions = JSON.parse(localStorage.getItem('focusBlockCompletions') || '[]');
-    console.log(`📱 localStorage: ${localCompletions.length} completions`);
-    
-    // Step 2: ALWAYS check database for newer data
-    console.log('🌐 Checking database for latest completions...');
-    
-    try {
-        const response = await fetch('/api/focus-completions/');
-        const data = await response.json();
-        
-        if (data.success && data.completions) {
-            console.log(`🌐 Database: ${data.completions.length} completions`);
-            
-            // ✅ IMPROVED: Always use database if it has MORE completions
-            if (data.completions.length > localCompletions.length) {
-                console.log('🔄 Database has more completions, syncing...');
-                
-                const convertedCompletions = data.completions.map(comp => ({
-                    blockIndex: comp.block_index,
-                    blockTitle: comp.block_title,
-                    proficiencyRating: comp.proficiency_score,
-                    completionTime: comp.total_study_time,
-                    completedAt: comp.completed_at,
-                    syncedFromDatabase: true
-                }));
-                
-                localStorage.setItem('focusBlockCompletions', JSON.stringify(convertedCompletions));
-                localCompletions = convertedCompletions;
-                
-                console.log('✅ Synced newer data from database');
-                alert(`📱 Synced ${data.completions.length} completions from database!`);
-            } else {
-                console.log('📱 localStorage is up to date');
-            }
-        }
-    } catch (error) {
-        console.log('⚠️ Database sync failed:', error);
-    }
-    
-    // Step 3: Initialize with error handling
-    try {
-        initializeUnifiedStudy();
-        
-        // Step 4: Find next incomplete block
-        const completedBlocks = new Set(localCompletions.map(c => c.blockIndex));
-        console.log('✅ Completed blocks:', Array.from(completedBlocks));
-        
-        let startStep = 0;
-        for (let i = 0; i < allSteps.length; i++) {
-            const step = allSteps[i];
-            if (!completedBlocks.has(step.blockIndex)) {
-                startStep = i;
-                break;
-            }
-        }
-        
-        console.log(`🎯 Starting from step ${startStep}`);
-        showStep(startStep);
-        
-    } catch (error) {
-        console.log('❌ Initialization error:', error);
-        // Fallback: start from beginning
-        showStep(0);
-    }
-});
-
-// Swipe gesture support
-let startX = 0;
-let startY = 0;
-
-document.addEventListener('touchstart', function(e) {
-    startX = e.touches[0].clientX;
-    startY = e.touches[0].clientY;
-});
-
-document.addEventListener('touchend', function(e) {
-    if (!startX || !startY) return;
-    
-    let endX = e.changedTouches[0].clientX;
-    let endY = e.changedTouches[0].clientY;
-    
-    let diffX = startX - endX;
-    let diffY = startY - endY;
-    
-    // Only trigger if horizontal swipe is stronger than vertical
-    if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 50) {
-        if (diffX > 0) {
-            // Swipe left - next step
-            nextStep();
-        } else {
-            // Swipe right - previous step  
-            previousStep();
-        }
-    }
-    
-    // Reset
-    startX = 0;
-    startY = 0;
-});
-
-// Keyboard support (left/right arrows)
-document.addEventListener('keydown', function(e) {
-    if (e.key === 'ArrowRight') {
-        e.preventDefault();
-        nextStep();
-    } else if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        previousStep();
-    }
-});
-
-// ADD: Create database session when starting a block
-async function startBlockSession(focusBlockId) {
-    try {
-        const response = await fetch(`/focus/${focusBlockId}/start/`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'X-CSRFToken': getCookie('csrftoken')
-            }
-        });
-        
-        if (response.ok) {
-            const data = await response.json();
-            return data.session_id; // Return the session ID for later use
-        }
-    } catch (error) {
-        console.error('Error starting session:', error);
-        return null;
-    }
-}
-</script>
-
-<!-- Close the main container -->
-</div>
-{% endblock %}
+            const overdueText = block.daysOverdue > 0 ? `
