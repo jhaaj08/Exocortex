@@ -51,4 +51,5 @@ urlpatterns = [
     path('focus/session/<uuid:session_id>/', views.focus_mode, name='focus_mode'),
     path('focus/<uuid:session_id>/update/', views.update_focus_progress, name='update_focus_progress'),
     path('focus/<uuid:session_id>/complete/', views.complete_focus_session, name='complete_focus_session'),
+    path('api/focus-block/<uuid:focus_block_id>/complete/', views.complete_focus_block_api, name='complete_focus_block_api'),
 ] 

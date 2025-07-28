@@ -123,7 +123,10 @@
                     <div id="blockContent">
                         
                         {% for block_data in formatted_blocks %}
-                        <div class="focus-block-container" data-block-index="{{ forloop.counter0 }}" style="display: none;">
+                        <div class="focus-block-container" 
+                             data-block-index="{{ forloop.counter0 }}" 
+                             data-focus-block-id="{{ block_data.block.id }}" 
+                             style="display: none;">
                             
                             <!-- Block Header -->
                             <div class="block-header mb-4 p-3 bg-light rounded">
@@ -394,7 +397,8 @@ function initializeUnifiedStudy() {
                 blockIndex: blockIndex,
                 stepIndex: stepIndex,
                 element: step,
-                blockContainer: container
+                blockContainer: container,
+                focusBlockId: container.dataset.focusBlockId // Assuming blockIndex is the focusBlockId
             });
         });
     });
@@ -807,58 +811,95 @@ const SPACED_REPETITION = {
 
 // Enhanced saveCompletion function
 async function saveCompletion() {
+    console.log('💾 saveCompletion called - DATABASE VERSION');
+    
     const selectedRating = document.querySelector('input[name="proficiency"]:checked');
-    if (!selectedRating) return;
+    if (!selectedRating) {
+        console.log('❌ No rating selected');
+        return;
+    }
     
     const proficiencyScore = parseInt(selectedRating.value);
     const completionTime = currentCompletingBlock.completionTime;
     const blockIndex = currentCompletingBlock.blockIndex;
     
-    // Get the focus block ID from the DOM
-    const focusBlockId = allSteps[globalStepIndex].focusBlockId; // Need to add this to step data
+    // Get the focus block ID from the current block
+    const currentBlock = allSteps.find(step => step.blockIndex === blockIndex);
+    const focusBlockId = currentBlock ? currentBlock.focusBlockId : null;
+    
+    if (!focusBlockId) {
+        console.error('❌ Focus block ID not found');
+        showToast('❌ Error: Focus block ID not found', 'error');
+        return;
+    }
+    
+    console.log('📊 Saving to database:', { proficiencyScore, completionTime, blockIndex, focusBlockId });
     
     try {
-        // ✅ SAVE TO DATABASE instead of localStorage
-        const response = await fetch(`/flashcards/focus/${focusBlockId}/complete/`, {
+        // ✅ SAVE TO DATABASE
+        const response = await fetch(`/api/focus-block/${focusBlockId}/complete/`, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'X-CSRFToken': getCookie('csrftoken') // Add CSRF token
+                'Content-Type': 'application/json',
             },
-            body: new URLSearchParams({
+            body: JSON.stringify({
                 'proficiency_score': proficiencyScore,
-                'total_study_time': completionTime,
-                'status': 'completed'
+                'completion_time': completionTime
             })
         });
         
-        if (response.ok) {
-            // Calculate next review date (still client-side for immediate feedback)
-            const repetitionInfo = SPACED_REPETITION.calculateNextReview(
-                blockIndex, 
-                proficiencyScore, 
-                completionTime
-            );
+        const result = await response.json();
+        
+        if (result.success) {
+            console.log('✅ Saved to database successfully:', result);
             
-            showToast(`✅ Saved to database! Rating: ${proficiencyScore}/5<br>📅 Next review: ${repetitionInfo.reviewDate.toLocaleDateString()}`);
+            const nextReviewDate = new Date(result.next_review_date).toLocaleDateString();
+            showToast(`✅ Saved to database! Rating: ${proficiencyScore}/5<br>📅 Next review: ${nextReviewDate} (${result.interval_days} days)`);
             
-            // Optionally keep some data locally for immediate UI updates
-            updateLocalCache(blockIndex, proficiencyScore, completionTime, repetitionInfo);
+            // Also save locally for immediate UI updates (as backup)
+            saveToLocalStorageBackup(blockIndex, proficiencyScore, completionTime, result);
+            
         } else {
-            throw new Error('Failed to save to database');
+            throw new Error(result.error || 'Unknown error');
         }
         
     } catch (error) {
-        console.error('Error saving completion:', error);
-        showToast('❌ Failed to save to database. Check connection.', 'error');
-        
-        // Fallback to localStorage if API fails
-        saveToLocalStorage(blockIndex, proficiencyScore, completionTime);
+        console.error('❌ Database save failed:', error);
+        showToast(`❌ Failed to save to database: ${error.message}`, 'error');
+        return; // Don't close modal on error
     }
     
-    // Close modal
+    // Close modal and continue
     const modal = bootstrap.Modal.getInstance(document.getElementById('completionModal'));
-    modal.hide();
+    if (modal) {
+        modal.hide();
+    }
+    
+    // Continue to next block
+    setTimeout(() => {
+        nextStep();
+    }, 1000);
+}
+
+// Helper function to save locally as backup only
+function saveToLocalStorageBackup(blockIndex, proficiencyScore, completionTime, dbResult) {
+    console.log('💾 Saving backup to localStorage');
+    let completionData = JSON.parse(localStorage.getItem('focusBlockCompletions') || '[]');
+    
+    const completion = {
+        blockIndex: blockIndex,
+        blockTitle: `Block ${blockIndex + 1}`,
+        proficiencyRating: proficiencyScore,
+        completionTime: completionTime,
+        completedAt: new Date().toISOString(),
+        nextReviewDate: dbResult.next_review_date,
+        interval: dbResult.interval_days,
+        savedToDatabase: true,
+        sessionId: dbResult.session_id
+    };
+    
+    completionData.push(completion);
+    localStorage.setItem('focusBlockCompletions', JSON.stringify(completionData));
 }
 
 // Helper function for CSRF token
@@ -1061,7 +1102,7 @@ document.addEventListener('keydown', function(e) {
 // ADD: Create database session when starting a block
 async function startBlockSession(focusBlockId) {
     try {
-        const response = await fetch(`/flashcards/focus/${focusBlockId}/start/`, {
+        const response = await fetch(`/focus/${focusBlockId}/start/`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',

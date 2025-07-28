@@ -20,6 +20,10 @@ from difflib import SequenceMatcher
 from django.utils import timezone
 import uuid
 from .models import FocusSession
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -1174,3 +1178,59 @@ def start_block_session(request, focus_block_id):
             return JsonResponse({'success': False, 'error': str(e)})
     
     return JsonResponse({'success': False, 'error': 'Invalid request'})
+
+@method_decorator(csrf_exempt, name='dispatch')
+def complete_focus_block_api(request, focus_block_id):
+    """API endpoint to save focus block completion data"""
+    if request.method == 'POST':
+        try:
+            # Parse request data
+            if request.content_type == 'application/json':
+                data = json.loads(request.body)
+            else:
+                data = request.POST
+            
+            focus_block = FocusBlock.objects.get(id=focus_block_id)
+            
+            # Create a new FocusSession record
+            session = FocusSession.objects.create(
+                focus_block=focus_block,
+                proficiency_score=int(data.get('proficiency_score')),
+                total_study_time=float(data.get('completion_time')),
+                status='completed',
+                completed_at=timezone.now()
+            )
+            
+            # Calculate next review date using spaced repetition logic
+            proficiency_score = int(data.get('proficiency_score'))
+            completion_time = float(data.get('completion_time'))
+            
+            # Simple spaced repetition logic
+            base_intervals = [1, 3, 7, 21, 52]  # days
+            proficiency_multipliers = {1: 0.5, 2: 0.7, 3: 1.0, 4: 1.3, 5: 1.5}
+            
+            # Get current repetition level (how many times completed)
+            previous_sessions = FocusSession.objects.filter(
+                focus_block=focus_block, 
+                status='completed'
+            ).count() - 1  # Subtract current session
+            
+            level = min(previous_sessions, len(base_intervals) - 1)
+            interval = base_intervals[level] * proficiency_multipliers.get(proficiency_score, 1.0)
+            
+            next_review = timezone.now() + timezone.timedelta(days=interval)
+            
+            return JsonResponse({
+                'success': True,
+                'session_id': str(session.id),
+                'next_review_date': next_review.isoformat(),
+                'interval_days': int(interval),
+                'message': f'Completed! Next review in {int(interval)} days'
+            })
+            
+        except FocusBlock.DoesNotExist:
+            return JsonResponse({'success': False, 'error': 'Focus block not found'})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+    
+    return JsonResponse({'success': False, 'error': 'Invalid request method'})
