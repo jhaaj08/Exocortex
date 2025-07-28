@@ -378,6 +378,12 @@
 </div>
 
 <script>
+    // ✅ Pass completion data from Django to JavaScript
+    window.serverCompletions = {{ completion_data_json|safe }};
+    console.log('📊 Server completion data loaded:', window.serverCompletions);
+</script>
+
+<script>
 // Global variables
 let currentBlockIndex = 0;
 let currentStepIndex = 0;
@@ -1078,87 +1084,53 @@ function adjustReviewDate(blockIndex, daysDelta) {
     }
 }
 
-// ADD this new function to sync database progress to localStorage on new devices:
-async function syncProgressFromDatabase() {
-    console.log('🔄 Checking if we need to sync from database...');
-    
-    // Check if localStorage has any completions
-    const localCompletions = JSON.parse(localStorage.getItem('focusBlockCompletions') || '[]');
-    
-    if (localCompletions.length > 0) {
-        console.log('📱 Local progress found, using localStorage data');
-        return localCompletions; // Use existing local data
-    }
-    
-    console.log('🌐 No local progress, loading from database...');
-    
-    try {
-        // ✅ LOAD COMPLETIONS FROM DATABASE
-        const response = await fetch('/api/focus-completions/', {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-            }
-        });
-        
-        if (!response.ok) {
-            throw new Error(`Failed to load from database: ${response.status}`);
-        }
-        
-        const databaseData = await response.json();
-        console.log('📊 Loaded from database:', databaseData);
-        
-        if (databaseData.success && databaseData.completions.length > 0) {
-            // Convert database format to localStorage format
-            const convertedCompletions = databaseData.completions.map((completion, index) => ({
-                blockIndex: completion.block_index,
-                blockTitle: completion.block_title || `Block ${completion.block_index + 1}`,
-                proficiencyRating: completion.proficiency_score,
-                completionTime: completion.total_study_time,
-                completedAt: completion.completed_at,
-                syncedFromDatabase: true,
-                sessionId: completion.session_id
-            }));
-            
-            // Save to localStorage for future use
-            localStorage.setItem('focusBlockCompletions', JSON.stringify(convertedCompletions));
-            
-            // Also rebuild repetition data
-            const repetitionData = {};
-            convertedCompletions.forEach(completion => {
-                repetitionData[completion.blockIndex] = {
-                    lastCompleted: completion.completedAt,
-                    lastProficiency: completion.proficiencyRating,
-                    averageTime: completion.completionTime,
-                    syncedFromDatabase: true
-                };
-            });
-            localStorage.setItem('repetitionData', JSON.stringify(repetitionData));
-            
-            console.log('✅ Synced database progress to localStorage:', convertedCompletions);
-            return convertedCompletions;
-        }
-        
-    } catch (error) {
-        console.log('⚠️ Failed to load from database:', error);
-    }
-    
-    console.log('📱 No progress found anywhere, starting fresh');
-    return []; // No progress anywhere
-}
+// REPLACE the database sync with this SIMPLER approach using existing data:
 
-// ✅ UPDATE the initialization to include database sync:
 document.addEventListener('DOMContentLoaded', async function() {
-    console.log('🚀 Initializing focus blocks - CROSS-DEVICE VERSION');
+    console.log('🚀 Starting with SIMPLE CROSS-DEVICE VERSION');
     
-    // ✅ STEP 1: Sync progress from database if needed
-    const completions = await syncProgressFromDatabase();
+    // ✅ Check localStorage first
+    const localCompletions = JSON.parse(localStorage.getItem('focusBlockCompletions') || '[]');
+    console.log(`📱 localStorage has ${localCompletions.length} completions`);
     
-    // ✅ STEP 2: Initialize steps
+    // ✅ If localStorage is empty, try to get data from Django context
+    let useCompletions = localCompletions;
+    
+    if (localCompletions.length === 0) {
+        console.log('🔄 localStorage empty, checking for server-side completion data...');
+        
+        // ✅ Try to get data from Django template context (if available)
+        try {
+            // Check if Django passed any completion data in the template
+            if (typeof window.serverCompletions !== 'undefined' && window.serverCompletions.length > 0) {
+                console.log('🌐 Found server completion data, syncing...');
+                
+                useCompletions = window.serverCompletions.map(comp => ({
+                    blockIndex: comp.block_index,
+                    blockTitle: comp.block_title || `Block ${comp.block_index + 1}`,
+                    proficiencyRating: comp.proficiency_score,
+                    completionTime: comp.total_study_time,
+                    completedAt: comp.completed_at,
+                    syncedFromDatabase: true
+                }));
+                
+                // Save to localStorage for future use
+                localStorage.setItem('focusBlockCompletions', JSON.stringify(useCompletions));
+                console.log('✅ Synced server data to localStorage');
+                
+                showToast('📱 Progress synced from other devices!', 'info');
+            } else {
+                console.log('📱 No server data found, starting fresh');
+            }
+        } catch (error) {
+            console.log('⚠️ Error checking server data:', error);
+        }
+    }
+    
+    // ✅ Continue with normal initialization
     initializeUnifiedStudy();
     
-    // ✅ STEP 3: Find where to continue based on completions
-    const completedBlocks = new Set(completions.map(c => c.blockIndex));
+    const completedBlocks = new Set(useCompletions.map(c => c.blockIndex));
     
     let startStep = 0;
     for (let i = 0; i < allSteps.length; i++) {
@@ -1169,15 +1141,8 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
     }
     
-    console.log(`🎯 Starting from step ${startStep} (completed: ${Array.from(completedBlocks)})`);
-    
-    // ✅ STEP 4: Start from the right place
+    console.log(`🎯 Starting from step ${startStep}, completed blocks: [${Array.from(completedBlocks)}]`);
     showStep(startStep);
-    
-    // Show sync status
-    if (completions.some(c => c.syncedFromDatabase)) {
-        showToast('📱 Progress synced from your other devices!', 'info');
-    }
 });
 
 // Swipe gesture support

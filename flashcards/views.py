@@ -863,7 +863,7 @@ def deduplication_stats(request):
     return render(request, 'flashcards/deduplication_stats.html', context)
 
 def all_focus_blocks(request):
-    """Unified view to display all focus blocks"""
+    """Unified view to display all focus blocks with completion data"""
     
     # Get all focus blocks
     all_blocks = FocusBlock.objects.select_related('pdf_document').order_by(
@@ -873,7 +873,31 @@ def all_focus_blocks(request):
     if not all_blocks.exists():
         return render(request, 'flashcards/all_focus_blocks.html', {'no_blocks': True})
     
-    # Format blocks for display (simple version)
+    # ✅ GET COMPLETION DATA FROM DATABASE
+    completed_sessions = FocusSession.objects.filter(
+        status='completed'
+    ).select_related('focus_block').order_by('completed_at')
+    
+    # Convert to simple format for JavaScript
+    completion_data = []
+    for session in completed_sessions:
+        # Find block index
+        block_index = None
+        for idx, block in enumerate(all_blocks):
+            if block.id == session.focus_block.id:
+                block_index = idx
+                break
+        
+        if block_index is not None:
+            completion_data.append({
+                'block_index': block_index,
+                'block_title': session.focus_block.title,
+                'proficiency_score': session.proficiency_score,
+                'total_study_time': session.total_study_time,
+                'completed_at': session.completed_at.isoformat(),
+            })
+    
+    # Format blocks for display
     formatted_blocks = []
     for block in all_blocks:
         segments = block.get_segments()
@@ -902,6 +926,8 @@ def all_focus_blocks(request):
         'total_blocks': all_blocks.count(),
         'total_study_time': total_time,
         'unique_pdfs': all_blocks.values('pdf_document__name').distinct().count(),
+        # ✅ ADD COMPLETION DATA FOR JAVASCRIPT
+        'completion_data_json': json.dumps(completion_data),
     }
     
     return render(request, 'flashcards/all_focus_blocks.html', context)
