@@ -411,10 +411,11 @@ console.log('🧪 RUNNING TEST...');
 testSync();
 
 // Also run test when page loads
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('🧪 DOM LOADED - running test again...');
-    testSync();
-});
+// ✅ FIXED: Use Django data instead of localStorage
+// document.addEventListener('DOMContentLoaded', function() {
+//     console.log('🧪 DOM LOADED - running test again...');
+//     testSync();
+// });
 </script>
 
 </div>
