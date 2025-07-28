@@ -1043,9 +1043,58 @@ def focus_schedule(request):
         'pdf_document', 'main_concept_unit'
     ).order_by('pdf_document__created_at', 'block_order')
     
+    # ✅ GET COMPLETION DATA FROM DATABASE
+    completed_sessions = FocusSession.objects.filter(
+        status='completed'
+    ).select_related('focus_block').order_by('-completed_at')
+    
+    # Group by focus block
+    completion_stats = {}
+    for session in completed_sessions:
+        block_id = session.focus_block.id
+        if block_id not in completion_stats:
+            completion_stats[block_id] = {
+                'focus_block': session.focus_block,
+                'total_completions': 0,
+                'last_completed': None,
+                'last_proficiency': None,
+                'average_time': 0,
+                'sessions': []
+            }
+        
+        completion_stats[block_id]['total_completions'] += 1
+        completion_stats[block_id]['sessions'].append({
+            'completed_at': session.completed_at,
+            'proficiency_score': session.proficiency_score,
+            'study_time': session.total_study_time
+        })
+        
+        # Update latest completion info
+        if (not completion_stats[block_id]['last_completed'] or 
+            session.completed_at > completion_stats[block_id]['last_completed']):
+            completion_stats[block_id]['last_completed'] = session.completed_at
+            completion_stats[block_id]['last_proficiency'] = session.proficiency_score
+    
+    # Calculate averages
+    for block_id, stats in completion_stats.items():
+        if stats['sessions']:
+            total_time = sum(s['study_time'] or 0 for s in stats['sessions'])
+            stats['average_time'] = total_time / len(stats['sessions'])
+    
+    # Separate into categories
+    completed_blocks = list(completion_stats.values())
+    completed_block_ids = set(completion_stats.keys())
+    new_blocks = [block for block in all_focus_blocks if block.id not in completed_block_ids]
+    
     context = {
         'all_focus_blocks': all_focus_blocks,
         'total_blocks': all_focus_blocks.count(),
+        # ✅ DATABASE-BASED COMPLETION DATA
+        'completed_blocks': completed_blocks,
+        'new_blocks': new_blocks,
+        'total_completed': len(completed_blocks),
+        'total_new': len(new_blocks),
+        'completion_stats': completion_stats,
     }
     
     return render(request, 'flashcards/focus_schedule.html', context)
