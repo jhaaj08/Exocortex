@@ -24,6 +24,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 import json
+from datetime import timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -1179,7 +1180,7 @@ def start_block_session(request, focus_block_id):
     
     return JsonResponse({'success': False, 'error': 'Invalid request'})
 
-@method_decorator(csrf_exempt, name='dispatch')
+@csrf_exempt  # ✅ FIXED: Use @csrf_exempt directly for function-based views
 def complete_focus_block_api(request, focus_block_id):
     """API endpoint to save focus block completion data"""
     if request.method == 'POST':
@@ -1190,20 +1191,30 @@ def complete_focus_block_api(request, focus_block_id):
             else:
                 data = request.POST
             
+            # ✅ Add validation
+            proficiency_score = data.get('proficiency_score')
+            completion_time = data.get('completion_time')
+            
+            if not proficiency_score or not completion_time:
+                return JsonResponse({
+                    'success': False, 
+                    'error': 'Missing proficiency_score or completion_time'
+                })
+            
             focus_block = FocusBlock.objects.get(id=focus_block_id)
             
             # Create a new FocusSession record
             session = FocusSession.objects.create(
                 focus_block=focus_block,
-                proficiency_score=int(data.get('proficiency_score')),
-                total_study_time=float(data.get('completion_time')),
+                proficiency_score=int(proficiency_score),
+                total_study_time=float(completion_time),
                 status='completed',
                 completed_at=timezone.now()
             )
             
             # Calculate next review date using spaced repetition logic
-            proficiency_score = int(data.get('proficiency_score'))
-            completion_time = float(data.get('completion_time'))
+            proficiency_score = int(proficiency_score)
+            completion_time = float(completion_time)
             
             # Simple spaced repetition logic
             base_intervals = [1, 3, 7, 21, 52]  # days
@@ -1218,7 +1229,8 @@ def complete_focus_block_api(request, focus_block_id):
             level = min(previous_sessions, len(base_intervals) - 1)
             interval = base_intervals[level] * proficiency_multipliers.get(proficiency_score, 1.0)
             
-            next_review = timezone.now() + timezone.timedelta(days=interval)
+            # ✅ FIXED: Use timedelta correctly  
+            next_review = timezone.now() + timedelta(days=interval)
             
             return JsonResponse({
                 'success': True,
@@ -1230,7 +1242,13 @@ def complete_focus_block_api(request, focus_block_id):
             
         except FocusBlock.DoesNotExist:
             return JsonResponse({'success': False, 'error': 'Focus block not found'})
+        except ValueError as e:
+            return JsonResponse({'success': False, 'error': f'Invalid data: {str(e)}'})
         except Exception as e:
-            return JsonResponse({'success': False, 'error': str(e)})
+            # ✅ Better error logging for debugging
+            import traceback
+            print(f"API Error: {str(e)}")
+            print(f"Traceback: {traceback.format_exc()}")
+            return JsonResponse({'success': False, 'error': f'Server error: {str(e)}'})
     
     return JsonResponse({'success': False, 'error': 'Invalid request method'})
