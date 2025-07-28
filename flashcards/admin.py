@@ -64,15 +64,19 @@ class StudySessionAdmin(admin.ModelAdmin):
 
 @admin.register(FocusBlock)
 class FocusBlockAdmin(admin.ModelAdmin):
-    list_display = ['title', 'pdf_document', 'block_order', 'estimated_duration_minutes']
-    list_filter = ['pdf_document', 'estimated_duration_minutes']
+    list_display = ['title', 'pdf_document', 'block_order', 'target_duration_minutes']
+    list_filter = ['pdf_document', 'difficulty_level']
     search_fields = ['title', 'pdf_document__name']
     readonly_fields = ['id', 'block_order']
     ordering = ['pdf_document__created_at', 'block_order']
+    
+    def target_duration_minutes(self, obj):
+        return f"{obj.target_duration / 60:.1f} min"
+    target_duration_minutes.short_description = 'Duration'
 
 @admin.register(FocusSession)
 class FocusSessionAdmin(admin.ModelAdmin):
-    list_display = ['focus_block_title', 'proficiency_score', 'total_study_time', 'status', 'completed_at']
+    list_display = ['focus_block_title', 'proficiency_score', 'study_time_minutes', 'status', 'completed_at']
     list_filter = ['status', 'proficiency_score', 'completed_at']
     search_fields = ['focus_block__title', 'focus_block__pdf_document__name']
     readonly_fields = ['id', 'started_at', 'focus_block']
@@ -81,3 +85,9 @@ class FocusSessionAdmin(admin.ModelAdmin):
     def focus_block_title(self, obj):
         return obj.focus_block.title
     focus_block_title.short_description = 'Focus Block'
+    
+    def study_time_minutes(self, obj):
+        if obj.total_study_time:
+            return f"{obj.total_study_time / 60:.1f} min"
+        return "N/A"
+    study_time_minutes.short_description = 'Study Time'
