@@ -456,6 +456,14 @@ function initializeUnifiedStudy() {
 
 function createStepDots() {
     const dotsContainer = document.getElementById('stepDots');
+    
+    // ✅ CHECK if element exists
+    if (!dotsContainer) {
+        console.log('⚠️ stepDots container not found, skipping...');
+        return;
+    }
+    
+    // Continue with existing code only if element exists
     dotsContainer.innerHTML = '';
     
     allSteps.forEach((_, index) => {
@@ -1118,65 +1126,75 @@ function adjustReviewDate(blockIndex, daysDelta) {
     }
 }
 
-// REPLACE the database sync with this SIMPLER approach using existing data:
-
+// REPLACE the database sync with this IMPROVED version:
 document.addEventListener('DOMContentLoaded', async function() {
-    console.log('🚀 Starting with SIMPLE CROSS-DEVICE VERSION');
+    console.log('🚀 IMPROVED CROSS-DEVICE SYNC');
     
-    // ✅ Check localStorage first
-    const localCompletions = JSON.parse(localStorage.getItem('focusBlockCompletions') || '[]');
-    console.log(`📱 localStorage has ${localCompletions.length} completions`);
+    // Step 1: Get current localStorage data
+    let localCompletions = JSON.parse(localStorage.getItem('focusBlockCompletions') || '[]');
+    console.log(`📱 localStorage: ${localCompletions.length} completions`);
     
-    // ✅ If localStorage is empty, try to get data from Django context
-    let useCompletions = localCompletions;
+    // Step 2: ALWAYS check database for newer data
+    console.log('🌐 Checking database for latest completions...');
     
-    if (localCompletions.length === 0) {
-        console.log('🔄 localStorage empty, checking for server-side completion data...');
+    try {
+        const response = await fetch('/api/focus-completions/');
+        const data = await response.json();
         
-        // ✅ Try to get data from Django template context (if available)
-        try {
-            // Check if Django passed any completion data in the template
-            if (typeof window.serverCompletions !== 'undefined' && window.serverCompletions.length > 0) {
-                console.log('🌐 Found server completion data, syncing...');
+        if (data.success && data.completions) {
+            console.log(`🌐 Database: ${data.completions.length} completions`);
+            
+            // ✅ IMPROVED: Always use database if it has MORE completions
+            if (data.completions.length > localCompletions.length) {
+                console.log('🔄 Database has more completions, syncing...');
                 
-                useCompletions = window.serverCompletions.map(comp => ({
+                const convertedCompletions = data.completions.map(comp => ({
                     blockIndex: comp.block_index,
-                    blockTitle: comp.block_title || `Block ${comp.block_index + 1}`,
+                    blockTitle: comp.block_title,
                     proficiencyRating: comp.proficiency_score,
                     completionTime: comp.total_study_time,
                     completedAt: comp.completed_at,
                     syncedFromDatabase: true
                 }));
                 
-                // Save to localStorage for future use
-                localStorage.setItem('focusBlockCompletions', JSON.stringify(useCompletions));
-                console.log('✅ Synced server data to localStorage');
+                localStorage.setItem('focusBlockCompletions', JSON.stringify(convertedCompletions));
+                localCompletions = convertedCompletions;
                 
-                showToast('📱 Progress synced from other devices!', 'info');
+                console.log('✅ Synced newer data from database');
+                alert(`📱 Synced ${data.completions.length} completions from database!`);
             } else {
-                console.log('📱 No server data found, starting fresh');
+                console.log('📱 localStorage is up to date');
             }
-        } catch (error) {
-            console.log('⚠️ Error checking server data:', error);
         }
+    } catch (error) {
+        console.log('⚠️ Database sync failed:', error);
     }
     
-    // ✅ Continue with normal initialization
-    initializeUnifiedStudy();
-    
-    const completedBlocks = new Set(useCompletions.map(c => c.blockIndex));
-    
-    let startStep = 0;
-    for (let i = 0; i < allSteps.length; i++) {
-        const step = allSteps[i];
-        if (!completedBlocks.has(step.blockIndex)) {
-            startStep = i;
-            break;
+    // Step 3: Initialize with error handling
+    try {
+        initializeUnifiedStudy();
+        
+        // Step 4: Find next incomplete block
+        const completedBlocks = new Set(localCompletions.map(c => c.blockIndex));
+        console.log('✅ Completed blocks:', Array.from(completedBlocks));
+        
+        let startStep = 0;
+        for (let i = 0; i < allSteps.length; i++) {
+            const step = allSteps[i];
+            if (!completedBlocks.has(step.blockIndex)) {
+                startStep = i;
+                break;
+            }
         }
+        
+        console.log(`🎯 Starting from step ${startStep}`);
+        showStep(startStep);
+        
+    } catch (error) {
+        console.log('❌ Initialization error:', error);
+        // Fallback: start from beginning
+        showStep(0);
     }
-    
-    console.log(`🎯 Starting from step ${startStep}, completed blocks: [${Array.from(completedBlocks)}]`);
-    showStep(startStep);
 });
 
 // Swipe gesture support
