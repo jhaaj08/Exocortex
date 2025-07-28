@@ -384,6 +384,40 @@
 </script>
 
 <script>
+console.log('🧪 BASIC TEST: JavaScript is loading...');
+
+// Simple test function
+function testSync() {
+    console.log('🧪 TEST: Function can run');
+    
+    fetch('/api/focus-completions/')
+    .then(response => response.json())
+    .then(data => {
+        console.log('🧪 TEST: API response:', data);
+        if (data.success && data.completions.length > 0) {
+            console.log(`🧪 TEST: Found ${data.completions.length} completions`);
+            alert(`Found ${data.completions.length} completions in database!`);
+        } else {
+            console.log('🧪 TEST: No completions found');
+        }
+    })
+    .catch(error => {
+        console.log('🧪 TEST: API error:', error);
+    });
+}
+
+// Run test immediately
+console.log('🧪 RUNNING TEST...');
+testSync();
+
+// Also run test when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('🧪 DOM LOADED - running test again...');
+    testSync();
+});
+</script>
+
+<script>
 // Global variables
 let currentBlockIndex = 0;
 let currentStepIndex = 0;
