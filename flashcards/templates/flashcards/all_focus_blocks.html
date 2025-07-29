@@ -410,12 +410,470 @@ function testSync() {
 console.log('🧪 RUNNING TEST...');
 testSync();
 
-// Also run test when page loads
-// ✅ FIXED: Use Django data instead of localStorage
-// document.addEventListener('DOMContentLoaded', function() {
-//     console.log('🧪 DOM LOADED - running test again...');
-//     testSync();
-// });
+// ✅ ESSENTIAL FUNCTIONS FOR BUTTON FUNCTIONALITY
+
+// Global variables
+// Global variables
+let currentGlobalStepIndex = 0;
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('🚀 Page loaded, initializing...');
+    showStep(0); // Start with first step
+    
+    // Count total steps for debugging
+    const totalSteps = document.querySelectorAll('.study-step').length;
+    console.log('📊 Total study steps found:', totalSteps);
+});
+let globalTimer = 0;
+let globalTimerInterval = null;
+let globalTimerRunning = false;
+let timers = {};
+let timerIntervals = {};
+let currentActiveTimer = null;
+
+// Navigation functions
+function nextStep() {
+    // Check if current block is completed BEFORE moving to next step
+    const isBlockCompleted = checkBlockCompletion(currentGlobalStepIndex);
+    
+    if (!isBlockCompleted) {
+        // Normal step progression within the same block
+        currentGlobalStepIndex++;
+        showStep(currentGlobalStepIndex);
+    }
+    // If block is completed, the modal will handle progression via moveToNextBlock()
+}
+
+function previousStep() {
+    if (currentGlobalStepIndex > 0) {
+        currentGlobalStepIndex--;
+        showStep(currentGlobalStepIndex);
+    }
+}
+
+function showStep(stepIndex) {
+    console.log('🔍 showStep called with index:', stepIndex);
+    
+    // Hide all focus block containers first
+    const allContainers = document.querySelectorAll('.focus-block-container');
+    allContainers.forEach(container => container.style.display = 'none');
+    
+    // Hide all study steps
+    const allSteps = document.querySelectorAll('.study-step');
+    allSteps.forEach(el => el.style.display = 'none');
+    
+    console.log('📊 Total steps found:', allSteps.length);
+    console.log('📊 Total containers found:', allContainers.length);
+    
+    // Show current step AND its parent container
+    if (allSteps[stepIndex]) {
+        // Find the parent focus-block-container
+        const currentStep = allSteps[stepIndex];
+        const parentContainer = currentStep.closest('.focus-block-container');
+        
+        if (parentContainer) {
+            parentContainer.style.display = 'block';
+            console.log('✅ Showing parent container');
+        }
+        
+        // Show the step itself
+        currentStep.style.display = 'block';
+        console.log('✅ Showing step', stepIndex);
+    } else {
+        console.log('❌ Step', stepIndex, 'not found');
+    }
+    
+    // Update buttons
+    document.getElementById('prevBtn').disabled = stepIndex === 0;
+    document.getElementById('nextBtn').disabled = stepIndex >= allSteps.length - 1;
+    
+    // Update progress indicator
+    const stepInfo = document.getElementById('stepInfo');
+    if (stepInfo) {
+        stepInfo.textContent = `Step ${stepIndex + 1} of ${allSteps.length}`;
+    }
+    
+    // Update progress bar
+    const progressBar = document.getElementById('overallProgress');
+    if (progressBar && allSteps.length > 0) {
+        const progress = ((stepIndex + 1) / allSteps.length) * 100;
+        progressBar.style.width = `${progress}%`;
+    }
+
+    // ✅ ADD: Start block timer when switching focus blocks
+    const currentBlockIndex = getCurrentBlockIndex(stepIndex);
+    if (globalTimerRunning && currentActiveTimer !== currentBlockIndex) {
+        startBlockTimer(currentBlockIndex);
+    }
+}
+
+// Timer functions
+function startGlobalTimer() {
+    if (!globalTimerRunning) {
+        globalTimerInterval = setInterval(() => {
+            globalTimer++;
+            updateGlobalTimerDisplay();
+        }, 1000);
+        globalTimerRunning = true;
+        
+        // ✅ ADD: Start the current block timer
+        const currentBlockIndex = getCurrentBlockIndex(currentGlobalStepIndex);
+        startBlockTimer(currentBlockIndex);
+        
+        // Update button visibility
+        document.getElementById('global-start-btn').style.display = 'none';
+        document.getElementById('global-pause-btn').style.display = 'inline-block';
+        document.getElementById('global-stop-btn').style.display = 'inline-block';
+    }
+}
+
+function pauseGlobalTimer() {
+    clearInterval(globalTimerInterval);
+    globalTimerRunning = false;
+    document.getElementById('global-start-btn').style.display = 'inline-block';
+    document.getElementById('global-pause-btn').style.display = 'none';
+}
+
+function stopGlobalTimer() {
+    clearInterval(globalTimerInterval);
+    globalTimerRunning = false;
+    globalTimer = 0;
+    updateGlobalTimerDisplay();
+    
+    document.getElementById('global-start-btn').style.display = 'inline-block';
+    document.getElementById('global-pause-btn').style.display = 'none';
+    document.getElementById('global-stop-btn').style.display = 'none';
+}
+
+function updateGlobalTimerDisplay() {
+    const hours = Math.floor(globalTimer / 3600);
+    const minutes = Math.floor((globalTimer % 3600) / 60);
+    const seconds = globalTimer % 60;
+    const timeStr = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    
+    const timerEl = document.getElementById('global-timer');
+    if (timerEl) {
+        timerEl.textContent = `🕐 ${timeStr}`;
+    }
+}
+
+// Answer reveal functions
+function toggleAnswer(elementId) {
+    const element = document.getElementById(elementId);
+    if (element) {
+        element.style.display = element.style.display === 'none' ? 'block' : 'none';
+    }
+}
+
+function revealAnswer(elementId) {
+    const element = document.getElementById(elementId);
+    if (element) {
+        element.style.display = 'block';
+    }
+}
+
+// Completion function
+function saveCompletion() {
+    alert('Completion saved! (Basic version)');
+    nextStep();
+}
+
+// Progress viewer
+function viewCompletions() {
+    alert('Progress: Basic functionality restored!');
+}
+
+// Block Timer Functions
+function startBlockTimer(blockIndex) {
+    console.log('🟢 Starting block timer for block:', blockIndex);
+    
+    // Stop any currently running block timer
+    if (currentActiveTimer !== null) {
+        stopBlockTimer(currentActiveTimer);
+    }
+    
+    // Initialize timer for this block if it doesn't exist
+    if (!timers[blockIndex]) {
+        timers[blockIndex] = 0;
+    }
+    
+    // Start interval for this block
+    timerIntervals[blockIndex] = setInterval(() => {
+        timers[blockIndex]++;
+        updateBlockTimerDisplay(blockIndex);
+    }, 1000);
+    
+    currentActiveTimer = blockIndex;
+    updateBlockTimerDisplay(blockIndex);
+}
+
+function stopBlockTimer(blockIndex) {
+    console.log('🔴 Stopping block timer for block:', blockIndex);
+    
+    if (timerIntervals[blockIndex]) {
+        clearInterval(timerIntervals[blockIndex]);
+        delete timerIntervals[blockIndex];
+    }
+    
+    if (currentActiveTimer === blockIndex) {
+        currentActiveTimer = null;
+    }
+}
+
+function updateBlockTimerDisplay(blockIndex) {
+    const timerElement = document.getElementById(`timer-${blockIndex}`);
+    if (timerElement && timers[blockIndex] !== undefined) {
+        const timeStr = formatTime(timers[blockIndex]);
+        timerElement.textContent = `⏱️ ${timeStr}`;
+    }
+}
+
+function formatTime(totalSeconds) {
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+}
+
+function getCurrentBlockIndex(stepIndex) {
+    // Find which focus block contains this step
+    const allSteps = document.querySelectorAll('.study-step');
+    if (allSteps[stepIndex]) {
+        const currentStep = allSteps[stepIndex];
+        const parentContainer = currentStep.closest('.focus-block-container');
+        if (parentContainer) {
+            return parseInt(parentContainer.dataset.blockIndex);
+        }
+    }
+    return 0;
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('🚀 Page loaded, initializing...');
+    showStep(0); // Start with first step
+    
+    // Count total steps for debugging
+    const totalSteps = document.querySelectorAll('.study-step').length;
+    console.log('📊 Total study steps found:', totalSteps);
+});
+
+// ✅ FIXED COMPLETION SYSTEM - Prevents Repeated Modals
+
+// Variables for completion tracking
+let currentCompletingBlock = null;
+let completedBlocks = new Set();  // Track which blocks are already completed
+let blockStartTimes = {};
+
+// Detect when a focus block is completed
+function checkBlockCompletion(stepIndex) {
+    const currentBlockIndex = getCurrentBlockIndex(stepIndex);
+    
+    // ✅ PREVENT REPEATED MODALS: Check if block already completed
+    if (completedBlocks.has(currentBlockIndex)) {
+        console.log(`⏭️ Block ${currentBlockIndex} already completed, skipping modal`);
+        return false;
+    }
+    
+    const allSteps = document.querySelectorAll('.study-step');
+    
+    // Get all steps for the current block
+    const currentBlockSteps = Array.from(allSteps).filter(step => {
+        const container = step.closest('.focus-block-container');
+        return container && parseInt(container.dataset.blockIndex) === currentBlockIndex;
+    });
+    
+    // Find current step within this block
+    const currentStep = allSteps[stepIndex];
+    const stepIndexInBlock = currentBlockSteps.indexOf(currentStep);
+    
+    console.log(`📊 Block ${currentBlockIndex}: Step ${stepIndexInBlock + 1}/${currentBlockSteps.length}`);
+    
+    // If this is the last step of the block, show completion modal
+    if (stepIndexInBlock === currentBlockSteps.length - 1) {
+        console.log('🎉 Block completed! Showing modal...');
+        
+        const blockTime = timers[currentBlockIndex] || 0;
+        showCompletionModal(currentBlockIndex, blockTime);
+        return true;
+    }
+    
+    return false;
+}
+
+function showCompletionModal(blockIndex, completionTime) {
+    console.log('🏆 Showing completion modal for block:', blockIndex, 'Time:', completionTime);
+    
+    // ✅ MARK BLOCK AS COMPLETED to prevent repeated modals
+    completedBlocks.add(blockIndex);
+    
+    // Store completion data
+    currentCompletingBlock = {
+        blockIndex: blockIndex,
+        completionTime: completionTime,
+        timestamp: new Date().toISOString()
+    };
+    
+    // Get block title
+    const container = document.querySelector(`[data-block-index="${blockIndex}"]`);
+    const blockTitle = container ? container.querySelector('h3').textContent : `Block ${blockIndex + 1}`;
+    
+    // Update modal content
+    document.getElementById('completed-block-title').textContent = blockTitle;
+    document.getElementById('completed-block-time').textContent = formatTime(completionTime);
+    
+    // Reset rating selection
+    document.querySelectorAll('input[name="proficiency"]').forEach(radio => {
+        radio.checked = false;
+    });
+    document.getElementById('save-completion-btn').disabled = true;
+    
+    // Show modal
+    const modal = new bootstrap.Modal(document.getElementById('completionModal'));
+    modal.show();
+}
+
+// Enhanced saveCompletion function
+async function saveCompletion() {
+    console.log('💾 Saving completion...');
+    
+    const selectedRating = document.querySelector('input[name="proficiency"]:checked');
+    if (!selectedRating) {
+        alert('Please select a proficiency rating first!');
+        return;
+    }
+    
+    const proficiencyScore = parseInt(selectedRating.value);
+    const completionTime = currentCompletingBlock.completionTime;
+    const blockIndex = currentCompletingBlock.blockIndex;
+    
+    console.log('📊 Completion data:', { proficiencyScore, completionTime, blockIndex });
+    
+    // Get the actual focus block ID
+    const container = document.querySelector(`[data-block-index="${blockIndex}"]`);
+    const focusBlockId = container ? container.dataset.focusBlockId : null;
+    
+    if (focusBlockId) {
+        try {
+            // Save to database
+            const response = await fetch(`/api/focus-block/${focusBlockId}/complete/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCookie('csrftoken')
+                },
+                body: JSON.stringify({
+                    proficiency_score: proficiencyScore,
+                    completion_time: completionTime
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                console.log('✅ Saved to database:', result);
+                showToast(`✅ Block completed! Rating: ${proficiencyScore}/5 ⭐`, 'success');
+            } else {
+                throw new Error(result.error || 'Failed to save');
+            }
+            
+        } catch (error) {
+            console.error('❌ Database save failed:', error);
+            showToast('⚠️ Saved locally, will sync when online', 'warning');
+        }
+    }
+    
+    // Save to localStorage as backup
+    saveToLocalStorage(blockIndex, proficiencyScore, completionTime);
+    
+    // Close modal
+    const modal = bootstrap.Modal.getInstance(document.getElementById('completionModal'));
+    if (modal) {
+        modal.hide();
+    }
+    
+    // ✅ PROPER PROGRESSION: Move to next block's first step
+    setTimeout(() => {
+        moveToNextBlock();
+    }, 500);  // Brief delay for better UX
+}
+
+function moveToNextBlock() {
+    const allSteps = document.querySelectorAll('.study-step');
+    const currentBlockIndex = getCurrentBlockIndex(currentGlobalStepIndex);
+    
+    // Find the first step of the next block
+    for (let i = currentGlobalStepIndex + 1; i < allSteps.length; i++) {
+        const nextBlockIndex = getCurrentBlockIndex(i);
+        if (nextBlockIndex !== currentBlockIndex) {
+            // Found next block, go to its first step
+            console.log(`⏭️ Moving from block ${currentBlockIndex} to block ${nextBlockIndex}`);
+            currentGlobalStepIndex = i;
+            showStep(currentGlobalStepIndex);
+            return;
+        }
+    }
+    
+    // No more blocks, show completion message
+    console.log('🎉 All blocks completed!');
+    showToast('🎉 Congratulations! All focus blocks completed!', 'success');
+}
+
+function saveToLocalStorage(blockIndex, proficiencyScore, completionTime) {
+    const completions = JSON.parse(localStorage.getItem('focusBlockCompletions') || '[]');
+    
+    const completion = {
+        blockIndex: blockIndex,
+        proficiencyRating: proficiencyScore,
+        completionTime: completionTime,
+        completedAt: new Date().toISOString()
+    };
+    
+    completions.push(completion);
+    localStorage.setItem('focusBlockCompletions', JSON.stringify(completions));
+    console.log('💾 Saved to localStorage:', completion);
+}
+
+function showToast(message, type = 'success') {
+    const toast = document.createElement('div');
+    toast.className = `position-fixed top-0 start-50 translate-middle-x alert alert-${type === 'success' ? 'success' : 'warning'} alert-dismissible mt-3`;
+    toast.style.zIndex = '9999';
+    toast.innerHTML = `
+        <div>${message}</div>
+        <button type="button" class="btn-close" onclick="this.parentElement.remove()"></button>
+    `;
+    
+    document.body.appendChild(toast);
+    
+    setTimeout(() => {
+        if (toast.parentElement) {
+            toast.remove();
+        }
+    }, 4000);
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+// Enable save button when rating is selected
+document.addEventListener('change', function(e) {
+    if (e.target.name === 'proficiency') {
+        document.getElementById('save-completion-btn').disabled = false;
+    }
+});
 </script>
 
 </div>
