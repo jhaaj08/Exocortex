@@ -809,7 +809,6 @@ function showCompletionModal(blockIndex, completionTime) {
     
     // Get focus block ID immediately when modal opens
     const container = document.querySelector(`[data-block-index="${blockIndex}"]`);
-    const focusBlockId = container ? container.dataset.focusBlockId : null;
     
     console.log('🔍 Storing focusBlockId:', focusBlockId);
     
