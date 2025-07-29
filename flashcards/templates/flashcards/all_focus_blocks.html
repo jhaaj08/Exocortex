@@ -836,7 +836,6 @@ async function saveCompletion() {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-CSRFToken': getCookie('csrftoken')
                 },
                 body: JSON.stringify({
                     proficiency_score: proficiencyScore,
@@ -855,7 +854,15 @@ async function saveCompletion() {
             
         } catch (error) {
             console.error('❌ Database save failed:', error);
-            showToast('⚠️ Saved locally, will sync when online', 'warning');
+            
+            // Better error analysis
+            if (error.message.includes('CSRF')) {
+                showToast('🔑 Session expired - refresh page', 'warning');
+            } else if (error.message.includes('timeout')) {
+                showToast('⏳ Database busy - saved locally', 'warning');
+            } else {
+                showToast('⚠️ Saved locally, will sync when online', 'warning');
+            }
         }
     }
     
@@ -871,7 +878,7 @@ async function saveCompletion() {
     // ✅ PROPER PROGRESSION: Move to next block's first step
     setTimeout(() => {
         moveToNextBlock();
-    }, 500);  // Brief delay for better UX
+    }, 2000);  // Brief delay for better UX
 }
 
 function moveToNextBlock() {
