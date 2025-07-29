@@ -782,52 +782,35 @@ function checkBlockCompletion(stepIndex) {
 function showCompletionModal(blockIndex, completionTime) {
     console.log('🏆 Showing completion modal for block:', blockIndex, 'Time:', completionTime);
     
-    // ✅ DEBUG: Check what's happening with focus block ID
+    // ✅ DECLARE container FIRST (at the very top)
+    const container = document.querySelector(`[data-block-index="${blockIndex}"]`);
+    const focusBlockId = container ? container.dataset.focusBlockId : null;
+    
+    // ✅ DEBUG logging (now container is available)
     console.log('🔍 FOCUS BLOCK ID DEBUG:');
     console.log('   blockIndex:', blockIndex);
-    console.log('   querySelector:', `[data-block-index="${blockIndex}"]`);
-
     console.log('   container found:', !!container);
-
-    if (container) {
-        console.log('   data-block-index:', container.dataset.blockIndex);
-        console.log('   data-focus-block-id:', container.dataset.focusBlockId);
-    } else {
-        console.log('   ❌ Container not found!');
-        console.log('   Available containers:');
-        document.querySelectorAll('[data-block-index]').forEach(el => {
-            console.log(`      - data-block-index="${el.dataset.blockIndex}" id="${el.dataset.focusBlockId?.substr(0,8)}..."`);
-        });
-    }
-
-    const focusBlockId = container ? container.dataset.focusBlockId : null;
-    console.log('   Final focusBlockId:', focusBlockId);
-    console.log('---');
+    console.log('   focusBlockId:', focusBlockId);
     
-    // ✅ MARK BLOCK AS COMPLETED to prevent repeated modals
+    // ✅ MARK BLOCK AS COMPLETED
     completedBlocks.add(blockIndex);
     
-    // Get focus block ID immediately when modal opens
-    const container = document.querySelector(`[data-block-index="${blockIndex}"]`);
-    
-    console.log('🔍 Storing focusBlockId:', focusBlockId);
-    
-    // Store completion data INCLUDING focusBlockId
+    // ✅ Store completion data
     currentCompletingBlock = {
         blockIndex: blockIndex,
         completionTime: completionTime,
-        focusBlockId: focusBlockId,  // ✅ Store immediately
+        focusBlockId: focusBlockId,
         timestamp: new Date().toISOString()
     };
     
-    // Get block title
+    // ✅ Get block title (container already available)
     const blockTitle = container ? container.querySelector('h3').textContent : `Block ${blockIndex + 1}`;
     
     // Update modal content
     document.getElementById('completed-block-title').textContent = blockTitle;
     document.getElementById('completed-block-time').textContent = formatTime(completionTime);
     
-    // Reset rating selection
+    // Reset form
     document.querySelectorAll('input[name="proficiency"]').forEach(radio => {
         radio.checked = false;
     });
