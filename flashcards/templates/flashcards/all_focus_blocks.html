@@ -417,8 +417,10 @@
 </div>
 
 <script>
-    // ✅ Pass completion data from Django to JavaScript
-    window.serverCompletions = {{ completion_data_json|safe }};
+    window.serverCompletions = [];
+    {% if completion_data %}
+        window.serverCompletions = {{ completion_data|safe }};
+    {% endif %}
     console.log('📊 Server completion data loaded:', window.serverCompletions);
 </script>
 
@@ -785,7 +787,6 @@ function showCompletionModal(blockIndex, completionTime) {
     console.log('   blockIndex:', blockIndex);
     console.log('   querySelector:', `[data-block-index="${blockIndex}"]`);
 
-    const container = document.querySelector(`[data-block-index="${blockIndex}"]`);
     console.log('   container found:', !!container);
 
     if (container) {
