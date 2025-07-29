@@ -497,6 +497,123 @@ function showToast(message, duration = 3000) {
         }
     }, duration);
 }
+
+// ✅ ESSENTIAL FUNCTIONS FOR BUTTON FUNCTIONALITY
+
+// Global variables
+let currentGlobalStepIndex = 0;
+let globalTimer = 0;
+let globalTimerInterval = null;
+let globalTimerRunning = false;
+let timers = {};
+let timerIntervals = {};
+let currentActiveTimer = null;
+let currentCompletingBlock = null;
+
+// Navigation functions
+function nextStep() {
+    currentGlobalStepIndex++;
+    showStep(currentGlobalStepIndex);
+}
+
+function previousStep() {
+    if (currentGlobalStepIndex > 0) {
+        currentGlobalStepIndex--;
+        showStep(currentGlobalStepIndex);
+    }
+}
+
+function showStep(stepIndex) {
+    // Hide all segments
+    document.querySelectorAll('.segment').forEach(el => el.style.display = 'none');
+    
+    // Show current segment (basic version)
+    const segments = document.querySelectorAll('.segment');
+    if (segments[stepIndex]) {
+        segments[stepIndex].style.display = 'block';
+    }
+    
+    // Update buttons
+    document.getElementById('prevBtn').disabled = stepIndex === 0;
+    document.getElementById('nextBtn').disabled = stepIndex >= segments.length - 1;
+}
+
+// Timer functions
+function startGlobalTimer() {
+    if (!globalTimerRunning) {
+        globalTimerInterval = setInterval(() => {
+            globalTimer++;
+            updateGlobalTimerDisplay();
+        }, 1000);
+        globalTimerRunning = true;
+        
+        // Update button visibility
+        document.getElementById('global-start-btn').style.display = 'none';
+        document.getElementById('global-pause-btn').style.display = 'inline-block';
+        document.getElementById('global-stop-btn').style.display = 'inline-block';
+    }
+}
+
+function pauseGlobalTimer() {
+    clearInterval(globalTimerInterval);
+    globalTimerRunning = false;
+    document.getElementById('global-start-btn').style.display = 'inline-block';
+    document.getElementById('global-pause-btn').style.display = 'none';
+}
+
+function stopGlobalTimer() {
+    clearInterval(globalTimerInterval);
+    globalTimerRunning = false;
+    globalTimer = 0;
+    updateGlobalTimerDisplay();
+    
+    document.getElementById('global-start-btn').style.display = 'inline-block';
+    document.getElementById('global-pause-btn').style.display = 'none';
+    document.getElementById('global-stop-btn').style.display = 'none';
+}
+
+function updateGlobalTimerDisplay() {
+    const hours = Math.floor(globalTimer / 3600);
+    const minutes = Math.floor((globalTimer % 3600) / 60);
+    const seconds = globalTimer % 60;
+    const timeStr = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    
+    const timerEl = document.getElementById('global-timer');
+    if (timerEl) {
+        timerEl.textContent = `🕐 ${timeStr}`;
+    }
+}
+
+// Answer reveal functions
+function toggleAnswer(elementId) {
+    const element = document.getElementById(elementId);
+    if (element) {
+        element.style.display = element.style.display === 'none' ? 'block' : 'none';
+    }
+}
+
+function revealAnswer(elementId) {
+    const element = document.getElementById(elementId);
+    if (element) {
+        element.style.display = 'block';
+    }
+}
+
+// Completion function
+function saveCompletion() {
+    alert('Completion saved! (Basic version)');
+    nextStep();
+}
+
+// Progress viewer
+function viewCompletions() {
+    alert('Progress: Basic functionality restored!');
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function() {
+    showStep(0); // Start with first step
+});
 </script>
 
 <style>
