@@ -701,7 +701,7 @@ def study_focus_blocks(request, pdf_id):
     pdf_document = get_object_or_404(PDFDocument, id=pdf_id)
     
     # Get or create study session
-    session_id = request.session.get(f'focus_session_{pdf_id}')
+    session_id = request.session.get(f'study_session_{pdf_id}')
     if session_id:
         try:
             study_session = StudySession.objects.get(session_id=session_id)
@@ -715,7 +715,7 @@ def study_focus_blocks(request, pdf_id):
             pdf_document=pdf_document,
             session_type='focus_blocks'
         )
-        request.session[f'focus_session_{pdf_id}'] = str(study_session.session_id)
+        request.session[f'study_session_{pdf_id}'] = str(study_session.session_id)
     
     # Get current focus block
     if not study_session.current_focus_block:
@@ -863,7 +863,7 @@ def deduplication_stats(request):
     return render(request, 'flashcards/deduplication_stats.html', context)
 
 def all_focus_blocks(request):
-    """Unified view to display all focus blocks with completion data"""
+    """Unified view to display NEW and OVERDUE focus blocks only"""
     
     # Get all focus blocks
     all_blocks = FocusBlock.objects.select_related('pdf_document').order_by(
@@ -873,33 +873,50 @@ def all_focus_blocks(request):
     if not all_blocks.exists():
         return render(request, 'flashcards/all_focus_blocks.html', {'no_blocks': True})
     
-    # ✅ GET COMPLETION DATA FROM DATABASE
+    # ✅ DEBUG: Check completion data
     completed_sessions = FocusSession.objects.filter(
         status='completed'
-    ).select_related('focus_block').order_by('completed_at')
+    ).select_related('focus_block')
     
-    # Convert to simple format for JavaScript
-    completion_data = []
+    print(f"🔍 ALL_FOCUS_BLOCKS DEBUG:")
+    print(f"   Total blocks in database: {all_blocks.count()}")
+    print(f"   Total completed sessions: {completed_sessions.count()}")
+    
+    # Get completed block IDs (simple approach)
+    completed_block_ids = set()
     for session in completed_sessions:
-        # Find block index
-        block_index = None
-        for idx, block in enumerate(all_blocks):
-            if block.id == session.focus_block.id:
-                block_index = idx
-                break
-        
-        if block_index is not None:
-            completion_data.append({
-                'block_index': block_index,
-                'block_title': session.focus_block.title,
-                'proficiency_score': session.proficiency_score,
-                'total_study_time': session.total_study_time,
-                'completed_at': session.completed_at.isoformat(),
-            })
+        completed_block_ids.add(str(session.focus_block.id))  # Convert to string for comparison
+        print(f"   ✅ Completed: {session.focus_block.title[:50]}... (ID: {str(session.focus_block.id)[:8]})")
     
-    # Format blocks for display
-    formatted_blocks = []
+    print(f"   📊 Completed block IDs: {len(completed_block_ids)}")
+    
+    # ✅ SIMPLE FILTERING: Only show blocks that are NOT completed
+    blocks_to_study = []
+    
     for block in all_blocks:
+        block_id_str = str(block.id)
+        if block_id_str not in completed_block_ids:
+            # NEW BLOCK - never completed
+            blocks_to_study.append(block)
+            print(f"   🆕 WILL SHOW: {block.title[:50]}... (ID: {block_id_str[:8]})")
+        else:
+            # COMPLETED BLOCK - hide it for now (we can add spaced repetition later)
+            print(f"   ❌ HIDING: {block.title[:50]}... (ID: {block_id_str[:8]}) - COMPLETED")
+    
+    print(f"   📚 Final blocks to study: {len(blocks_to_study)}")
+    print("=" * 60)
+    
+    # If no blocks to study, show message
+    if not blocks_to_study:
+        return render(request, 'flashcards/all_focus_blocks.html', {
+            'no_new_blocks': True,
+            'total_blocks': all_blocks.count(),
+            'completed_count': len(completed_block_ids)
+        })
+    
+    # Format filtered blocks for display
+    formatted_blocks = []
+    for block in blocks_to_study:
         segments = block.get_segments()
         qa_items = block.get_qa_items()
         revision_data = block.get_revision_data()
@@ -918,16 +935,16 @@ def all_focus_blocks(request):
             'total_qa': len(qa_items),
         })
     
-    # Calculate total study time
-    total_time = sum(block.target_duration for block in all_blocks) / 60
+    # Calculate total study time for blocks to study
+    total_time = sum(block.target_duration for block in blocks_to_study) / 60
     
     context = {
         'formatted_blocks': formatted_blocks,
-        'total_blocks': all_blocks.count(),
+        'total_blocks': len(blocks_to_study),
         'total_study_time': total_time,
-        'unique_pdfs': all_blocks.values('pdf_document__name').distinct().count(),
-        # ✅ ADD COMPLETION DATA FOR JAVASCRIPT
-        'completion_data_json': json.dumps(completion_data),
+        'unique_pdfs': len(set(block.pdf_document.name for block in blocks_to_study)),
+        'all_blocks_count': all_blocks.count(),
+        'completed_count': len(completed_block_ids),
     }
     
     return render(request, 'flashcards/all_focus_blocks.html', context)
@@ -1067,7 +1084,7 @@ def focus_schedule(request):
         'pdf_document', 'main_concept_unit'
     ).order_by('pdf_document__created_at', 'block_order')
     
-    # ✅ GET COMPLETION DATA FROM DATABASE
+    # ✅ GET COMPLETION DATA FROM DATABASE (ORIGINAL WORKING VERSION)
     completed_sessions = FocusSession.objects.filter(
         status='completed'
     ).select_related('focus_block').order_by('-completed_at')
@@ -1276,7 +1293,7 @@ def complete_focus_block_api(request, focus_block_id):
             
             focus_block = FocusBlock.objects.get(id=focus_block_id)
             
-            # Create a new FocusSession record
+            # Create a new FocusSession record (for detailed tracking)
             session = FocusSession.objects.create(
                 focus_block=focus_block,
                 proficiency_score=int(proficiency_score),
@@ -1284,6 +1301,36 @@ def complete_focus_block_api(request, focus_block_id):
                 status='completed',
                 completed_at=timezone.now()
             )
+
+            # ✅ DEBUG: Verify the session was created
+            print(f"🔍 API COMPLETION DEBUG:")
+            print(f"   Created FocusSession ID: {session.id}")
+            print(f"   Focus Block ID: {focus_block.id}")
+            print(f"   Focus Block Title: {focus_block.title}")
+            print(f"   Status: {session.status}")
+            print(f"   Proficiency: {session.proficiency_score}")
+            print(f"   Completed At: {session.completed_at}")
+
+            # Verify it's in the database
+            verification = FocusSession.objects.filter(
+                focus_block=focus_block, 
+                status='completed'
+            ).count()
+            print(f"   ✅ Total completed sessions for this block: {verification}")
+            
+            # ✅ ALSO add to the original working system
+            # Find or create a study session for this user/PDF
+            study_session, created = StudySession.objects.get_or_create(
+                pdf_document=focus_block.pdf_document,
+                session_type='focus_blocks',
+                defaults={'session_id': uuid.uuid4()}
+            )
+
+            # Add to the original ManyToMany relationship
+            study_session.completed_focus_blocks.add(focus_block)
+            study_session.save()
+
+            print(f"   ✅ Added to StudySession completed_focus_blocks (original working system)")
             
             # Calculate next review date using spaced repetition logic
             proficiency_score = int(proficiency_score)

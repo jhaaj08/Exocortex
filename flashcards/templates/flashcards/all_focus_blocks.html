@@ -18,6 +18,45 @@
         </div>
     </div>
     
+    {% elif no_new_blocks %}
+    <!-- No New/Overdue Blocks State -->
+    <div class="row justify-content-center">
+        <div class="col-lg-8 text-center">
+            <div class="card shadow-sm">
+                <div class="card-body py-5">
+                    <i class="fas fa-check-circle fa-4x text-success mb-4"></i>
+                    <h3 class="text-success mb-3">All Caught Up! 🎉</h3>
+                    <p class="lead text-muted mb-4">
+                        No new blocks or reviews due today. You're up to date with your learning!
+                    </p>
+                    
+                    <div class="row text-center mb-4">
+                        <div class="col-md-4">
+                            <h5 class="text-primary">{{ all_blocks_count }}</h5>
+                            <small class="text-muted">Total Blocks</small>
+                        </div>
+                        <div class="col-md-4">
+                            <h5 class="text-success">{{ completed_count }}</h5>
+                            <small class="text-muted">Completed</small>
+                        </div>
+                        <div class="col-md-4">
+                            <h5 class="text-warning">0</h5>
+                            <small class="text-muted">Due Today</small>
+                        </div>
+                    </div>
+                    
+                    <div class="d-flex justify-content-center gap-3">
+                        <a href="{% url 'flashcards:focus_schedule' %}" class="btn btn-primary">
+                            <i class="fas fa-calendar-alt me-2"></i>View Schedule
+                        </a>
+                        <a href="{% url 'flashcards:home' %}" class="btn btn-outline-secondary">
+                            <i class="fas fa-plus me-2"></i>Add More Content
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
     {% else %}
     
     <!-- Header -->
@@ -424,6 +463,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Count total steps for debugging
     const totalSteps = document.querySelectorAll('.study-step').length;
     console.log('📊 Total study steps found:', totalSteps);
+    
+    // ✅ DISABLE navigation until session starts
+    disableNavigationButtons();
 });
 let globalTimer = 0;
 let globalTimerInterval = null;
@@ -432,8 +474,14 @@ let timers = {};
 let timerIntervals = {};
 let currentActiveTimer = null;
 
-// Navigation functions
+// Navigation functions - BLOCKED until study session starts
 function nextStep() {
+    // ✅ HARD BLOCK: Prevent navigation without active study session
+    if (!globalTimerRunning) {
+        showSessionRequiredToast();
+        return; // Stop execution completely
+    }
+    
     // Check if current block is completed BEFORE moving to next step
     const isBlockCompleted = checkBlockCompletion(currentGlobalStepIndex);
     
@@ -441,14 +489,22 @@ function nextStep() {
         // Normal step progression within the same block
         currentGlobalStepIndex++;
         showStep(currentGlobalStepIndex);
+        updateButtonStates(); // Update button states after navigation
     }
     // If block is completed, the modal will handle progression via moveToNextBlock()
 }
 
 function previousStep() {
+    // ✅ HARD BLOCK: Prevent navigation without active study session
+    if (!globalTimerRunning) {
+        showSessionRequiredToast();
+        return; // Stop execution completely
+    }
+    
     if (currentGlobalStepIndex > 0) {
         currentGlobalStepIndex--;
         showStep(currentGlobalStepIndex);
+        updateButtonStates(); // Update button states after navigation
     }
 }
 
@@ -525,12 +581,15 @@ function startGlobalTimer() {
         document.getElementById('global-start-btn').style.display = 'none';
         document.getElementById('global-pause-btn').style.display = 'inline-block';
         document.getElementById('global-stop-btn').style.display = 'inline-block';
+        enableNavigationButtons(); // ✅ ADD THIS LINE
     }
 }
 
 function pauseGlobalTimer() {
     clearInterval(globalTimerInterval);
     globalTimerRunning = false;
+    disableNavigationButtons(); // ✅ LOCK navigation when paused
+    
     document.getElementById('global-start-btn').style.display = 'inline-block';
     document.getElementById('global-pause-btn').style.display = 'none';
 }
@@ -540,6 +599,7 @@ function stopGlobalTimer() {
     globalTimerRunning = false;
     globalTimer = 0;
     updateGlobalTimerDisplay();
+    disableNavigationButtons(); // ✅ LOCK navigation when stopped
     
     document.getElementById('global-start-btn').style.display = 'inline-block';
     document.getElementById('global-pause-btn').style.display = 'none';
@@ -690,11 +750,26 @@ function checkBlockCompletion(stepIndex) {
     
     console.log(`📊 Block ${currentBlockIndex}: Step ${stepIndexInBlock + 1}/${currentBlockSteps.length}`);
     
-    // If this is the last step of the block, show completion modal
+    // If this is the last step of the block, check if study session is active
     if (stepIndexInBlock === currentBlockSteps.length - 1) {
-        console.log('🎉 Block completed! Showing modal...');
+        
+        // ✅ GUARD: Prevent completion without active study session
+        if (!globalTimerRunning) {
+            console.log('⚠️ Block completion attempted without active study session');
+            showToast('⚠️ Please start the study session first!', 'warning');
+            return false;
+        }
         
         const blockTime = timers[currentBlockIndex] || 0;
+        
+        // ✅ GUARD: Prevent completion with zero time
+        if (blockTime === 0) {
+            console.log('⚠️ Block completion attempted with zero study time');
+            showToast('⚠️ Please study the content before marking as complete!', 'warning');
+            return false;
+        }
+        
+        console.log('🎉 Block completed! Showing modal...');
         showCompletionModal(currentBlockIndex, blockTime);
         return true;
     }
@@ -874,6 +949,97 @@ document.addEventListener('change', function(e) {
         document.getElementById('save-completion-btn').disabled = false;
     }
 });
+
+// Show user guidance for starting study session
+function showStudySessionPrompt() {
+    if (!globalTimerRunning) {
+        const startBtn = document.getElementById('global-start-btn');
+        if (startBtn && startBtn.style.display !== 'none') {
+            // Add visual emphasis to start button
+            startBtn.classList.add('btn-pulse');
+            startBtn.innerHTML = '<i class="fas fa-play"></i> Start Session First!';
+            
+            setTimeout(() => {
+                startBtn.classList.remove('btn-pulse');
+                startBtn.innerHTML = '<i class="fas fa-play"></i> Start Session';
+            }, 3000);
+        }
+    }
+}
+
+// Button state management
+function disableNavigationButtons() {
+    const nextBtn = document.getElementById('nextBtn');
+    const prevBtn = document.getElementById('prevBtn');
+    
+    if (nextBtn) {
+        nextBtn.disabled = true;
+        nextBtn.classList.add('btn-disabled');
+        nextBtn.innerHTML = '<i class="fas fa-lock"></i> Start Session to Navigate';
+        nextBtn.title = 'Please start the study session first';
+    }
+    
+    if (prevBtn) {
+        prevBtn.disabled = true;
+        prevBtn.classList.add('btn-disabled');
+    }
+    
+    console.log('🚫 Navigation buttons DISABLED');
+}
+
+function enableNavigationButtons() {
+    const nextBtn = document.getElementById('nextBtn');
+    const prevBtn = document.getElementById('prevBtn');
+    
+    if (nextBtn) {
+        nextBtn.disabled = false;
+        nextBtn.classList.remove('btn-disabled');
+        nextBtn.innerHTML = '<i class="fas fa-arrow-right"></i> Next';
+        nextBtn.title = 'Go to next step';
+    }
+    
+    if (prevBtn) {
+        prevBtn.disabled = false;
+        prevBtn.classList.remove('btn-disabled');
+    }
+    
+    console.log('✅ Navigation buttons ENABLED');
+    updateButtonStates(); // Set correct initial states
+}
+
+function updateButtonStates() {
+    // Only update if navigation is enabled (session running)
+    if (!globalTimerRunning) return;
+    
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const totalSteps = document.querySelectorAll('.study-step').length;
+    
+    // Previous button
+    if (prevBtn) {
+        prevBtn.disabled = (currentGlobalStepIndex === 0);
+    }
+    
+    // Next button  
+    if (nextBtn) {
+        if (currentGlobalStepIndex >= totalSteps - 1) {
+            nextBtn.innerHTML = '<i class="fas fa-flag-checkered"></i> Complete Study';
+        } else {
+            nextBtn.innerHTML = '<i class="fas fa-arrow-right"></i> Next';
+        }
+    }
+}
+
+function showSessionRequiredToast() {
+    showToast('🔒 Please start the study session first!', 'warning');
+    
+    // Highlight the start button
+    const startBtn = document.getElementById('global-start-btn');
+    if (startBtn && startBtn.style.display !== 'none') {
+        startBtn.classList.add('btn-pulse');
+        setTimeout(() => startBtn.classList.remove('btn-pulse'), 2000);
+    }
+}
 </script>
 
 </div>

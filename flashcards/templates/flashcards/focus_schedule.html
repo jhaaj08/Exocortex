@@ -452,7 +452,7 @@ function adjustReview(blockIndex, daysDelta) {
         localStorage.setItem('repetitionData', JSON.stringify(repetitionData));
         
         // Refresh the display
-        loadFocusScheduleData();
+        window.location.reload();
         
         const action = daysDelta > 0 ? 'postponed' : 'moved up';
         showToast(`📅 Review ${action} by ${Math.abs(daysDelta)} day(s)`);
