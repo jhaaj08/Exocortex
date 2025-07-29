@@ -780,18 +780,47 @@ function checkBlockCompletion(stepIndex) {
 function showCompletionModal(blockIndex, completionTime) {
     console.log('🏆 Showing completion modal for block:', blockIndex, 'Time:', completionTime);
     
+    // ✅ DEBUG: Check what's happening with focus block ID
+    console.log('🔍 FOCUS BLOCK ID DEBUG:');
+    console.log('   blockIndex:', blockIndex);
+    console.log('   querySelector:', `[data-block-index="${blockIndex}"]`);
+
+    const container = document.querySelector(`[data-block-index="${blockIndex}"]`);
+    console.log('   container found:', !!container);
+
+    if (container) {
+        console.log('   data-block-index:', container.dataset.blockIndex);
+        console.log('   data-focus-block-id:', container.dataset.focusBlockId);
+    } else {
+        console.log('   ❌ Container not found!');
+        console.log('   Available containers:');
+        document.querySelectorAll('[data-block-index]').forEach(el => {
+            console.log(`      - data-block-index="${el.dataset.blockIndex}" id="${el.dataset.focusBlockId?.substr(0,8)}..."`);
+        });
+    }
+
+    const focusBlockId = container ? container.dataset.focusBlockId : null;
+    console.log('   Final focusBlockId:', focusBlockId);
+    console.log('---');
+    
     // ✅ MARK BLOCK AS COMPLETED to prevent repeated modals
     completedBlocks.add(blockIndex);
     
-    // Store completion data
+    // Get focus block ID immediately when modal opens
+    const container = document.querySelector(`[data-block-index="${blockIndex}"]`);
+    const focusBlockId = container ? container.dataset.focusBlockId : null;
+    
+    console.log('🔍 Storing focusBlockId:', focusBlockId);
+    
+    // Store completion data INCLUDING focusBlockId
     currentCompletingBlock = {
         blockIndex: blockIndex,
         completionTime: completionTime,
+        focusBlockId: focusBlockId,  // ✅ Store immediately
         timestamp: new Date().toISOString()
     };
     
     // Get block title
-    const container = document.querySelector(`[data-block-index="${blockIndex}"]`);
     const blockTitle = container ? container.querySelector('h3').textContent : `Block ${blockIndex + 1}`;
     
     // Update modal content
@@ -825,9 +854,10 @@ async function saveCompletion() {
     
     console.log('📊 Completion data:', { proficiencyScore, completionTime, blockIndex });
     
-    // Get the actual focus block ID
-    const container = document.querySelector(`[data-block-index="${blockIndex}"]`);
-    const focusBlockId = container ? container.dataset.focusBlockId : null;
+    // ✅ Use stored focusBlockId instead of re-querying DOM
+    const focusBlockId = currentCompletingBlock.focusBlockId;
+    
+    console.log('💾 Using stored focusBlockId:', focusBlockId);
     
     if (focusBlockId) {
         try {
@@ -873,6 +903,9 @@ async function saveCompletion() {
                 showToast('⚠️ Network error - saved locally', 'warning');
             }
         }
+    } else {
+        console.error('❌ No focusBlockId stored - cannot save to database');
+        showToast('⚠️ Cannot identify block - saved locally only', 'warning');
     }
     
     // Save to localStorage as backup
