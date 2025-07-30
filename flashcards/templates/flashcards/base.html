@@ -111,6 +111,12 @@
                             <i class="fas fa-target me-1"></i>Focus Blocks
                         </a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if 'quiz' in request.resolver_match.url_name %}active{% endif %}" 
+                           href="{% url 'flashcards:quiz_home' %}">
+                            <i class="fas fa-question-circle me-1"></i>Quiz
+                        </a>
+                    </li>
                 </ul>
                 
                 <ul class="navbar-nav">

@@ -496,3 +496,154 @@ class FocusSession(models.Model):
         self.segment_times[str(segment_index)] = time_spent
         self.current_segment = segment_index + 1
         self.save()
+
+# ==================== QUIZ MODELS ====================
+
+class QuizSet(models.Model):
+    """Collection of quiz questions"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    source_pdf = models.ForeignKey(PDFDocument, on_delete=models.SET_NULL, null=True, blank=True)
+    
+    # Metadata
+    total_questions = models.IntegerField(default=0)
+    average_difficulty = models.FloatField(default=0.0)
+    topics = models.JSONField(default=list, help_text="List of topics covered")
+    
+    class Meta:
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"{self.name} ({self.total_questions} questions)"
+
+class QuizQuestion(models.Model):
+    """Individual quiz question extracted from images or generated"""
+    QUESTION_TYPES = [
+        ('mcq', 'Multiple Choice'),
+        ('tf', 'True/False'),
+        ('short', 'Short Answer'),
+        ('essay', 'Essay'),
+        ('fill', 'Fill in the Blank'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    quiz_set = models.ForeignKey(QuizSet, on_delete=models.CASCADE, related_name='questions')
+    
+    # Question content
+    question_text = models.TextField()
+    question_type = models.CharField(max_length=10, choices=QUESTION_TYPES, default='mcq')
+    options = models.JSONField(default=dict, help_text="For MCQ: {'A': 'option1', 'B': 'option2', ...}")
+    correct_answer = models.TextField(help_text="Correct answer or answer key")
+    explanation = models.TextField(blank=True, help_text="Explanation of the correct answer")
+    
+    # Metadata and analysis
+    difficulty = models.IntegerField(
+        default=5,
+        choices=[(i, f"Level {i}") for i in range(1, 11)],
+        help_text="Difficulty rating from 1 (easy) to 10 (very hard)"
+    )
+    topics = models.JSONField(default=list, help_text="List of topics/keywords related to this question")
+    cognitive_level = models.CharField(
+        max_length=20,
+        choices=[
+            ('remember', 'Remember'),
+            ('understand', 'Understand'),
+            ('apply', 'Apply'),
+            ('analyze', 'Analyze'),
+            ('evaluate', 'Evaluate'),
+            ('create', 'Create'),
+        ],
+        default='understand',
+        help_text="Bloom's Taxonomy level"
+    )
+    
+    # Source information
+    source_image = models.ImageField(upload_to='quiz_images/', null=True, blank=True)
+    source_type = models.CharField(
+        max_length=20,
+        choices=[
+            ('image_upload', 'Uploaded Image'),
+            ('ai_generated', 'AI Generated'),
+            ('manual_entry', 'Manual Entry'),
+        ],
+        default='image_upload'
+    )
+    
+    # Processing metadata
+    extraction_confidence = models.FloatField(default=0.0, help_text="Confidence in text extraction (0.0-1.0)")
+    processing_notes = models.TextField(blank=True, help_text="Notes from AI processing")
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['quiz_set', 'created_at']
+    
+    def __str__(self):
+        return f"Q: {self.question_text[:50]}..." if len(self.question_text) > 50 else self.question_text
+
+class QuizAttempt(models.Model):
+    """User's attempt at a quiz"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    quiz_set = models.ForeignKey(QuizSet, on_delete=models.CASCADE, related_name='attempts')
+    
+    # Session info
+    started_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    time_taken = models.DurationField(null=True, blank=True)
+    
+    # Results
+    total_questions = models.IntegerField(default=0)
+    correct_answers = models.IntegerField(default=0)
+    score_percentage = models.FloatField(default=0.0)
+    
+    # Status
+    status = models.CharField(
+        max_length=20,
+        choices=[
+            ('in_progress', 'In Progress'),
+            ('completed', 'Completed'),
+            ('abandoned', 'Abandoned'),
+        ],
+        default='in_progress'
+    )
+    
+    # Settings used
+    settings = models.JSONField(default=dict, help_text="Quiz settings like time limit, randomize, etc.")
+    
+    class Meta:
+        ordering = ['-started_at']
+    
+    def __str__(self):
+        return f"Quiz Attempt: {self.quiz_set.name} - {self.score_percentage}%"
+
+class QuizAnswer(models.Model):
+    """Individual answer in a quiz attempt"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    quiz_attempt = models.ForeignKey(QuizAttempt, on_delete=models.CASCADE, related_name='answers')
+    question = models.ForeignKey(QuizQuestion, on_delete=models.CASCADE)
+    
+    # Answer data
+    user_answer = models.TextField()
+    is_correct = models.BooleanField(default=False)
+    time_taken = models.DurationField(null=True, blank=True)
+    confidence_level = models.IntegerField(
+        null=True, blank=True,
+        choices=[(i, f"{i}/5") for i in range(1, 6)],
+        help_text="User's confidence in their answer"
+    )
+    
+    # Analysis
+    partial_credit = models.FloatField(default=0.0, help_text="Partial credit for short answer questions (0.0-1.0)")
+    answer_analysis = models.TextField(blank=True, help_text="AI analysis of the answer")
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['quiz_attempt', 'created_at']
+        unique_together = ['quiz_attempt', 'question']
+    
+    def __str__(self):
+        return f"Answer: {self.question.question_text[:30]}... - {'✓' if self.is_correct else '✗'}"

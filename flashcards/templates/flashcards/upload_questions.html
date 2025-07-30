@@ -1,0 +1,176 @@
+{% extends 'flashcards/base.html' %}
+
+{% block title %}Upload Quiz Questions - Exocortex{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex align-items-center justify-content-between">
+                <div>
+                    <h2><i class="fas fa-upload text-primary me-2"></i>Upload Quiz Questions</h2>
+                    <p class="text-muted">Upload screenshots of quiz questions for AI-powered extraction and analysis</p>
+                </div>
+                <a href="{% url 'flashcards:quiz_home' %}" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left me-1"></i>Back to Quiz
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Upload Form -->
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-6">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="fas fa-camera me-2"></i>Upload Quiz Images</h5>
+                </div>
+                <div class="card-body">
+                    <form method="post" enctype="multipart/form-data" id="quizUploadForm">
+                        {% csrf_token %}
+                        
+                        <!-- Quiz Information -->
+                        <div class="mb-4">
+                            <h6 class="text-primary"><i class="fas fa-info-circle me-1"></i>Quiz Information</h6>
+                            
+                            <div class="mb-3">
+                                <label for="id_quiz_name" class="form-label">Quiz Name *</label>
+                                {{ form.quiz_name }}
+                                <div class="form-text">{{ form.quiz_name.help_text }}</div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="id_description" class="form-label">Description</label>
+                                {{ form.description }}
+                                <div class="form-text">{{ form.description.help_text }}</div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="id_source_pdf" class="form-label">Related PDF</label>
+                                {{ form.source_pdf }}
+                                <div class="form-text">{{ form.source_pdf.help_text }}</div>
+                            </div>
+                        </div>
+
+                        <!-- Image Upload -->
+                        <div class="mb-4">
+                            <h6 class="text-primary"><i class="fas fa-image me-1"></i>Question Image</h6>
+                            
+                            <div class="mb-3">
+                                <label for="id_image" class="form-label">Upload Image *</label>
+                                {{ form.image }}
+                                <div class="form-text">{{ form.image.help_text }}</div>
+                            </div>
+                            
+                            <!-- Image Preview -->
+                            <div id="imagePreview" class="mt-3" style="display: none;">
+                                <h6>Selected Image:</h6>
+                                <div id="previewContainer"></div>
+                            </div>
+                        </div>
+
+                        <!-- Processing Options -->
+                        <div class="mb-4">
+                            <h6 class="text-primary"><i class="fas fa-cogs me-1"></i>Processing Options</h6>
+                            
+                            <div class="form-check">
+                                {{ form.auto_categorize }}
+                                <label class="form-check-label" for="id_auto_categorize">
+                                    {{ form.auto_categorize.label }}
+                                </label>
+                                <div class="form-text">{{ form.auto_categorize.help_text }}</div>
+                            </div>
+                        </div>
+
+                        <!-- Submit Button -->
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary btn-lg" id="uploadBtn">
+                                <i class="fas fa-magic me-2"></i>Extract & Analyze Questions
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            
+            <!-- Processing Info -->
+            <div class="alert alert-info mt-4">
+                <h6><i class="fas fa-info-circle me-2"></i>What happens next:</h6>
+                <ol class="mb-0 small">
+                    <li><strong>Image Analysis:</strong> AI extracts text from your screenshots</li>
+                    <li><strong>Question Parsing:</strong> Identifies questions, options, and answers</li>
+                    <li><strong>Difficulty Assessment:</strong> Rates difficulty from 1-10</li>
+                    <li><strong>Topic Extraction:</strong> Identifies key topics and keywords</li>
+                    <li><strong>Database Storage:</strong> Saves structured quiz data</li>
+                </ol>
+                <hr class="my-2">
+                <small class="text-muted">
+                    <i class="fas fa-lightbulb me-1"></i>
+                    <strong>Tips:</strong> For best results, ensure images are clear and well-lit. 
+                    Multiple choice questions work best, but the AI can handle various question types.
+                    You can upload additional images by repeating this process.
+                </small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Image preview functionality
+document.getElementById('id_image').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    const previewDiv = document.getElementById('imagePreview');
+    const container = document.getElementById('previewContainer');
+    
+    // Clear previous preview
+    container.innerHTML = '';
+    
+    if (file && file.type.startsWith('image/')) {
+        previewDiv.style.display = 'block';
+        
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            container.innerHTML = `
+                <div class="card" style="max-width: 300px;">
+                    <img src="${e.target.result}" class="card-img-top" style="height: 200px; object-fit: cover;">
+                    <div class="card-body p-2">
+                        <small class="text-muted">${file.name}</small>
+                    </div>
+                </div>
+            `;
+        };
+        reader.readAsDataURL(file);
+    } else {
+        previewDiv.style.display = 'none';
+    }
+});
+
+// Form submission handling
+document.getElementById('quizUploadForm').addEventListener('submit', function(e) {
+    const button = document.getElementById('uploadBtn');
+    const image = document.getElementById('id_image').files[0];
+    
+    // Check if image is selected
+    if (!image) {
+        e.preventDefault();
+        alert('Please select an image first.');
+        return false;
+    }
+    
+    // Show processing state
+    button.disabled = true;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Processing Image...';
+});
+</script>
+
+<style>
+.card-img-top {
+    border-radius: 0.375rem 0.375rem 0 0;
+}
+
+.form-check-input:checked {
+    background-color: #0d6efd;
+    border-color: #0d6efd;
+}
+</style>
+{% endblock %} 

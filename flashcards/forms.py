@@ -53,10 +53,14 @@ class FolderInputForm(forms.ModelForm):
 
 class PDFUploadForm(forms.ModelForm):
     class Meta:
+        #we have defined the PDFDocument model in models.py
         model = PDFDocument
+        #these fields are the ones that will be displayed in the form
         fields = ['name', 'pdf_file']
+        #widgets are used to style the form fields, name to have textInput and pdf_file to have FileInput
         widgets = {
             'name': forms.TextInput(attrs={
+                #classes are css styles
                 'class': 'form-control',
                 'placeholder': 'Auto-detected from filename'
             }),
@@ -66,12 +70,14 @@ class PDFUploadForm(forms.ModelForm):
             })
         }
     
+    #this is a constructor for the form
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # ✅ Make name field optional
         self.fields['name'].required = False
     
     def clean_pdf_file(self):
+        #cleaned_data is a dictionary of the form data, Django creates this for us
         pdf_file = self.cleaned_data.get('pdf_file')
         if pdf_file:
             if not pdf_file.name.lower().endswith('.pdf'):
@@ -91,3 +97,61 @@ class PDFUploadForm(forms.ModelForm):
                 name = name[:-4]  # Remove .pdf extension
         
         return name
+
+class QuizImageUploadForm(forms.Form):
+    """Form for uploading quiz images for text extraction"""
+    
+    # Quiz set information
+    quiz_name = forms.CharField(
+        max_length=255,
+        widget=forms.TextInput(attrs={
+            'class': 'form-control',
+            'placeholder': 'Enter quiz name (e.g., "Biology Chapter 5 Quiz")'
+        }),
+        help_text='Give your quiz set a descriptive name'
+    )
+    
+    description = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={
+            'class': 'form-control',
+            'rows': 3,
+            'placeholder': 'Optional description about this quiz...'
+        }),
+        help_text='Optional description of the quiz content'
+    )
+    
+    # Image upload - Single file (users can upload multiple sets)
+    image = forms.FileField(
+        widget=forms.FileInput(attrs={
+            'class': 'form-control',
+            'accept': 'image/*'
+        }),
+        help_text='Upload an image containing quiz questions'
+    )
+    
+    # Processing options
+    source_pdf = forms.ModelChoiceField(
+        queryset=PDFDocument.objects.filter(is_duplicate=False),
+        required=False,
+        empty_label="Select related PDF (optional)",
+        widget=forms.Select(attrs={'class': 'form-control'}),
+        help_text='Link this quiz to a specific PDF document'
+    )
+    
+    auto_categorize = forms.BooleanField(
+        initial=True,
+        required=False,
+        widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+        help_text='Automatically categorize difficulty and topics using AI'
+    )
+    
+    def clean_image(self):
+        """Validate uploaded image"""
+        image = self.cleaned_data.get('image')
+        if image:
+            if not image.content_type.startswith('image/'):
+                raise forms.ValidationError('Please upload a valid image file.')
+            if image.size > 10 * 1024 * 1024:  # 10MB limit
+                raise forms.ValidationError('File size must be less than 10MB.')
+        return image

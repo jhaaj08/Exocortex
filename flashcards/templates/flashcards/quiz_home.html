@@ -1,0 +1,175 @@
+{% extends 'flashcards/base.html' %}
+
+{% block title %}Quiz - Exocortex{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12 text-center">
+            <h1 class="display-5 mb-3">
+                <i class="fas fa-question-circle text-success me-3"></i>Quiz Module
+            </h1>
+            <p class="lead text-muted">Test your knowledge with interactive quizzes</p>
+        </div>
+    </div>
+
+    <!-- Quiz Action Cards -->
+    <div class="row justify-content-center mb-5">
+        <div class="col-md-10 col-lg-8">
+            <div class="row">
+                <!-- Start Quiz Card -->
+                <div class="col-md-4 mb-4">
+                    <div class="card h-100 border-success">
+                        <div class="card-body text-center">
+                            <div class="mb-3">
+                                <i class="fas fa-play fa-3x text-success"></i>
+                            </div>
+                            <h5 class="card-title">Start Quiz</h5>
+                            <p class="card-text text-muted">
+                                Take a quiz generated from your uploaded PDFs and focus blocks
+                            </p>
+                            <a href="{% url 'flashcards:start_quiz' %}" class="btn btn-success btn-lg w-100">
+                                <i class="fas fa-play me-2"></i>Start Quiz
+                            </a>
+                        </div>
+                        <div class="card-footer bg-transparent">
+                            <small class="text-muted">
+                                <i class="fas fa-clock me-1"></i>~10-15 minutes
+                            </small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- View Questions Card -->
+                <div class="col-md-4 mb-4">
+                    <div class="card h-100 border-info">
+                        <div class="card-body text-center">
+                            <div class="mb-3">
+                                <i class="fas fa-list-alt fa-3x text-info"></i>
+                            </div>
+                            <h5 class="card-title">View Questions</h5>
+                            <p class="card-text text-muted">
+                                Browse and manage all your uploaded quiz questions
+                            </p>
+                            <a href="{% url 'flashcards:view_questions' %}" class="btn btn-info btn-lg w-100">
+                                <i class="fas fa-eye me-2"></i>View Questions
+                            </a>
+                        </div>
+                        <div class="card-footer bg-transparent">
+                            <small class="text-muted">
+                                <i class="fas fa-database me-1"></i>Library & Stats
+                            </small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Upload Questions Card -->
+                <div class="col-md-4 mb-4">
+                    <div class="card h-100 border-primary">
+                        <div class="card-body text-center">
+                            <div class="mb-3">
+                                <i class="fas fa-upload fa-3x text-primary"></i>
+                            </div>
+                            <h5 class="card-title">Upload Questions</h5>
+                            <p class="card-text text-muted">
+                                Add your own custom quiz questions from images
+                            </p>
+                            <a href="{% url 'flashcards:upload_questions' %}" class="btn btn-outline-primary btn-lg w-100">
+                                <i class="fas fa-upload me-2"></i>Upload Questions
+                            </a>
+                        </div>
+                        <div class="card-footer bg-transparent">
+                            <small class="text-muted">
+                                <i class="fas fa-image me-1"></i>Image processing
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Stats -->
+    <div class="row justify-content-center mb-5">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header bg-light">
+                    <h6 class="mb-0"><i class="fas fa-chart-bar me-2"></i>Quiz Statistics</h6>
+                </div>
+                <div class="card-body">
+                    <div class="row text-center">
+                        <div class="col-4">
+                            <h4 class="text-primary mb-0">0</h4>
+                            <small class="text-muted">Questions Available</small>
+                        </div>
+                        <div class="col-4">
+                            <h4 class="text-success mb-0">0</h4>
+                            <small class="text-muted">Quizzes Taken</small>
+                        </div>
+                        <div class="col-4">
+                            <h4 class="text-warning mb-0">0%</h4>
+                            <small class="text-muted">Average Score</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent PDFs for Quiz -->
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header bg-light">
+                    <h6 class="mb-0"><i class="fas fa-file-pdf me-2"></i>Available Content for Quizzes</h6>
+                </div>
+                <div class="card-body">
+                    {% if recent_pdfs %}
+                        <div class="list-group list-group-flush">
+                            {% for pdf in recent_pdfs %}
+                            <div class="list-group-item d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h6 class="mb-1">{{ pdf.name|truncatechars:50 }}</h6>
+                                    <small class="text-muted">{{ pdf.focus_blocks_count }} focus blocks</small>
+                                </div>
+                                <div>
+                                    {% if pdf.focus_blocks.exists %}
+                                        <span class="badge bg-success">Ready</span>
+                                    {% else %}
+                                        <span class="badge bg-warning">Processing</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <div class="text-center py-4">
+                            <i class="fas fa-inbox fa-2x text-muted mb-3"></i>
+                            <p class="text-muted">No PDFs available for quizzes yet.</p>
+                            <a href="{% url 'flashcards:home' %}" class="btn btn-primary">
+                                <i class="fas fa-upload me-2"></i>Upload PDFs
+                            </a>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.card {
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.fa-3x {
+    font-size: 3rem !important;
+}
+</style>
+{% endblock %}

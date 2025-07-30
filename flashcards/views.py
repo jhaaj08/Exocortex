@@ -3,8 +3,8 @@ from django.contrib import messages
 from django.http import JsonResponse
 from django.core.paginator import Paginator
 from django.views.decorators.http import require_http_methods
-from .models import Folder, Flashcard, StudySession, PDFDocument, TextChunk, ChunkLabel, ConceptUnit, FocusBlock
-from .forms import FolderInputForm, PDFUploadForm
+from .models import Folder, Flashcard, StudySession, PDFDocument, TextChunk, ChunkLabel, ConceptUnit, FocusBlock, QuizSet, QuizQuestion
+from .forms import FolderInputForm, PDFUploadForm, QuizImageUploadForm
 from .services import process_folder_content
 from .llm_service import process_folder_with_llm
 from .pdf_service import extract_pdf_text
@@ -25,6 +25,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 import json
 from datetime import timedelta
+import base64
 
 logger = logging.getLogger(__name__)
 
@@ -1418,3 +1419,244 @@ def get_focus_completions_api(request):
             return JsonResponse({'success': False, 'error': str(e)})
     
     return JsonResponse({'success': False, 'error': 'Invalid request method'})
+
+def quiz_home(request):
+    """Quiz dashboard page"""
+    # Get recent PDFs that have focus blocks for quiz generation
+    recent_pdfs = PDFDocument.objects.filter(
+        is_duplicate=False
+    ).prefetch_related('focus_blocks').order_by('-created_at')[:10]
+    
+    context = {
+        'recent_pdfs': recent_pdfs,
+    }
+    return render(request, 'flashcards/quiz_home.html', context)
+
+def start_quiz(request):
+    """Start a new quiz session"""
+    # For now, just show a placeholder
+    messages.info(request, 'Quiz functionality coming soon! 🚀')
+    return redirect('flashcards:quiz_home')
+
+def view_questions(request):
+    """View all uploaded quiz questions"""
+    # Get all quiz sets and their questions
+    quiz_sets = QuizSet.objects.prefetch_related('questions').order_by('-created_at')
+    
+    # Get total count statistics
+    total_questions = QuizQuestion.objects.count()
+    total_sets = QuizSet.objects.count()
+    
+    # Group questions by difficulty
+    difficulty_counts = {}
+    for i in range(1, 11):
+        count = QuizQuestion.objects.filter(difficulty=i).count()
+        if count > 0:
+            difficulty_counts[i] = count
+    
+    # Group questions by type
+    type_counts = {}
+    for question_type, label in QuizQuestion.QUESTION_TYPES:
+        count = QuizQuestion.objects.filter(question_type=question_type).count()
+        if count > 0:
+            type_counts[label] = count
+    
+    context = {
+        'quiz_sets': quiz_sets,
+        'total_questions': total_questions,
+        'total_sets': total_sets,
+        'difficulty_counts': difficulty_counts,
+        'type_counts': type_counts,
+    }
+    return render(request, 'flashcards/view_questions.html', context)
+
+def upload_questions(request):
+    """Upload and process quiz question image"""
+    if request.method == 'POST':
+        form = QuizImageUploadForm(request.POST, request.FILES)
+        if form.is_valid():
+            try:
+                # Get the uploaded image
+                image = form.cleaned_data['image']
+                
+                # Create quiz set
+                quiz_set = QuizSet.objects.create(
+                    name=form.cleaned_data['quiz_name'],
+                    description=form.cleaned_data['description'],
+                    source_pdf=form.cleaned_data['source_pdf']
+                )
+                
+                # Save image and process with AI
+                quiz_question = QuizQuestion(
+                    quiz_set=quiz_set,
+                    source_image=image,
+                    source_type='image_upload'
+                )
+                quiz_question.save()
+                
+                # Process with AI
+                questions_extracted = process_quiz_image_with_ai(quiz_question)
+                
+                # Update quiz set totals
+                quiz_set.total_questions = questions_extracted
+                quiz_set.save()
+                
+                messages.success(request, f'Successfully processed image and extracted {questions_extracted} questions!')
+                return redirect('flashcards:quiz_home')
+                
+            except Exception as e:
+                logger.error(f"Error processing quiz image: {e}")
+                messages.error(request, f'Error processing image: {str(e)}')
+    else:
+        form = QuizImageUploadForm()
+    
+    return render(request, 'flashcards/upload_questions.html', {'form': form})
+
+def process_quiz_image_with_ai(quiz_question):
+    """Process a single quiz image with GPT-4 Vision"""
+    try:
+        # Check if API key is configured
+        api_key = getattr(settings, 'OPENAI_API_KEY', None)
+        if not api_key or api_key == 'your_openai_api_key_here':
+            raise ValueError("OpenAI API key not configured. Please set OPENAI_API_KEY in your .env file")
+        
+        client = OpenAI(api_key=api_key)
+        
+        # Encode image to base64
+        with quiz_question.source_image.open('rb') as image_file:
+            image_data = base64.b64encode(image_file.read()).decode('utf-8')
+        
+        # Enhanced AI prompt for better multi-question extraction
+        prompt = """
+        CRITICAL: Analyze this image and extract EVERY SINGLE QUESTION you can see. Look carefully for:
+        - Multiple numbered questions (1), 2), etc.)
+        - Questions separated by space or lines
+        - Any text that asks something and has answer choices
+        - Mathematical problems with multiple choice options
+        
+        For the image provided, return a JSON response with this EXACT structure:
+        
+        {
+            "questions": [
+                {
+                    "question_text": "Complete question text including any mathematical expressions",
+                    "question_type": "mcq",
+                    "options": {"A": "first option", "B": "second option", "C": "third option", "D": "fourth option"},
+                    "correct_answer": "The correct answer (letter and/or value)",
+                    "explanation": "Why this answer is correct",
+                    "difficulty": 7,
+                    "topics": ["mathematics", "combinatorics", "permutations"],
+                    "cognitive_level": "apply",
+                    "confidence": 0.95
+                }
+            ]
+        }
+        
+        IMPORTANT GUIDELINES:
+        - Count ALL questions you see - don't miss any!
+        - For math expressions, include the full text with proper notation
+        - For MCQ questions, capture ALL answer choices exactly as shown
+        - Pay attention to question numbers (1), 2), etc.)
+        - Look for "points" indicators that suggest separate questions
+        - Be extremely thorough - missing questions is unacceptable
+        
+        Return ONLY valid JSON, no other text.
+        """
+        
+        response = client.chat.completions.create(
+            model="gpt-4o",  # Use the full GPT-4o model for better vision
+            messages=[
+                {
+                    "role": "user", 
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{image_data}",
+                                "detail": "high"  # High detail for better text recognition
+                            }
+                        }
+                    ]
+                }
+            ],
+            max_tokens=4000,  # Increased for multiple questions
+            temperature=0.1   # Lower temperature for more consistent extraction
+        )
+        
+        # Parse AI response
+        ai_response = response.choices[0].message.content.strip()
+        print(f"🤖 AI Response: {ai_response}")  # Debug logging
+        
+        # Try to parse JSON response
+        import json
+        try:
+            # Clean up response if it has markdown formatting
+            if ai_response.startswith('```json'):
+                ai_response = ai_response.replace('```json', '').replace('```', '').strip()
+            
+            data = json.loads(ai_response)
+            questions_data = data.get('questions', [])
+            print(f"📊 Extracted {len(questions_data)} questions from AI")  # Debug logging
+            
+        except json.JSONDecodeError as e:
+            print(f"❌ JSON Parse Error: {e}")
+            print(f"Raw AI Response: {ai_response}")
+            # Better fallback: try to extract at least basic info
+            questions_data = [{
+                "question_text": f"AI extraction failed. Raw response: {ai_response[:300]}...",
+                "question_type": "short",
+                "correct_answer": "Please review manually",
+                "difficulty": 5,
+                "topics": ["extraction_error"],
+                "cognitive_level": "understand",
+                "confidence": 0.1
+            }]
+        
+        # Save extracted questions
+        total_questions = 0
+        for q_data in questions_data:
+            # Update the existing quiz_question or create new ones
+            if total_questions == 0:
+                # Update the first (existing) question
+                question = quiz_question
+            else:
+                # Create additional questions for multiple questions in one image
+                question = QuizQuestion(
+                    quiz_set=quiz_question.quiz_set,
+                    source_image=quiz_question.source_image,
+                    source_type='image_upload'
+                )
+            
+            question.question_text = q_data.get('question_text', '')
+            question.question_type = q_data.get('question_type', 'mcq')
+            question.options = q_data.get('options', {})
+            question.correct_answer = q_data.get('correct_answer', '')
+            question.explanation = q_data.get('explanation', '')
+            question.difficulty = q_data.get('difficulty', 5)
+            question.topics = q_data.get('topics', [])
+            question.cognitive_level = q_data.get('cognitive_level', 'understand')
+            question.extraction_confidence = q_data.get('confidence', 0.5)
+            question.processing_notes = f"Extracted from image via GPT-4o Vision (Question {total_questions + 1} of {len(questions_data)})"
+            
+            question.save()
+            total_questions += 1
+            print(f"✅ Saved question {total_questions}: {question.question_text[:100]}...")
+        
+        return total_questions
+        
+    except Exception as e:
+        print(f"❌ Error processing quiz image with AI: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # Update the question with error info
+        quiz_question.question_text = f"Error extracting questions: {str(e)}"
+        quiz_question.question_type = "short"
+        quiz_question.correct_answer = "Manual review required"
+        quiz_question.difficulty = 1
+        quiz_question.topics = ["error"]
+        quiz_question.cognitive_level = "remember"
+        quiz_question.processing_notes = f"AI extraction failed: {str(e)}"
+        quiz_question.save()
+        return 1

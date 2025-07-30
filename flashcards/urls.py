@@ -32,6 +32,12 @@ urlpatterns = [
     # All focus blocks unified view
     path('focus-blocks/', views.all_focus_blocks, name='all_focus_blocks'),
     
+    # Quiz URLs
+    path('quiz/', views.quiz_home, name='quiz_home'),
+    path('quiz/start/', views.start_quiz, name='start_quiz'),
+    path('quiz/questions/', views.view_questions, name='view_questions'),
+    path('quiz/upload/', views.upload_questions, name='upload_questions'),
+
     # Concept unit detail URL
     path('concept-unit/<uuid:unit_id>/', views.concept_unit_detail, name='concept_unit_detail'),
     

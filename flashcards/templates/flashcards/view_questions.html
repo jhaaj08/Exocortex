@@ -1,0 +1,261 @@
+{% extends 'flashcards/base.html' %}
+
+{% block title %}Quiz Questions - Exocortex{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1 class="display-6 mb-2">
+                        <i class="fas fa-list-alt text-info me-3"></i>Quiz Questions Library
+                    </h1>
+                    <p class="lead text-muted">Browse and manage your uploaded quiz questions</p>
+                </div>
+                <div>
+                    <a href="{% url 'flashcards:quiz_home' %}" class="btn btn-outline-secondary me-2">
+                        <i class="fas fa-arrow-left me-2"></i>Back to Quiz Home
+                    </a>
+                    <a href="{% url 'flashcards:upload_questions' %}" class="btn btn-success">
+                        <i class="fas fa-plus me-2"></i>Upload More
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3 mb-3">
+            <div class="card bg-primary text-white">
+                <div class="card-body text-center">
+                    <i class="fas fa-question-circle fa-2x mb-2"></i>
+                    <h5 class="card-title">{{ total_questions }}</h5>
+                    <p class="card-text">Total Questions</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card bg-success text-white">
+                <div class="card-body text-center">
+                    <i class="fas fa-folder fa-2x mb-2"></i>
+                    <h5 class="card-title">{{ total_sets }}</h5>
+                    <p class="card-text">Quiz Sets</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card bg-info text-white">
+                <div class="card-body text-center">
+                    <i class="fas fa-chart-bar fa-2x mb-2"></i>
+                    <h5 class="card-title">
+                        {% if difficulty_counts %}
+                            {{ difficulty_counts.items|length }}
+                        {% else %}
+                            0
+                        {% endif %}
+                    </h5>
+                    <p class="card-text">Difficulty Levels</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card bg-warning text-white">
+                <div class="card-body text-center">
+                    <i class="fas fa-tags fa-2x mb-2"></i>
+                    <h5 class="card-title">
+                        {% if type_counts %}
+                            {{ type_counts.items|length }}
+                        {% else %}
+                            0
+                        {% endif %}
+                    </h5>
+                    <p class="card-text">Question Types</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if total_questions == 0 %}
+    <!-- No questions yet -->
+    <div class="row">
+        <div class="col-12">
+            <div class="text-center py-5">
+                <i class="fas fa-question-circle fa-5x text-muted mb-4"></i>
+                <h3 class="text-muted">No Quiz Questions Yet</h3>
+                <p class="lead text-muted">Upload some images with quiz questions to get started!</p>
+                <a href="{% url 'flashcards:upload_questions' %}" class="btn btn-success btn-lg">
+                    <i class="fas fa-upload me-2"></i>Upload Quiz Questions
+                </a>
+            </div>
+        </div>
+    </div>
+    {% else %}
+
+    <!-- Difficulty and Type Distribution -->
+    <div class="row mb-4">
+        {% if difficulty_counts %}
+        <div class="col-md-6 mb-3">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="fas fa-signal me-2"></i>Questions by Difficulty</h6>
+                </div>
+                <div class="card-body">
+                    {% for difficulty, count in difficulty_counts.items %}
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span>Level {{ difficulty }}</span>
+                        <span class="badge bg-primary">{{ count }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+        
+        {% if type_counts %}
+        <div class="col-md-6 mb-3">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="fas fa-list me-2"></i>Questions by Type</h6>
+                </div>
+                <div class="card-body">
+                    {% for type_name, count in type_counts.items %}
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span>{{ type_name }}</span>
+                        <span class="badge bg-success">{{ count }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Quiz Sets and Questions -->
+    {% for quiz_set in quiz_sets %}
+    <div class="card mb-4">
+        <div class="card-header bg-light">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h5 class="mb-1">
+                        <i class="fas fa-folder-open text-primary me-2"></i>{{ quiz_set.name }}
+                    </h5>
+                    {% if quiz_set.description %}
+                    <p class="text-muted mb-0">{{ quiz_set.description }}</p>
+                    {% endif %}
+                </div>
+                <div class="text-end">
+                    <span class="badge bg-primary">{{ quiz_set.questions.count }} questions</span>
+                    <br>
+                    <small class="text-muted">{{ quiz_set.created_at|date:"M d, Y" }}</small>
+                </div>
+            </div>
+        </div>
+        <div class="card-body">
+            {% for question in quiz_set.questions.all %}
+            <div class="border rounded p-3 mb-3">
+                <div class="row">
+                    <div class="col-md-8">
+                        <h6 class="text-primary mb-2">
+                            Question {{ forloop.counter }}
+                            <span class="badge bg-secondary ms-2">{{ question.get_question_type_display }}</span>
+                        </h6>
+                        <p class="mb-2">{{ question.question_text }}</p>
+                        
+                        {% if question.options and question.question_type == 'mcq' %}
+                        <div class="mb-2">
+                            <small class="text-muted"><strong>Options:</strong></small>
+                            <ul class="list-unstyled ms-3">
+                                {% for key, value in question.options.items %}
+                                <li>
+                                    <span class="badge bg-light text-dark">{{ key }}</span> {{ value }}
+                                </li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        {% endif %}
+                        
+                        <div class="mb-2">
+                            <small class="text-muted"><strong>Correct Answer:</strong></small>
+                            <span class="text-success">{{ question.correct_answer }}</span>
+                        </div>
+                        
+                        {% if question.explanation %}
+                        <div class="mb-2">
+                            <small class="text-muted"><strong>Explanation:</strong></small>
+                            <p class="text-info mb-0">{{ question.explanation }}</p>
+                        </div>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="col-md-4">
+                        <!-- Question metadata -->
+                        <div class="text-end">
+                            <div class="mb-2">
+                                <span class="badge bg-warning">Difficulty: {{ question.difficulty }}/10</span>
+                            </div>
+                            <div class="mb-2">
+                                <span class="badge bg-info">{{ question.get_cognitive_level_display }}</span>
+                            </div>
+                            {% if question.topics %}
+                            <div class="mb-2">
+                                <small class="text-muted d-block">Topics:</small>
+                                {% for topic in question.topics %}
+                                <span class="badge bg-light text-dark me-1">{{ topic }}</span>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                            {% if question.source_image %}
+                            <div class="mt-2">
+                                <button class="btn btn-sm btn-outline-secondary" onclick="showImage('{{ question.source_image.url }}', '{{ question.question_text|slice:50 }}...')">
+                                    <i class="fas fa-image me-1"></i>View Source
+                                </button>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% empty %}
+            <p class="text-muted text-center py-3">No questions in this set.</p>
+            {% endfor %}
+        </div>
+    </div>
+    {% empty %}
+    <div class="alert alert-info">
+        <i class="fas fa-info-circle me-2"></i>No quiz sets found. Upload some images with quiz questions to get started!
+    </div>
+    {% endfor %}
+    {% endif %}
+</div>
+
+<!-- Image Modal -->
+<div class="modal fade" id="imageModal" tabindex="-1" aria-labelledby="imageModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="imageModalLabel">Question Source Image</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-center">
+                <img id="modalImage" src="" alt="Source Image" class="img-fluid rounded">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function showImage(imageUrl, questionText) {
+    document.getElementById('modalImage').src = imageUrl;
+    document.getElementById('imageModalLabel').textContent = 'Source: ' + questionText;
+    var modal = new bootstrap.Modal(document.getElementById('imageModal'));
+    modal.show();
+}
+</script>
+
+{% endblock %}
