@@ -1,0 +1,331 @@
+{% extends 'flashcards/base.html' %}
+
+{% block title %}Migrate Focus Blocks - Exocortex{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 class="display-6 mb-3">
+                <i class="fas fa-exchange-alt text-warning me-3"></i>Focus Block Migration
+            </h1>
+            <p class="lead text-muted">Convert old format focus blocks to new interactive format</p>
+        </div>
+    </div>
+
+    <!-- Migration Stats -->
+    <div class="row mb-4">
+        <div class="col-md-2">
+            <div class="card border-info">
+                <div class="card-body text-center">
+                    <h2 class="text-info">{{ migration_stats.total_blocks }}</h2>
+                    <p class="card-text">Total Blocks</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card border-warning">
+                <div class="card-body text-center">
+                    <h2 class="text-warning">{{ migration_stats.total_old_blocks }}</h2>
+                    <p class="card-text">Need Migration</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card border-success">
+                <div class="card-body text-center">
+                    <h2 class="text-success">{{ migration_stats.total_new_blocks }}</h2>
+                    <p class="card-text">New Format</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card border-primary">
+                <div class="card-body text-center">
+                    <h2 class="text-primary">{{ migration_stats.migrated_blocks }}</h2>
+                    <p class="card-text">Migrated</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card border-secondary">
+                <div class="card-body text-center">
+                    <h2 class="text-secondary">{{ migration_stats.empty_blocks }}</h2>
+                    <p class="card-text">Empty</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Debug Information -->
+    {% if debug_info %}
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5><i class="fas fa-bug me-2"></i>Debug Information (First 10 Blocks)</h5>
+            <small class="text-muted">Understanding block structure</small>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Title</th>
+                            <th>PDF Source</th>
+                            <th>Compact7 Keys</th>
+                            <th>Teacher Script</th>
+                            <th>Legacy Fields</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for info in debug_info %}
+                        <tr>
+                            <td><code>{{ info.id }}</code></td>
+                            <td>{{ info.title }}</td>
+                            <td><small>{{ info.pdf_name }}</small></td>
+                            <td>
+                                {% if info.compact7_keys %}
+                                    <small>{{ info.compact7_keys|join:", " }}</small>
+                                {% else %}
+                                    <span class="badge bg-secondary">None</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if info.has_teacher_script %}
+                                    <span class="badge bg-success">{{ info.teacher_script_length }} chars</span>
+                                    <br><small>{{ info.teacher_script_preview }}...</small>
+                                {% else %}
+                                    <span class="badge bg-danger">No</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if info.has_teacher_script %}<span class="badge bg-info">Script</span>{% endif %}
+                                {% if info.has_rescue_reset %}<span class="badge bg-info">Rescue</span>{% endif %}
+                                {% if info.has_recap_summary %}<span class="badge bg-info">Recap</span>{% endif %}
+                                {% if not info.has_legacy_fields %}<span class="badge bg-secondary">None</span>{% endif %}
+                            </td>
+                            <td>
+                                {% if info.format_type == 'New (Segments)' %}
+                                    <span class="badge bg-success">{{ info.format_type }}</span>
+                                {% elif info.format_type == 'Old (Compact7)' %}
+                                    <span class="badge bg-warning">{{ info.format_type }}</span>
+                                {% elif info.format_type == 'Legacy (Script)' %}
+                                    <span class="badge bg-info">{{ info.format_type }}</span>
+                                {% elif info.format_type == 'Migrated' %}
+                                    <span class="badge bg-primary">{{ info.format_type }}</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">{{ info.format_type }}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Detailed Compact7 Preview -->
+            <div class="mt-3">
+                <h6>Compact7 Data Preview (First 3 blocks):</h6>
+                {% for info in debug_info|slice:":3" %}
+                <div class="card mb-2">
+                    <div class="card-header">
+                        <small><strong>Block {{ info.id }}:</strong> {{ info.title }}</small>
+                    </div>
+                    <div class="card-body">
+                        <pre style="font-size: 0.8em; max-height: 150px; overflow-y: auto;">{{ info.compact7_preview }}</pre>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Messages -->
+    {% if migration_message %}
+    <div class="alert alert-{% if 'Successfully' in migration_message or '✅' in migration_message %}success{% else %}danger{% endif %} alert-dismissible fade show">
+        {{ migration_message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
+
+    <!-- Old Blocks List -->
+    {% if old_blocks %}
+    <div class="card mb-4">
+        <div class="card-header">
+            <div class="d-flex justify-content-between align-items-center">
+                <h5><i class="fas fa-list me-2"></i>Old Format Focus Blocks ({{ old_blocks.count }})</h5>
+                
+                <!-- Bulk Migration Options -->
+                <div class="btn-group" role="group">
+                    <button type="button" class="btn btn-warning dropdown-toggle" data-bs-toggle="dropdown">
+                        <i class="fas fa-magic me-2"></i>Bulk Migration
+                    </button>
+                    <ul class="dropdown-menu">
+                        <li>
+                            <form method="post" style="display: inline;">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="bulk_migrate_individual">
+                                <button type="submit" class="dropdown-item" onclick="return confirm('Migrate all {{ old_blocks.count }} blocks individually? This will create {{ old_blocks.count }} new blocks.')">
+                                    <i class="fas fa-user me-2"></i>Migrate All Individually
+                                    <br><small class="text-muted">1:1 conversion ({{ old_blocks.count }} → {{ old_blocks.count }})</small>
+                                </button>
+                            </form>
+                        </li>
+                        <li>
+                            <form method="post" style="display: inline;">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="bulk_migrate_grouped">
+                                <button type="submit" class="dropdown-item" onclick="return confirm('Auto-group similar blocks and migrate? AI will group similar concepts together.')">
+                                    <i class="fas fa-layer-group me-2"></i>Auto-Group & Migrate
+                                    <br><small class="text-muted">AI groups similar concepts</small>
+                                </button>
+                            </form>
+                        </li>
+                        <li>
+                            <form method="post" style="display: inline;">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="bulk_migrate_by_pdf">
+                                <button type="submit" class="dropdown-item" onclick="return confirm('Group blocks by PDF source and migrate? All blocks from same PDF will be combined.')">
+                                    <i class="fas fa-file-pdf me-2"></i>Migrate by PDF
+                                    <br><small class="text-muted">Group by PDF source</small>
+                                </button>
+                            </form>
+                        </li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <form method="post" style="display: inline;">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="analyze_similarities">
+                                <button type="submit" class="dropdown-item">
+                                    <i class="fas fa-search me-2"></i>Analyze Similarities First
+                                    <br><small class="text-muted">Preview grouping before migration</small>
+                                </button>
+                            </form>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <div class="card-body">
+            <!-- Progress indication for bulk operations -->
+            <div id="migration-progress" style="display: none;">
+                <div class="alert alert-info">
+                    <i class="fas fa-spinner fa-spin me-2"></i>Migration in progress... This may take a few minutes for large numbers of blocks.
+                </div>
+            </div>
+            
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Title</th>
+                            <th>PDF Source</th>
+                            <th>Difficulty</th>
+                            <th>Format</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for block in old_blocks %}
+                        <tr>
+                            <td>
+                                <strong>{{ block.title|truncatechars:50 }}</strong>
+                                <br><small class="text-muted">{{ block.id }}</small>
+                            </td>
+                            <td>{{ block.pdf_document.name|default:"Unknown" }}</td>
+                            <td>
+                                <span class="badge bg-{% if block.difficulty_level == 'beginner' %}success{% elif block.difficulty_level == 'advanced' %}danger{% else %}warning{% endif %}">
+                                    {{ block.difficulty_level|title }}
+                                </span>
+                            </td>
+                            <td>
+                                <span class="badge bg-warning">Old Compact7</span>
+                            </td>
+                            <td>
+                                <div class="btn-group btn-group-sm">
+                                    <a href="{% url 'flashcards:focus_block_study' block.id %}" class="btn btn-outline-primary" title="View Block">
+                                        <i class="fas fa-eye"></i>
+                                    </a>
+                                    <form method="post" style="display: inline;">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="convert_group">
+                                        <input type="hidden" name="selected_blocks" value="{{ block.id }}">
+                                        <button type="submit" class="btn btn-outline-success" title="Migrate This Block">
+                                            <i class="fas fa-magic"></i>
+                                        </button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Grouped Blocks (after analysis) -->
+    {% if grouped_blocks %}
+    <div class="card">
+        <div class="card-header">
+            <h5><i class="fas fa-layer-group me-2"></i>Similar Block Groups ({{ grouped_blocks|length }})</h5>
+        </div>
+        <div class="card-body">
+            {% for group in grouped_blocks %}
+            <div class="card mb-3 border-primary">
+                <div class="card-header bg-light">
+                    <h6 class="mb-1">{{ group.core_concept }}</h6>
+                    <small class="text-muted">{{ group.similarity_reason }}</small>
+                </div>
+                <div class="card-body">
+                    <p><strong>Suggested title:</strong> {{ group.combined_title }}</p>
+                    <p><strong>Blocks to merge ({{ group.block_count }}):</strong></p>
+                    <ul>
+                        {% for block in group.blocks %}
+                        <li>{{ block.title }} ({{ block.pdf_document.name|default:"Unknown" }})</li>
+                        {% endfor %}
+                    </ul>
+                    
+                    <form method="post" style="display: inline;">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="convert_group">
+                        {% for block in group.blocks %}
+                        <input type="hidden" name="selected_blocks" value="{{ block.id }}">
+                        {% endfor %}
+                        <button type="submit" class="btn btn-success">
+                            <i class="fas fa-magic me-2"></i>Convert to New Format
+                        </button>
+                    </form>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Converted Blocks -->
+    {% if converted_blocks %}
+    <div class="card mt-4">
+        <div class="card-header bg-success text-white">
+            <h5><i class="fas fa-check me-2"></i>Successfully Converted Blocks</h5>
+        </div>
+        <div class="card-body">
+            {% for block in converted_blocks %}
+            <div class="alert alert-success">
+                <h6>{{ block.title }}</h6>
+                <p class="mb-1">New interactive block created with {{ block.compact7_data.segments|length }} segments</p>
+                <a href="{% url 'flashcards:focus_block_study' block.id %}" class="btn btn-success btn-sm">
+                    <i class="fas fa-play me-1"></i>Test New Block
+                </a>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+</div>
+{% endblock %} 

@@ -1,0 +1,823 @@
+{% extends 'flashcards/base.html' %}
+
+{% block title %}Debug Focus Chunks - Exocortex{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 class="display-6 mb-2">
+                <i class="fas fa-bug text-warning me-3"></i>Debug Focus Chunks
+            </h1>
+            <p class="lead text-muted">300-word chunks → Core Concepts → Roles Analysis</p>
+        </div>
+    </div>
+
+    <!-- PDF Selection -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-file-pdf me-2"></i>Select PDF for Analysis</h5>
+                </div>
+                <div class="card-body">
+                    {% if analysis_message %}
+                    <div class="alert alert-{% if 'Successfully' in analysis_message %}success{% else %}danger{% endif %} alert-dismissible fade show" role="alert">
+                        {{ analysis_message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                    {% endif %}
+                    
+                    {% if grouping_message %}
+                    <div class="alert alert-{% if 'Successfully' in grouping_message %}info{% else %}warning{% endif %} alert-dismissible fade show" role="alert">
+                        {{ grouping_message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                    {% endif %}
+                    
+                    <form method="get" class="row align-items-end">
+                        <div class="col-md-5">
+                            <label for="pdf_select" class="form-label">Choose PDF:</label>
+                            <select name="pdf_id" id="pdf_select" class="form-select" onchange="this.form.submit()">
+                                <option value="">-- Select a processed PDF --</option>
+                                {% for pdf in processed_pdfs %}
+                                <option value="{{ pdf.id }}" {% if selected_pdf and pdf.id == selected_pdf.id %}selected{% endif %}>
+                                    {{ pdf.name }} ({{ pdf.page_count }} pages, {{ pdf.word_count }} words)
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <button type="submit" class="btn btn-primary w-100">
+                                <i class="fas fa-search me-2"></i>Load
+                            </button>
+                        </div>
+                        {% if selected_pdf %}
+                        <div class="col-md-2">
+                            <a href="?pdf_id={{ selected_pdf.id }}&analyze=true" class="btn btn-success w-100">
+                                <i class="fas fa-brain me-2"></i>Analyze
+                            </a>
+                        </div>
+                        <div class="col-md-2">
+                            {% if chunks_data and chunks_data.0.analysis_status == 'completed' %}
+                            <a href="?pdf_id={{ selected_pdf.id }}&analyze=true&group=true" class="btn btn-warning w-100">
+                                <i class="fas fa-object-group me-2"></i>Group
+                            </a>
+                            {% else %}
+                            <button class="btn btn-outline-warning w-100" disabled title="Run AI analysis first">
+                                <i class="fas fa-object-group me-2"></i>Group
+                            </button>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-1">
+                            {% if grouped_concepts %}
+                            <a href="?pdf_id={{ selected_pdf.id }}&analyze=true&group=true&generate_blocks=true" class="btn btn-info w-100">
+                                <i class="fas fa-cube me-2"></i>Blocks
+                            </a>
+                            {% else %}
+                            <button class="btn btn-outline-info w-100" disabled title="Run grouping first">
+                                <i class="fas fa-cube me-2"></i>Blocks
+                            </button>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-1">
+                            {% if focus_blocks %}
+                            <a href="?pdf_id={{ selected_pdf.id }}&analyze=true&group=true&generate_blocks=true&generate_graph=true" class="btn btn-secondary w-100">
+                                <i class="fas fa-project-diagram me-2"></i>Graph
+                            </a>
+                            {% else %}
+                            <button class="btn btn-outline-secondary w-100" disabled title="Generate focus blocks first">
+                                <i class="fas fa-project-diagram me-2"></i>Graph
+                            </button>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if selected_pdf %}
+    {% if focus_block_message %}
+    <div class="alert alert-{% if 'Successfully' in focus_block_message %}success{% else %}danger{% endif %} alert-dismissible fade show" role="alert">
+        {{ focus_block_message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
+    
+    {% if graph_message %}
+    <div class="alert alert-{% if 'Successfully' in graph_message %}info{% else %}warning{% endif %} alert-dismissible fade show" role="alert">
+        {{ graph_message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
+    
+    <!-- Analysis Summary -->
+    <div class="row mb-4">
+        <div class="col-md-2">
+            <div class="card bg-primary text-white">
+                <div class="card-body text-center">
+                    <i class="fas fa-file-alt fa-2x mb-2"></i>
+                    <h6>{{ selected_pdf.name|truncatechars:15 }}</h6>
+                    <p class="mb-0 small">Selected PDF</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card bg-success text-white">
+                <div class="card-body text-center">
+                    <i class="fas fa-puzzle-piece fa-2x mb-2"></i>
+                    <h5>{{ total_chunks }}</h5>
+                    <p class="mb-0 small">Total Chunks</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card bg-warning text-white">
+                <div class="card-body text-center">
+                    <i class="fas fa-history fa-2x mb-2"></i>
+                    <h5>{{ selected_pdf.focus_blocks.count }}</h5>
+                    <p class="mb-0 small">Old Focus Blocks</p>
+                </div>
+            </div>
+        </div>
+        {% if grouped_concepts %}
+        <div class="col-md-2">
+            <div class="card bg-purple text-white" style="background-color: #6f42c1 !important;">
+                <div class="card-body text-center">
+                    <i class="fas fa-object-group fa-2x mb-2"></i>
+                    <h5>{{ grouped_concepts|length }}</h5>
+                    <p class="mb-0 small">Concept Groups</p>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+        {% if focus_blocks %}
+        <div class="col-md-2">
+            <div class="card bg-danger text-white">
+                <div class="card-body text-center">
+                    <i class="fas fa-cube fa-2x mb-2"></i>
+                    <h5>{{ focus_blocks|length }}</h5>
+                    <p class="mb-0 small">Focus Blocks</p>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+        {% if knowledge_graph %}
+        <div class="col-md-2">
+            <div class="card bg-secondary text-white">
+                <div class="card-body text-center">
+                    <i class="fas fa-project-diagram fa-2x mb-2"></i>
+                    <h5>{{ knowledge_graph.metadata.total_nodes }}</h5>
+                    <p class="mb-0 small">Graph Nodes</p>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Migration Alert -->
+    {% if selected_pdf.focus_blocks.count > 0 %}
+    <div class="alert alert-info alert-dismissible fade show" role="alert">
+        <i class="fas fa-info-circle me-2"></i>
+        <strong>Old Focus Blocks Found!</strong> This PDF has {{ selected_pdf.focus_blocks.count }} old focus blocks that can be migrated to the new interactive format.
+        <div class="mt-2">
+            <a href="?pdf_id={{ selected_pdf.id }}&migrate_old_blocks=true" class="btn btn-warning btn-sm me-2">
+                <i class="fas fa-magic me-1"></i>Migrate Old Blocks
+            </a>
+            <small class="text-muted">This will consolidate similar blocks and convert them to interactive format.</small>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
+
+    {% if migration_message %}
+    <div class="alert alert-{% if 'Successfully' in migration_message %}success{% else %}danger{% endif %} alert-dismissible fade show" role="alert">
+        {{ migration_message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
+
+    <!-- Content Tabs -->
+    <div class="row">
+        <div class="col-12">
+            <ul class="nav nav-tabs" id="contentTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="chunks-tab" data-bs-toggle="tab" data-bs-target="#chunks-content" type="button" role="tab">
+                        <i class="fas fa-list me-2"></i>Individual Chunks ({{ total_chunks }})
+                    </button>
+                </li>
+                {% if grouped_concepts %}
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="groups-tab" data-bs-toggle="tab" data-bs-target="#groups-content" type="button" role="tab">
+                        <i class="fas fa-object-group me-2"></i>Grouped Concepts ({{ grouped_concepts|length }})
+                    </button>
+                </li>
+                {% endif %}
+                {% if focus_blocks %}
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="blocks-tab" data-bs-toggle="tab" data-bs-target="#blocks-content" type="button" role="tab">
+                        <i class="fas fa-cube me-2"></i>Focus Blocks ({{ focus_blocks|length }})
+                    </button>
+                </li>
+                {% endif %}
+                {% if knowledge_graph %}
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="graph-tab" data-bs-toggle="tab" data-bs-target="#graph-content" type="button" role="tab">
+                        <i class="fas fa-project-diagram me-2"></i>Knowledge Graph ({{ knowledge_graph.metadata.total_nodes }} nodes)
+                    </button>
+                </li>
+                {% endif %}
+            </ul>
+        </div>
+    </div>
+
+    <div class="tab-content" id="contentTabsContent">
+        <!-- Individual Chunks Tab -->
+        <div class="tab-pane fade show active" id="chunks-content" role="tabpanel">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5><i class="fas fa-list me-2"></i>Individual Chunks Analysis</h5>
+                    <span class="badge bg-secondary">{{ total_chunks }} chunks</span>
+                </div>
+                <div class="card-body">
+                    {% for chunk in chunks_data %}
+                    <div class="chunk-item border rounded p-3 mb-3" id="chunk-{{ chunk.chunk_id }}">
+                        <div class="row">
+                            <!-- Chunk Content -->
+                            <div class="col-md-7">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <h6 class="text-primary mb-0">
+                                        <i class="fas fa-hashtag me-1"></i>Chunk {{ chunk.chunk_id }}
+                                    </h6>
+                                    <small class="text-muted">
+                                        Words {{ chunk.start_word }}-{{ chunk.end_word }} ({{ chunk.word_count }} total)
+                                    </small>
+                                </div>
+                                <div class="chunk-text p-2 bg-light rounded" style="max-height: 200px; overflow-y: auto;">
+                                    {{ chunk.text }}
+                                </div>
+                            </div>
+                            
+                            <!-- Analysis Section -->
+                            <div class="col-md-5">
+                                <div class="analysis-panel h-100">
+                                    <h6 class="text-success mb-3">
+                                        <i class="fas fa-brain me-1"></i>Concept Analysis
+                                    </h6>
+                                    
+                                    <!-- Core Concept -->
+                                    <div class="mb-3">
+                                        <label class="form-label text-muted small">Core Concept:</label>
+                                        <div class="concept-display p-2 bg-success bg-opacity-10 rounded">
+                                            {% if chunk.analysis_status == 'completed' %}
+                                            <span class="text-success fw-bold">{{ chunk.core_concept }}</span>
+                                            {% else %}
+                                            <span class="text-muted">{{ chunk.core_concept }}</span>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Role -->
+                                    <div class="mb-3">
+                                        <label class="form-label text-muted small">Role:</label>
+                                        <div class="role-display">
+                                            {% if chunk.role == 'pending_analysis' %}
+                                            <span class="badge bg-warning">
+                                                <i class="fas fa-clock me-1"></i>Pending Analysis
+                                            </span>
+                                            {% elif chunk.role == 'error' %}
+                                            <span class="badge bg-danger">
+                                                <i class="fas fa-exclamation-triangle me-1"></i>Error
+                                            </span>
+                                            {% elif chunk.role == 'unknown' %}
+                                            <span class="badge bg-secondary">Unknown</span>
+                                            {% else %}
+                                            <span class="badge bg-info">{{ chunk.role|title }}</span>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Keywords -->
+                                    {% if chunk.keywords %}
+                                    <div class="mb-3">
+                                        <label class="form-label text-muted small">Keywords:</label>
+                                        <div class="keywords-display">
+                                            {% for keyword in chunk.keywords %}
+                                            <span class="badge bg-light text-dark me-1">{{ keyword }}</span>
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+                                    {% endif %}
+                                    
+                                    <!-- Analysis Status -->
+                                    <div class="mb-2">
+                                        <label class="form-label text-muted small">Status:</label>
+                                        <div>
+                                            {% if chunk.analysis_status == 'pending' %}
+                                            <span class="badge bg-secondary">
+                                                <i class="fas fa-hourglass-start me-1"></i>Not Analyzed
+                                            </span>
+                                            {% elif chunk.analysis_status == 'completed' %}
+                                            <span class="badge bg-success">
+                                                <i class="fas fa-check me-1"></i>Analyzed ({{ chunk.confidence|floatformat:2 }})
+                                            </span>
+                                            {% elif chunk.analysis_status == 'error' %}
+                                            <span class="badge bg-danger">
+                                                <i class="fas fa-exclamation-triangle me-1"></i>Error
+                                            </span>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% empty %}
+                    <div class="text-center py-4">
+                        <i class="fas fa-info-circle fa-3x text-muted mb-3"></i>
+                        <p class="text-muted">No chunks generated. Please select a PDF above.</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Grouped Concepts Tab -->
+        {% if grouped_concepts %}
+        <div class="tab-pane fade" id="groups-content" role="tabpanel">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5><i class="fas fa-object-group me-2"></i>Grouped Concepts</h5>
+                    <span class="badge bg-purple" style="background-color: #6f42c1 !important;">{{ grouped_concepts|length }} groups</span>
+                </div>
+                <div class="card-body">
+                    {% for group in grouped_concepts %}
+                    <div class="concept-group border rounded p-4 mb-4" style="border-left: 5px solid #6f42c1 !important;">
+                        <!-- Group Header -->
+                        <div class="group-header mb-3">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <h4 class="text-purple mb-2" style="color: #6f42c1 !important;">
+                                        <i class="fas fa-lightbulb me-2"></i>{{ group.unified_concept }}
+                                    </h4>
+                                    <p class="text-muted mb-2">{{ group.grouping_reason }}</p>
+                                </div>
+                                <div class="text-end">
+                                    <span class="badge bg-purple mb-2" style="background-color: #6f42c1 !important;">
+                                        Group {{ group.group_id }}
+                                    </span>
+                                    <br>
+                                    <span class="badge bg-secondary">
+                                        {{ group.chunks|length }} chunk{{ group.chunks|length|pluralize }}
+                                    </span>
+                                    {% if group.similarity_scores %}
+                                    <br>
+                                    <small class="text-muted">
+                                        Avg Similarity: {{ group.similarity_scores|first|floatformat:2 }}
+                                    </small>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Chunks in this Group -->
+                        <div class="group-chunks">
+                            <h6 class="text-secondary mb-3">
+                                <i class="fas fa-puzzle-piece me-2"></i>Chunks in this Group:
+                            </h6>
+                            <div class="row">
+                                {% for chunk in group.chunks %}
+                                <div class="col-md-6 mb-3">
+                                    <div class="group-chunk-item border rounded p-3 bg-light">
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <h6 class="text-primary mb-0">
+                                                <i class="fas fa-hashtag me-1"></i>Chunk {{ chunk.chunk_id }}
+                                            </h6>
+                                            <span class="badge bg-info">{{ chunk.role|title }}</span>
+                                        </div>
+                                        
+                                        <div class="chunk-concept mb-2">
+                                            <strong class="text-success">{{ chunk.core_concept }}</strong>
+                                        </div>
+                                        
+                                        <div class="chunk-preview mb-2" style="max-height: 80px; overflow: hidden;">
+                                            <small class="text-muted">{{ chunk.text|truncatechars:150 }}</small>
+                                        </div>
+                                        
+                                        {% if chunk.keywords %}
+                                        <div class="chunk-keywords">
+                                            {% for keyword in chunk.keywords|slice:":3" %}
+                                            <span class="badge bg-light text-dark me-1" style="font-size: 0.7em;">{{ keyword }}</span>
+                                            {% endfor %}
+                                        </div>
+                                        {% endif %}
+                                        
+                                        <div class="mt-2">
+                                            <button class="btn btn-outline-primary btn-sm" onclick="scrollToChunk({{ chunk.chunk_id }})">
+                                                <i class="fas fa-eye me-1"></i>View Full
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                    {% empty %}
+                    <div class="text-center py-4">
+                        <i class="fas fa-object-group fa-3x text-muted mb-3"></i>
+                        <p class="text-muted">No concept groups generated yet. Click "Group" button after analyzing chunks.</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Focus Blocks Tab -->
+        {% if focus_blocks %}
+        <div class="tab-pane fade" id="blocks-content" role="tabpanel">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5><i class="fas fa-cube me-2"></i>Generated Focus Blocks</h5>
+                    <span class="badge bg-danger">{{ focus_blocks|length }} blocks</span>
+                </div>
+                <div class="card-body">
+                    {% for block in focus_blocks %}
+                    <div class="focus-block border rounded p-4 mb-4" style="border-left: 5px solid #dc3545 !important;">
+                        <!-- Block Header -->
+                        <div class="block-header mb-4">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <h3 class="text-danger mb-2">
+                                        <i class="fas fa-cube me-2"></i>{{ block.title }}
+                                    </h3>
+                                    <p class="text-muted mb-0">{{ block.recap }}</p>
+                                </div>
+                                <div class="text-end">
+                                    <span class="badge bg-danger mb-2">Block {{ forloop.counter }}</span><br>
+                                    <span class="badge bg-secondary">{{ block.estimated_duration }} min</span><br>
+                                    <span class="badge bg-info">{{ block.source_chunks }} chunks</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Socratic Introduction -->
+                        <div class="socratic-intro mb-4 p-3 bg-light rounded">
+                            <h6 class="text-warning mb-3"><i class="fas fa-question-circle me-2"></i>Socratic Exploration</h6>
+                            <div class="mb-3">
+                                <strong>Hook Question:</strong>
+                                <p class="text-primary">{{ block.socratic_intro.hook_question }}</p>
+                            </div>
+                            <div class="mb-3">
+                                <strong>Exploration Questions:</strong>
+                                <ul>
+                                    {% for question in block.socratic_intro.exploration_questions %}
+                                    <li class="text-info">{{ question }}</li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                            <div>
+                                <strong>Bridge to Content:</strong>
+                                <p class="text-success">{{ block.socratic_intro.bridge_to_content }}</p>
+                            </div>
+                        </div>
+
+                        <!-- Segments -->
+                        <div class="block-segments mb-4">
+                            <h6 class="text-primary mb-3"><i class="fas fa-list-ol me-2"></i>Learning Segments</h6>
+                            {% for segment in block.segments %}
+                            <div class="segment mb-3 p-3 border rounded">
+                                <h6 class="text-secondary">{{ forloop.counter }}. {{ segment.segment_title }}</h6>
+                                <p>{{ segment.content }}</p>
+                                <div class="key-points">
+                                    <strong>Key Points:</strong>
+                                    <ul>
+                                        {% for point in segment.key_points %}
+                                        <li>{{ point }}</li>
+                                        {% endfor %}
+                                    </ul>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+
+                        <!-- Q&A Section -->
+                        <div class="qa-section mb-3">
+                            <h6 class="text-success mb-3"><i class="fas fa-question-circle me-2"></i>Knowledge Check</h6>
+                            {% for qa in block.qa_items %}
+                            <div class="qa-item border rounded p-3 mb-2">
+                                <div class="question mb-2">
+                                    <strong>Q{{ forloop.counter }}:</strong> {{ qa.prompt }}
+                                    <span class="badge bg-light text-dark ms-2">{{ qa.type }}</span>
+                                </div>
+                                <div class="answer text-success">
+                                    <strong>Answer:</strong> {{ qa.ideal_answer }}
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+
+                        <!-- Block Metadata -->
+                        <div class="block-meta mt-3 pt-3 border-top">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <small class="text-muted">
+                                        <strong>Source:</strong> {{ block.source_chunks }} chunks with roles: 
+                                        {% for role in block.chunk_roles %}
+                                        <span class="badge bg-light text-dark">{{ role }}</span>
+                                        {% endfor %}
+                                    </small>
+                                </div>
+                                <div class="col-md-6 text-end">
+                                    <small class="text-muted">
+                                        Generation: 
+                                        {% if block.generation_status == 'success' %}
+                                        <span class="text-success">Success</span>
+                                        {% else %}
+                                        <span class="text-warning">Fallback</span>
+                                        {% endif %}
+                                        (Confidence: {{ block.confidence|floatformat:2 }})
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Knowledge Graph Tab -->
+        {% if knowledge_graph %}
+        <div class="tab-pane fade" id="graph-content" role="tabpanel">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5><i class="fas fa-project-diagram me-2"></i>Knowledge Graph</h5>
+                    <div>
+                        <span class="badge bg-secondary me-2">{{ knowledge_graph.metadata.total_nodes }} nodes</span>
+                        <span class="badge bg-dark">{{ knowledge_graph.metadata.total_edges }} edges</span>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <!-- Graph Controls -->
+                    <div class="graph-controls mb-3 p-3 bg-light rounded">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6><i class="fas fa-palette me-2"></i>Node Colors (by Content Type)</h6>
+                                <div class="color-legend">
+                                    <span class="badge me-2" style="background-color: #3498db;">Definition</span>
+                                    <span class="badge me-2" style="background-color: #e74c3c;">Formula</span>
+                                    <span class="badge me-2" style="background-color: #2ecc71;">Example</span>
+                                    <span class="badge me-2" style="background-color: #9b59b6;">Derivation</span>
+                                    <span class="badge me-2" style="background-color: #f39c12;">Procedure</span>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <h6><i class="fas fa-link me-2"></i>Edge Types</h6>
+                                <div class="edge-legend">
+                                    {% for rel_type in knowledge_graph.metadata.relationship_types %}
+                                    <span class="badge bg-info me-1">{{ rel_type|title }}</span>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Graph Visualization -->
+                    <div id="knowledge-graph-container" style="height: 600px; border: 1px solid #ddd; border-radius: 8px;">
+                        <div class="text-center p-5">
+                            <i class="fas fa-spinner fa-spin fa-3x text-muted mb-3"></i>
+                            <p class="text-muted">Loading knowledge graph...</p>
+                        </div>
+                    </div>
+
+                    <!-- Graph Statistics -->
+                    <div class="graph-stats mt-3">
+                        <div class="row">
+                            <div class="col-md-3">
+                                <div class="stat-card p-3 bg-light rounded text-center">
+                                    <h6>Average Connection Strength</h6>
+                                    <h4 class="text-primary">{{ knowledge_graph.metadata.avg_edge_strength|floatformat:2 }}</h4>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="stat-card p-3 bg-light rounded text-center">
+                                    <h6>Relationship Types</h6>
+                                    <h4 class="text-success">{{ knowledge_graph.metadata.relationship_types|length }}</h4>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="stat-card p-3 bg-light rounded text-center">
+                                    <h6>Graph Density</h6>
+                                    <h4 class="text-warning">{% widthratio knowledge_graph.metadata.total_edges knowledge_graph.metadata.total_nodes 1 %}%</h4>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="stat-card p-3 bg-light rounded text-center">
+                                    <h6>Source Document</h6>
+                                    <small class="text-muted">{{ knowledge_graph.metadata.source_document|truncatechars:20 }}</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    {% else %}
+    <!-- No PDF Selected -->
+    <div class="row">
+        <div class="col-12">
+            <div class="text-center py-5">
+                <i class="fas fa-file-pdf fa-5x text-muted mb-4"></i>
+                <h3 class="text-muted">Select a PDF to Begin</h3>
+                <p class="lead text-muted">Choose a processed PDF from the dropdown above to see its 300-word chunks and concept analysis.</p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<style>
+.chunk-item:hover {
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    transition: box-shadow 0.2s ease;
+}
+
+.concept-group:hover {
+    box-shadow: 0 6px 12px rgba(111, 66, 193, 0.15);
+    transition: box-shadow 0.3s ease;
+}
+
+.group-chunk-item:hover {
+    background-color: #f8f9fa !important;
+    border-color: #6f42c1 !important;
+    transition: all 0.2s ease;
+}
+
+.chunk-text {
+    font-family: 'Courier New', monospace;
+    font-size: 0.9em;
+    line-height: 1.4;
+}
+
+.analysis-panel {
+    background: #f8f9fa;
+    border-radius: 8px;
+    padding: 15px;
+}
+
+.concept-display {
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+}
+
+.nav-tabs .nav-link.active {
+    background-color: #6f42c1 !important;
+    border-color: #6f42c1 !important;
+    color: white !important;
+}
+</style>
+
+<!-- Add vis.js for graph visualization -->
+<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+
+<script>
+// Knowledge Graph Visualization
+{% if knowledge_graph %}
+document.addEventListener('DOMContentLoaded', function() {
+    // Graph data from Django
+    const graphData = {
+        nodes: new vis.DataSet({{ knowledge_graph.nodes|safe }}),
+        edges: new vis.DataSet({{ knowledge_graph.edges|safe }})
+    };
+    
+    // Graph options
+    const options = {
+        nodes: {
+            shape: 'dot',
+            scaling: {
+                min: 20,
+                max: 60
+            },
+            font: {
+                size: 12,
+                color: '#333'
+            },
+            borderWidth: 2,
+            shadow: true
+        },
+        edges: {
+            color: {
+                opacity: 0.8
+            },
+            font: {
+                size: 10,
+                align: 'middle'
+            },
+            arrows: {
+                to: {
+                    enabled: true,
+                    scaleFactor: 1
+                }
+            },
+            smooth: {
+                type: 'continuous'
+            }
+        },
+        physics: {
+            enabled: true,
+            stabilization: {
+                iterations: 100
+            },
+            barnesHut: {
+                gravitationalConstant: -2000,
+                centralGravity: 0.3,
+                springLength: 95,
+                springConstant: 0.04,
+                damping: 0.09
+            }
+        },
+        interaction: {
+            hover: true,
+            tooltipDelay: 200
+        },
+        layout: {
+            improvedLayout: true
+        }
+    };
+    
+    // Initialize the graph
+    const container = document.getElementById('knowledge-graph-container');
+    const network = new vis.Network(container, graphData, options);
+    
+    // Event handlers
+    network.on('click', function(params) {
+        if (params.nodes.length > 0) {
+            const nodeId = params.nodes[0];
+            console.log('Clicked node:', nodeId);
+            // Future: Could show detailed node information
+        }
+    });
+    
+    network.on('hoverNode', function(params) {
+        const nodeId = params.node;
+        const nodeData = graphData.nodes.get(nodeId);
+        console.log('Hovering over:', nodeData.title);
+    });
+    
+    // Stabilization progress
+    network.on('stabilizationProgress', function(params) {
+        const progress = Math.round((params.iterations / params.total) * 100);
+        document.getElementById('knowledge-graph-container').innerHTML = 
+            `<div class="text-center p-5">
+                <div class="progress mb-3">
+                    <div class="progress-bar" role="progressbar" style="width: ${progress}%">${progress}%</div>
+                </div>
+                <p class="text-muted">Building knowledge graph... ${progress}%</p>
+            </div>`;
+    });
+    
+    network.on('stabilizationIterationsDone', function() {
+        console.log('Knowledge graph stabilized');
+    });
+});
+{% endif %}
+
+// Auto-scroll to specific chunk if needed
+function scrollToChunk(chunkId) {
+    // Switch to chunks tab first
+    const chunksTab = document.getElementById('chunks-tab');
+    const chunksTabInstance = new bootstrap.Tab(chunksTab);
+    chunksTabInstance.show();
+    
+    // Then scroll to the chunk
+    setTimeout(() => {
+        const element = document.getElementById(`chunk-${chunkId}`);
+        if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            element.style.backgroundColor = '#fff3cd';
+            setTimeout(() => {
+                element.style.backgroundColor = '';
+            }, 2000);
+        }
+    }, 300);
+}
+
+// Initialize Bootstrap tabs
+document.addEventListener('DOMContentLoaded', function() {
+    const triggerTabList = [].slice.call(document.querySelectorAll('#contentTabs button'));
+    triggerTabList.forEach(function (triggerEl) {
+        const tabTrigger = new bootstrap.Tab(triggerEl);
+    });
+});
+</script>
+
+{% endblock %}

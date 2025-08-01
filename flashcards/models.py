@@ -39,7 +39,7 @@ class PDFDocument(models.Model):
     # Text fields (for now)
     extracted_text = models.TextField(blank=True)
     cleaned_text = models.TextField(blank=True)  # ✅ ADD BACK
-    
+    processing_duration = models.FloatField(null=True, blank=True, help_text="Processing time in seconds")
     # ✅ ADD: Deduplication fields
     is_duplicate = models.BooleanField(default=False)
     duplicate_of = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='duplicates')
@@ -331,12 +331,24 @@ class FocusBlock(models.Model):
     def get_estimated_duration_display(self):
         """Get human-readable duration"""
         if hasattr(self, 'compact7_data') and self.compact7_data:
-            # Calculate total time from segments
+            # Calculate total time from segments (updated for new structure)
             total_seconds = 0
-            core = self.compact7_data.get('core', {})
-            segments = core.get('segments', [])
+            
+            # Try direct access first (new format)
+            if 'segments' in self.compact7_data:
+                segments = self.compact7_data['segments']
+            # Fallback to nested core format (old format)  
+            elif 'core' in self.compact7_data:
+                segments = self.compact7_data['core'].get('segments', [])
+            else:
+                segments = []
+                
             for segment in segments:
                 total_seconds += segment.get('time_sec', 0)
+            
+            # Also check for total_duration field
+            if total_seconds == 0 and 'total_duration' in self.compact7_data:
+                total_seconds = self.compact7_data['total_duration']
             
             minutes = total_seconds // 60
             seconds = total_seconds % 60
@@ -355,14 +367,25 @@ class FocusBlock(models.Model):
     
     def get_segments(self):
         """Get teaching segments"""
-        if self.compact7_data and 'core' in self.compact7_data:
-            return self.compact7_data['core'].get('segments', [])
+        if self.compact7_data:
+            # Try direct access first (new format)
+            if 'segments' in self.compact7_data:
+                return self.compact7_data['segments']
+            # Fallback to nested core format (old format)
+            elif 'core' in self.compact7_data:
+                return self.compact7_data['core'].get('segments', [])
         return []
     
     def get_qa_items(self):
         """Get Q&A items"""
         if self.compact7_data:
-            return self.compact7_data.get('qa', [])
+            # Try both field names (qa_items is the new format)
+            if 'qa_items' in self.compact7_data:
+                return self.compact7_data['qa_items']
+            elif 'qa' in self.compact7_data:
+                return self.compact7_data['qa']
+            elif 'core' in self.compact7_data:
+                return self.compact7_data['core'].get('qa', [])
         return []
     
     def get_revision_data(self):
@@ -496,3 +519,50 @@ class FocusSession(models.Model):
         self.segment_times[str(segment_index)] = time_spent
         self.current_segment = segment_index + 1
         self.save()
+
+
+class FocusBlockRelationship(models.Model):
+    """Model to store relationships between focus blocks for knowledge graph"""
+    RELATIONSHIP_TYPES = [
+        ('prerequisite', 'Prerequisite'),        # A must be learned before B
+        ('builds_on', 'Builds On'),             # B extends concepts from A
+        ('related', 'Related'),                 # Related but independent concepts
+        ('applies_to', 'Applies To'),           # A provides theory, B shows applications
+        ('compares_with', 'Compares With'),     # Blocks compare/contrast approaches
+        ('specializes', 'Specializes'),         # B is a specific case of A
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    from_block = models.ForeignKey(FocusBlock, on_delete=models.CASCADE, related_name='outgoing_relationships')
+    to_block = models.ForeignKey(FocusBlock, on_delete=models.CASCADE, related_name='incoming_relationships')
+    
+    relationship_type = models.CharField(max_length=20, choices=RELATIONSHIP_TYPES)
+    confidence = models.FloatField(help_text="AI confidence in this relationship (0-1)")
+    similarity_score = models.FloatField(help_text="Semantic similarity score (0-1)")
+    edge_strength = models.FloatField(help_text="Combined relationship strength (0-1)")
+    
+    description = models.TextField(help_text="AI-generated description of the relationship")
+    educational_reasoning = models.TextField(help_text="Why this relationship helps learning")
+    
+    # Metadata
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        unique_together = ['from_block', 'to_block', 'relationship_type']
+        ordering = ['-edge_strength', '-confidence']
+    
+    def __str__(self):
+        return f"{self.from_block.title} → {self.to_block.title} ({self.relationship_type})"
+    
+    def is_bidirectional(self):
+        """Check if this is a bidirectional relationship (like 'related')"""
+        return self.relationship_type in ['related', 'compares_with']
+    
+    def get_reverse_relationship(self):
+        """Get the reverse relationship if it exists"""
+        return FocusBlockRelationship.objects.filter(
+            from_block=self.to_block,
+            to_block=self.from_block,
+            relationship_type=self.relationship_type
+        ).first() 

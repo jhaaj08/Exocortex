@@ -1,0 +1,238 @@
+{% extends 'flashcards/base.html' %}
+
+{% block title %}PDF Processing Report - Exocortex{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1 class="display-6 mb-2">
+                        <i class="fas fa-chart-line text-success me-3"></i>PDF Processing Report
+                    </h1>
+                    <p class="lead text-muted">{{ pdf_document.name }}</p>
+                </div>
+                <div>
+                    <a href="{% url 'flashcards:home' %}" class="btn btn-outline-primary">
+                        <i class="fas fa-home me-2"></i>Back to Home
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Processing Summary -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card border-info">
+                <div class="card-body text-center">
+                    <h2 class="text-info">{{ processing_info.page_count }}</h2>
+                    <p class="card-text">Pages Processed</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-primary">
+                <div class="card-body text-center">
+                    <h2 class="text-primary">{{ processing_info.word_count|floatformat:0 }}</h2>
+                    <p class="card-text">Words Analyzed</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-success">
+                <div class="card-body text-center">
+                    <h2 class="text-success">{{ focus_blocks|length }}</h2>
+                    <p class="card-text">Focus Blocks Created</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-warning">
+                <div class="card-body text-center">
+                    <h2 class="text-warning">{{ processing_info.total_duration|default:"--" }}s</h2>
+                    <p class="card-text">Processing Time</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Processing Steps -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5><i class="fas fa-tasks me-2"></i>Processing Steps 
+                <span class="badge bg-success">{{ completed_steps }}/{{ total_steps }} Completed</span>
+            </h5>
+        </div>
+        <div class="card-body">
+            {% for step in processing_info.steps %}
+            <div class="row mb-3">
+                <div class="col-md-1">
+                    <div class="step-number">
+                        {% if step.status == 'completed' %}
+                            <i class="fas fa-check-circle text-success fa-2x"></i>
+                        {% elif step.status == 'failed' %}
+                            <i class="fas fa-times-circle text-danger fa-2x"></i>
+                        {% else %}
+                            <i class="fas fa-clock text-warning fa-2x"></i>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="col-md-11">
+                    <div class="card border-{% if step.status == 'completed' %}success{% elif step.status == 'failed' %}danger{% else %}warning{% endif %}">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <h6 class="card-title mb-1">{{ step.name }}</h6>
+                                {% if step.duration %}
+                                    <small class="text-muted">{{ step.duration }}s</small>
+                                {% endif %}
+                            </div>
+                            <p class="card-text">{{ step.result }}</p>
+                            
+                            {% if step.details %}
+                            <div class="collapse" id="step{{ step.step }}Details">
+                                <div class="card card-body bg-light">
+                                    {% for key, value in step.details.items %}
+                                        {% if key == 'sample_chunks' %}
+                                            <h6>Sample Text Chunks:</h6>
+                                            {% for chunk in value %}
+                                            <div class="mb-2 p-2 border rounded bg-white">
+                                                <small>{{ chunk }}</small>
+                                            </div>
+                                            {% endfor %}
+                                        {% elif key == 'concepts' %}
+                                            <h6>Identified Concepts:</h6>
+                                            <div class="mb-2">
+                                                {% for concept in value %}
+                                                <span class="badge bg-primary me-1">{{ concept }}</span>
+                                                {% endfor %}
+                                            </div>
+                                        {% elif key == 'blocks' %}
+                                            <h6>Generated Focus Blocks:</h6>
+                                            {% for block in value %}
+                                            <div class="mb-2 p-2 border rounded bg-white">
+                                                <strong>{{ block.title }}</strong>
+                                                <small class="text-muted"> - {{ block.segments_count }} segments, {{ block.duration }}s duration</small>
+                                            </div>
+                                            {% endfor %}
+                                        {% else %}
+                                            <strong>{{ key|title }}:</strong> {{ value }}<br>
+                                        {% endif %}
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            {% if step.details %}
+                            <button class="btn btn-sm btn-outline-info mt-2" type="button" data-bs-toggle="collapse" data-bs-target="#step{{ step.step }}Details">
+                                <i class="fas fa-eye me-1"></i>View Details
+                            </button>
+                            {% endif %}
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Generated Focus Blocks -->
+    {% if focus_blocks %}
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5><i class="fas fa-brain me-2"></i>Generated Focus Blocks ({{ focus_blocks|length }})</h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                {% for block in focus_blocks %}
+                <div class="col-md-6 mb-3">
+                    <div class="card border-success">
+                        <div class="card-body">
+                            <h6 class="card-title">{{ block.title }}</h6>
+                            <div class="mb-2">
+                                <span class="badge bg-info">{{ block.segments_count }} segments</span>
+                                <span class="badge bg-warning">{{ block.difficulty }}</span>
+                                <span class="badge bg-secondary">{{ block.duration }}s</span>
+                            </div>
+                            <div class="btn-group btn-group-sm">
+                                <a href="{% url 'flashcards:focus_block_study' block.id %}" class="btn btn-success">
+                                    <i class="fas fa-play me-1"></i>Study Now
+                                </a>
+                                <button class="btn btn-outline-info" onclick="navigator.clipboard.writeText('{{ block.id }}')">
+                                    <i class="fas fa-copy me-1"></i>Copy ID
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Errors (if any) -->
+    {% if has_errors %}
+    <div class="card mb-4 border-danger">
+        <div class="card-header bg-danger text-white">
+            <h5><i class="fas fa-exclamation-triangle me-2"></i>Processing Issues</h5>
+        </div>
+        <div class="card-body">
+            {% for error in processing_info.errors %}
+            <div class="alert alert-danger">
+                <i class="fas fa-times-circle me-2"></i>{{ error }}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Next Steps -->
+    <div class="card">
+        <div class="card-header">
+            <h5><i class="fas fa-lightbulb me-2"></i>What's Next?</h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="text-center">
+                        <i class="fas fa-brain fa-3x text-primary mb-3"></i>
+                        <h6>Study Focus Blocks</h6>
+                        <p>Start learning with your new interactive focus blocks</p>
+                        <a href="{% url 'flashcards:all_focus_blocks' %}" class="btn btn-primary">
+                            <i class="fas fa-play me-2"></i>Start Studying
+                        </a>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="text-center">
+                        <i class="fas fa-project-diagram fa-3x text-info mb-3"></i>
+                        <h6>Explore Knowledge Graph</h6>
+                        <p>See how your focus blocks connect to each other</p>
+                        <a href="{% url 'flashcards:new_format_knowledge_graph' %}" class="btn btn-info">
+                            <i class="fas fa-sitemap me-2"></i>View Graph
+                        </a>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="text-center">
+                        <i class="fas fa-upload fa-3x text-success mb-3"></i>
+                        <h6>Upload More PDFs</h6>
+                        <p>Continue building your knowledge base</p>
+                        <a href="{% url 'flashcards:home' %}" class="btn btn-success">
+                            <i class="fas fa-plus me-2"></i>Upload PDF
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.step-number {
+    text-align: center;
+}
+</style>
+{% endblock %}

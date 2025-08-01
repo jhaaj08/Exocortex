@@ -1,0 +1,679 @@
+{% extends 'flashcards/base.html' %}
+
+{% block title %}Advanced Study: {{ focus_block.title }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Enhanced Study Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card border-primary">
+                <div class="card-header bg-primary text-white">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h3 class="mb-1">
+                                <i class="fas fa-brain me-2"></i>{{ focus_block.title }}
+                            </h3>
+                            <p class="mb-0">
+                                <i class="fas fa-file-pdf me-1"></i>{{ focus_block.pdf_document.name }}
+                                <span class="badge bg-light text-primary ms-2">{{ focus_block.difficulty_level|title }}</span>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <!-- Enhanced Progress Bar -->
+                <div class="progress" style="height: 8px;">
+                    <div class="progress-bar bg-success" id="main-progress" 
+                         style="width: {{ progress_percentage }}%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Main Study Content -->
+        <div class="col-lg-8">
+            <!-- Learning Objectives -->
+            {% if focus_block.learning_objectives %}
+            <div class="card mb-4">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0"><i class="fas fa-target me-2"></i>Learning Objectives</h5>
+                </div>
+                <div class="card-body">
+                    <ul class="list-group list-group-flush">
+                        {% for objective in focus_block.learning_objectives %}
+                        <li class="list-group-item">
+                            <i class="fas fa-check-circle text-success me-2"></i>{{ objective }}
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Interactive Learning Segments -->
+            <div class="card mb-4">
+                <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-chalkboard-teacher me-2"></i>Interactive Learning</h5>
+                    <div class="segment-navigation">
+                        <span class="badge bg-light text-dark me-2" id="segment-counter">
+                            Segment <span id="current-segment">1</span> of <span id="total-segments">{{ segments|length }}</span>
+                        </span>
+                    </div>
+                </div>
+                <div class="card-body">
+                    {% for segment in segments %}
+                    <div class="segment-container mb-4 p-3 border rounded" 
+                         id="segment-{{ forloop.counter0 }}" 
+                         data-segment-index="{{ forloop.counter0 }}"
+                         style="{% if not forloop.first %}display: none;{% endif %}">
+                        
+                        <div class="segment-header d-flex justify-content-between align-items-center mb-3">
+                            <h6 class="text-primary mb-0">
+                                <span class="badge bg-primary me-2">{{ forloop.counter }}</span>
+                                {{ segment.type|default:"Learning Segment"|title }}
+                            </h6>
+                            <div>
+                                <span class="badge bg-secondary">{{ segment.time_sec|default:60 }}s</span>
+                                <button class="btn btn-sm btn-outline-success ms-2" 
+                                        onclick="markSegmentComplete({{ forloop.counter0 }})">
+                                    <i class="fas fa-check"></i> Complete
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Segment Content -->
+                        {% if segment.content %}
+                        <div class="content-section mb-3">
+                            <div class="p-3 bg-light rounded border-start border-4 border-primary">
+                                {{ segment.content|linebreaks }}
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        {% if segment.explanation %}
+                        <div class="explanation-section mb-3">
+                            <div class="alert alert-info">
+                                <h6><i class="fas fa-lightbulb text-warning"></i> Key Insight:</h6>
+                                {{ segment.explanation|linebreaks }}
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        {% if segment.examples %}
+                        <div class="examples-section mb-3">
+                            <h6><i class="fas fa-list-alt text-success"></i> Examples:</h6>
+                            <div class="row">
+                                {% for example in segment.examples %}
+                                <div class="col-md-6 mb-2">
+                                    <div class="card border-success">
+                                        <div class="card-body p-2">
+                                            <small>{{ example }}</small>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        <!-- Segment Notes -->
+                        <div class="segment-notes mt-3">
+                            <label class="form-label small text-muted">
+                                <i class="fas fa-sticky-note"></i> Your notes for this segment:
+                            </label>
+                            <textarea class="form-control" 
+                                      placeholder="Quick notes, questions, or insights..."
+                                      data-segment="{{ forloop.counter0 }}"
+                                      onchange="saveSegmentNote({{ forloop.counter0 }}, this.value)"></textarea>
+                        </div>
+                    </div>
+                    {% endfor %}
+                    
+                    <!-- Navigation Controls -->
+                    <div class="segment-navigation-controls d-flex justify-content-between align-items-center mt-4">
+                        <button class="btn btn-outline-secondary" id="prev-segment-btn" disabled>
+                            <i class="fas fa-chevron-left me-2"></i>Previous
+                        </button>
+                        
+                        <!-- Simple Progress Bar -->
+                        <div class="segment-progress">
+                            <div class="progress" style="width: 200px; height: 8px;">
+                                <div class="progress-bar bg-success" id="segment-progress-bar" style="width: 0%"></div>
+                            </div>
+                        </div>
+                        
+                        <button class="btn btn-primary" id="next-segment-btn">
+                            Next<i class="fas fa-chevron-right ms-2"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Q&A Section -->
+            {% if qa_items %}
+            <div class="card mb-4">
+                <div class="card-header bg-warning text-dark">
+                    <h5 class="mb-0"><i class="fas fa-question-circle me-2"></i>Knowledge Check</h5>
+                </div>
+                <div class="card-body">
+                    {% for qa_item in qa_items %}
+                    <div class="qa-section mb-4 p-3 border rounded">
+                        <div class="question-header mb-3">
+                            <h6 class="text-primary">Question {{ forloop.counter }}:</h6>
+                            <p class="fs-5">{{ qa_item.question }}</p>
+                        </div>
+                        
+                        <div class="qa-actions text-center mb-3">
+                            <button class="btn btn-outline-primary" 
+                                    onclick="revealAnswer('qa{{ forloop.counter }}')">
+                                <i class="fas fa-eye me-1"></i>Show Answer
+                            </button>
+                        </div>
+
+                        <div class="answer-section" id="qa{{ forloop.counter }}" style="display: none;">
+                            <div class="alert alert-success">
+                                <h6><i class="fas fa-check-circle"></i> Answer:</h6>
+                                {{ qa_item.answer|linebreaks }}
+                            </div>
+                            
+                            <!-- Understanding Check -->
+                            <div class="understanding-check mt-3">
+                                <p class="small text-muted mb-2">How well did you understand this?</p>
+                                <div class="btn-group btn-group-sm" role="group">
+                                    {% for i in "12345" %}
+                                    <input type="radio" class="btn-check" name="qa{{ forloop.parentloop.counter }}_understanding" id="qa{{ forloop.parentloop.counter }}_{{ i }}">
+                                    <label class="btn btn-outline-primary" for="qa{{ forloop.parentloop.counter }}_{{ i }}">{{ i }}</label>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Study Sidebar -->
+        <div class="col-lg-4">
+            <!-- Study Progress -->
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="fas fa-chart-line text-success"></i> Study Progress</h6>
+                </div>
+                <div class="card-body">
+                    <div class="progress-item mb-3">
+                        <div class="d-flex justify-content-between mb-1">
+                            <small>Overall Progress</small>
+                            <small id="progress-text">{{ progress_percentage }}%</small>
+                        </div>
+                        <div class="progress">
+                            <div class="progress-bar" id="sidebar-progress" style="width: {{ progress_percentage }}%"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="study-stats">
+                        <div class="stat-item d-flex justify-content-between">
+                            <span>Segments:</span>
+                            <span><span id="completed-segments">0</span>/{{ segments|length }}</span>
+                        </div>
+                        <div class="stat-item d-flex justify-content-between">
+                            <span>Q&A Items:</span>
+                            <span>{{ qa_items|length }}</span>
+                        </div>
+                        <div class="stat-item d-flex justify-content-between">
+                            <span>Target Time:</span>
+                            <span>{{ focus_block.get_estimated_duration_display }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Timer Card -->
+            <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0"><i class="fas fa-clock text-warning"></i> Study Timer</h6>
+                    <div class="timer-controls">
+                        <button class="btn btn-sm btn-outline-warning" id="sidebar-pause-btn">
+                            <i class="fas fa-pause" id="sidebar-pause-icon"></i>
+                            <i class="fas fa-play d-none" id="sidebar-play-icon"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body text-center">
+                    <div class="timer-display mb-3">
+                        <div class="h4 text-primary mb-1" id="session-timer">00:00:00</div>
+                        <small class="text-muted">Total Session Time</small>
+                    </div>
+                    <div class="timer-display">
+                        <div class="h5 text-success mb-1" id="segment-timer">00:00</div>
+                        <small class="text-muted">Current Segment</small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Real-time Notes -->
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="fas fa-edit text-primary"></i> Session Notes</h6>
+                </div>
+                <div class="card-body">
+                    <textarea class="form-control" id="session-notes" rows="6" 
+                              placeholder="Your thoughts, questions, and insights as you study..."
+                              onchange="saveSessionNotes()"></textarea>
+                    <small class="text-muted mt-2 d-block">
+                        <i class="fas fa-save"></i> Auto-saved
+                    </small>
+                </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="fas fa-tools text-info"></i> Study Tools</h6>
+                </div>
+                <div class="card-body">
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-outline-warning btn-sm" onclick="markConfused()">
+                            <i class="fas fa-question-circle"></i> I'm Confused
+                        </button>
+                        <button class="btn btn-outline-info btn-sm" onclick="toggleKeyPoints()">
+                            <i class="fas fa-key"></i> Show Key Points
+                        </button>
+                        <button class="btn btn-outline-secondary btn-sm" onclick="exportNotes()">
+                            <i class="fas fa-download"></i> Export Notes
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Global variables
+let currentSegmentIndex = 0;
+const totalSegments = {{ segments|length }};
+let segmentNotes = {};
+let isPaused = false;
+let sessionTimer = null;
+let segmentTimer = null;
+let sessionStartTime = null;
+let segmentStartTime = null;
+let totalPausedTime = 0;
+let pauseStartTime = null;
+
+// Debugging
+console.log('🚀 Script loading...');
+console.log('Total segments:', totalSegments);
+
+// Timer Functions
+function startTimers() {
+    console.log('⏱️ Starting timers...');
+    
+    // Set start times
+    const now = new Date();
+    if (!sessionStartTime) {
+        sessionStartTime = now;
+    }
+    segmentStartTime = now;
+    
+    // Clear existing timers
+    if (sessionTimer) clearInterval(sessionTimer);
+    if (segmentTimer) clearInterval(segmentTimer);
+    
+    // Session timer (updates every second)
+    sessionTimer = setInterval(updateSessionTimer, 1000);
+    
+    // Segment timer (updates every second)
+    segmentTimer = setInterval(updateSegmentTimer, 1000);
+    
+    console.log('✅ Timers started');
+}
+
+function stopTimers() {
+    console.log('⏹️ Stopping timers...');
+    if (sessionTimer) {
+        clearInterval(sessionTimer);
+        sessionTimer = null;
+    }
+    if (segmentTimer) {
+        clearInterval(segmentTimer);
+        segmentTimer = null;
+    }
+}
+
+function pauseTimers() {
+    console.log('⏸️ Pausing timers...');
+    stopTimers();
+    pauseStartTime = new Date();
+}
+
+function resumeTimers() {
+    console.log('▶️ Resuming timers...');
+    if (pauseStartTime) {
+        totalPausedTime += new Date() - pauseStartTime;
+        pauseStartTime = null;
+    }
+    startTimers();
+}
+
+function updateSessionTimer() {
+    if (isPaused) return;
+    
+    const now = new Date();
+    const elapsed = now - sessionStartTime - totalPausedTime;
+    const sessionTimerEl = document.getElementById('session-timer');
+    
+    if (sessionTimerEl) {
+        sessionTimerEl.textContent = formatTime(elapsed);
+    }
+}
+
+function updateSegmentTimer() {
+    if (isPaused) return;
+    
+    const now = new Date();
+    const elapsed = now - segmentStartTime;
+    const segmentTimerEl = document.getElementById('segment-timer');
+    
+    if (segmentTimerEl) {
+        segmentTimerEl.textContent = formatTime(elapsed, false);
+    }
+}
+
+function formatTime(milliseconds, includeHours = true) {
+    const totalSeconds = Math.floor(milliseconds / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    
+    if (includeHours) {
+        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    } else {
+        return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    }
+}
+
+// Segment Navigation Functions
+function showSegment(index) {
+    console.log(`🔍 showSegment called with index: ${index}`);
+    
+    // Hide all segments
+    document.querySelectorAll('.segment-container').forEach(segment => {
+        segment.style.display = 'none';
+    });
+    
+    // Show target segment
+    const targetSegment = document.getElementById(`segment-${index}`);
+    if (targetSegment) {
+        targetSegment.style.display = 'block';
+        currentSegmentIndex = index;
+        
+        // Reset segment timer
+        segmentStartTime = new Date();
+        
+        // Update counter
+        const currentSegmentEl = document.getElementById('current-segment');
+        if (currentSegmentEl) {
+            currentSegmentEl.textContent = index + 1;
+        }
+        
+        // Update progress bar
+        const progressPercentage = ((index + 1) / totalSegments) * 100;
+        const progressBar = document.getElementById('segment-progress-bar');
+        if (progressBar) {
+            progressBar.style.width = progressPercentage + '%';
+        }
+        
+        // Update sidebar progress
+        const sidebarProgress = document.getElementById('sidebar-progress');
+        const progressText = document.getElementById('progress-text');
+        if (sidebarProgress) {
+            sidebarProgress.style.width = progressPercentage + '%';
+        }
+        if (progressText) {
+            progressText.textContent = Math.round(progressPercentage) + '%';
+        }
+        
+        // Update completed segments to show current position
+        const completedEl = document.getElementById('completed-segments');
+        if (completedEl) {
+            // Show current segment as "in progress"
+            completedEl.textContent = index;
+        }
+        
+        // Update navigation buttons
+        updateNavigationButtons();
+        
+        console.log(`📚 Showing segment ${index + 1} of ${totalSegments}`);
+    } else {
+        console.error(`❌ Segment element not found: segment-${index}`);
+    }
+}
+
+function nextSegment() {
+    console.log('⏭️ nextSegment called');
+    if (currentSegmentIndex < totalSegments - 1) {
+        showSegment(currentSegmentIndex + 1);
+    } else {
+        console.log('📚 Last segment reached');
+    }
+}
+
+function previousSegment() {
+    console.log('⏮️ previousSegment called');
+    if (currentSegmentIndex > 0) {
+        showSegment(currentSegmentIndex - 1);
+    } else {
+        console.log('📚 First segment reached');
+    }
+}
+
+function updateNavigationButtons() {
+    const prevBtn = document.getElementById('prev-segment-btn');
+    const nextBtn = document.getElementById('next-segment-btn');
+    
+    if (!prevBtn || !nextBtn) {
+        console.error('❌ Navigation buttons not found');
+        return;
+    }
+    
+    // Previous button
+    if (currentSegmentIndex === 0) {
+        prevBtn.disabled = true;
+    } else {
+        prevBtn.disabled = false;
+    }
+    
+    // Next button
+    if (currentSegmentIndex === totalSegments - 1) {
+        nextBtn.innerHTML = '<i class="fas fa-check me-2"></i>Complete Session';
+        nextBtn.className = 'btn btn-success';
+    } else {
+        nextBtn.innerHTML = 'Next<i class="fas fa-chevron-right ms-2"></i>';
+        nextBtn.className = 'btn btn-primary';
+    }
+}
+
+function togglePause() {
+    console.log('⏸️ togglePause called');
+    const sidebarPauseBtn = document.getElementById('sidebar-pause-btn');
+    const sidebarPauseIcon = document.getElementById('sidebar-pause-icon');
+    const sidebarPlayIcon = document.getElementById('sidebar-play-icon');
+    
+    isPaused = !isPaused;
+    
+    if (isPaused) {
+        // Paused state
+        pauseTimers();
+        
+        // Update sidebar pause button
+        if (sidebarPauseIcon) sidebarPauseIcon.classList.add('d-none');
+        if (sidebarPlayIcon) sidebarPlayIcon.classList.remove('d-none');
+        if (sidebarPauseBtn) sidebarPauseBtn.className = 'btn btn-sm btn-success';
+        
+        console.log('⏸️ Session paused');
+    } else {
+        // Playing state
+        resumeTimers();
+        
+        // Update sidebar pause button
+        if (sidebarPauseIcon) sidebarPauseIcon.classList.remove('d-none');
+        if (sidebarPlayIcon) sidebarPlayIcon.classList.add('d-none');
+        if (sidebarPauseBtn) sidebarPauseBtn.className = 'btn btn-sm btn-outline-warning';
+        
+        console.log('▶️ Session resumed');
+    }
+}
+
+function markSegmentComplete(segmentIndex) {
+    console.log(`✅ markSegmentComplete called for segment: ${segmentIndex}`);
+    const segment = document.getElementById(`segment-${segmentIndex}`);
+    if (segment) {
+        segment.classList.add('border-success');
+        
+        // Update completed segments counter
+        const completedEl = document.getElementById('completed-segments');
+        if (completedEl) {
+            const currentCompleted = parseInt(completedEl.textContent) || 0;
+            completedEl.textContent = Math.max(currentCompleted, segmentIndex + 1);
+        }
+        
+        // Auto-advance to next segment
+        if (segmentIndex < totalSegments - 1) {
+            setTimeout(() => {
+                nextSegment();
+            }, 1000);
+        } else {
+            console.log('🎉 All segments complete!');
+        }
+    }
+}
+
+function saveSegmentNote(segmentIndex, note) {
+    segmentNotes[segmentIndex] = note;
+    console.log(`💾 Saved note for segment ${segmentIndex}:`, note.substring(0, 50) + '...');
+}
+
+function completeSession() {
+    console.log('🎉 completeSession called');
+    stopTimers();
+    if (confirm('🎉 Complete this study session?')) {
+        alert('Great work! Session completed successfully!');
+        window.location.href = "{% url 'flashcards:all_focus_blocks' %}";
+    } else {
+        startTimers(); // Resume if cancelled
+    }
+}
+
+// Event Listeners
+function attachEventListeners() {
+    console.log('🔗 Attaching event listeners...');
+    
+    // Navigation buttons
+    const prevBtn = document.getElementById('prev-segment-btn');
+    const nextBtn = document.getElementById('next-segment-btn');
+    const sidebarPauseBtn = document.getElementById('sidebar-pause-btn');
+    
+    if (prevBtn) {
+        prevBtn.addEventListener('click', previousSegment);
+        console.log('✅ Previous button listener attached');
+    }
+    
+    if (nextBtn) {
+        nextBtn.addEventListener('click', function() {
+            if (currentSegmentIndex === totalSegments - 1) {
+                completeSession();
+            } else {
+                nextSegment();
+            }
+        });
+        console.log('✅ Next button listener attached');
+    }
+    
+    if (sidebarPauseBtn) {
+        sidebarPauseBtn.addEventListener('click', togglePause);
+        console.log('✅ Sidebar pause button listener attached');
+    }
+    
+    // Keyboard Navigation
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'ArrowRight' && currentSegmentIndex < totalSegments - 1) {
+            nextSegment();
+        } else if (e.key === 'ArrowLeft' && currentSegmentIndex > 0) {
+            previousSegment();
+        } else if (e.key === ' ') { // Spacebar for pause
+            e.preventDefault();
+            togglePause();
+        }
+    });
+    
+    console.log('✅ Keyboard listeners attached');
+}
+
+// Initialize
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('🚀 DOM loaded, initializing...');
+    
+    try {
+        // Attach event listeners
+        attachEventListeners();
+        
+        // Start timers
+        startTimers();
+        
+        // Show first segment
+        showSegment(0);
+        
+        console.log(`✅ Advanced Study initialized with ${totalSegments} segments`);
+        
+        // Add CSRF token for AJAX requests
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]');
+        if (!csrfToken) {
+            const token = document.createElement('input');
+            token.type = 'hidden';
+            token.name = 'csrfmiddlewaretoken';
+            token.value = '{{ csrf_token }}';
+            document.body.appendChild(token);
+        }
+        
+    } catch (error) {
+        console.error('❌ Initialization error:', error);
+    }
+});
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', function() {
+    stopTimers();
+});
+</script>
+
+<style>
+.segment-container {
+    transition: all 0.3s ease;
+}
+
+.segment-container.border-success {
+    background-color: #f8fff9 !important;
+}
+
+.timer-display {
+    font-family: 'Courier New', monospace;
+}
+
+.stat-item {
+    padding: 0.25rem 0;
+    border-bottom: 1px solid #eee;
+}
+
+.stat-item:last-child {
+    border-bottom: none;
+}
+
+.progress-item {
+    margin-bottom: 1rem;
+}
+</style>
+{% endblock %} 

@@ -1,0 +1,245 @@
+{% extends 'flashcards/base.html' %}
+
+{% block title %}Intelligent Study Planner - Exocortex{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 class="display-6 mb-3">
+                <i class="fas fa-route text-primary me-3"></i>Study Path Planner
+            </h1>
+            <p class="lead text-muted">AI-generated study sequences based on knowledge graph relationships</p>
+        </div>
+    </div>
+
+    <!-- Study Path Options -->
+    <div class="row">
+        {% for path_type, path_data in study_orders.items %}
+        <div class="col-lg-4 mb-4">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5>
+                        {% if path_type == 'prerequisite_based' %}
+                        <i class="fas fa-sitemap me-2"></i>Prerequisite-Based Order
+                        {% elif path_type == 'difficulty_progression' %}
+                        <i class="fas fa-signal me-2"></i>Difficulty Progression
+                        {% else %}
+                        <i class="fas fa-project-diagram me-2"></i>Concept Clusters
+                        {% endif %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <small class="text-muted">
+                            <i class="fas fa-clock me-1"></i>{{ path_data.total_time_minutes|floatformat:0 }} minutes
+                            <span class="ms-2">
+                                <i class="fas fa-calendar me-1"></i>~{{ path_data.estimated_days }} days
+                            </span>
+                        </small>
+                    </div>
+                    
+                    <!-- Preview of first few blocks -->
+                    <div class="study-path-preview">
+                        {% for block in path_data.blocks|slice:":5" %}
+                        <div class="d-flex align-items-center mb-2">
+                            <span class="badge bg-primary me-2">{{ forloop.counter }}</span>
+                            <small>{{ block.title|truncatechars:40 }}</small>
+                        </div>
+                        {% endfor %}
+                        {% if path_data.blocks|length > 5 %}
+                        <small class="text-muted">... and {{ path_data.blocks|length|add:"-5" }} more</small>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <a href="{% url 'flashcards:start_study_path' path_type %}" class="btn btn-primary w-100">
+                        <i class="fas fa-play me-2"></i>Start This Path
+                    </a>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Study Statistics -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-chart-bar me-2"></i>Study Overview</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-3">
+                            <div class="text-center">
+                                <h3 class="text-primary">{{ total_blocks }}</h3>
+                                <small class="text-muted">Total Focus Blocks</small>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="text-center">
+                                <h3 class="text-success">{{ total_relationships }}</h3>
+                                <small class="text-muted">Knowledge Connections</small>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="text-center">
+                                <h3 class="text-info">
+                                    {% if study_orders.prerequisite_based %}
+                                        {{ study_orders.prerequisite_based.total_time_minutes|floatformat:0 }}
+                                    {% else %}
+                                        0
+                                    {% endif %}
+                                </h3>
+                                <small class="text-muted">Total Minutes</small>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="text-center">
+                                <h3 class="text-warning">
+                                    {% if study_orders.prerequisite_based %}
+                                        {{ study_orders.prerequisite_based.estimated_days }}
+                                    {% else %}
+                                        0
+                                    {% endif %}
+                                </h3>
+                                <small class="text-muted">Estimated Days</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Detailed Path Comparison -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-chart-bar me-2"></i>Study Path Comparison</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Study Path</th>
+                                    <th>Total Time</th>
+                                    <th>Estimated Days</th>
+                                    <th>Best For</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% if study_orders.prerequisite_based %}
+                                <tr>
+                                    <td>
+                                        <strong><i class="fas fa-sitemap me-2"></i>Prerequisite-Based</strong>
+                                        <br><small class="text-muted">Follows knowledge dependencies</small>
+                                    </td>
+                                    <td>{{ study_orders.prerequisite_based.total_time_minutes|floatformat:0 }} min</td>
+                                    <td>{{ study_orders.prerequisite_based.estimated_days }} days</td>
+                                    <td><small>Systematic learning, avoiding knowledge gaps</small></td>
+                                    <td>
+                                        <a href="{% url 'flashcards:start_study_path' 'prerequisite_based' %}" class="btn btn-sm btn-outline-primary">
+                                            <i class="fas fa-play me-1"></i>Start
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% endif %}
+                                
+                                {% if study_orders.difficulty_progression %}
+                                <tr>
+                                    <td>
+                                        <strong><i class="fas fa-signal me-2"></i>Difficulty Progression</strong>
+                                        <br><small class="text-muted">Gradual difficulty increase</small>
+                                    </td>
+                                    <td>{{ study_orders.difficulty_progression.total_time_minutes|floatformat:0 }} min</td>
+                                    <td>{{ study_orders.difficulty_progression.estimated_days }} days</td>
+                                    <td><small>Building confidence, smooth learning curve</small></td>
+                                    <td>
+                                        <a href="{% url 'flashcards:start_study_path' 'difficulty_progression' %}" class="btn btn-sm btn-outline-success">
+                                            <i class="fas fa-play me-1"></i>Start
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% endif %}
+                                
+                                {% if study_orders.clustered_concepts %}
+                                <tr>
+                                    <td>
+                                        <strong><i class="fas fa-project-diagram me-2"></i>Concept Clusters</strong>
+                                        <br><small class="text-muted">Groups related topics</small>
+                                    </td>
+                                    <td>{{ study_orders.clustered_concepts.total_time_minutes|floatformat:0 }} min</td>
+                                    <td>{{ study_orders.clustered_concepts.estimated_days }} days</td>
+                                    <td><small>Deep understanding, connecting related ideas</small></td>
+                                    <td>
+                                        <a href="{% url 'flashcards:start_study_path' 'clustered_concepts' %}" class="btn btn-sm btn-outline-info">
+                                            <i class="fas fa-play me-1"></i>Start
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% endif %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-tools me-2"></i>Quick Actions</h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex flex-wrap gap-2">
+                        <a href="{% url 'flashcards:new_format_knowledge_graph' %}" class="btn btn-outline-primary">
+                            <i class="fas fa-project-diagram me-2"></i>View Knowledge Graph
+                        </a>
+                        <a href="{% url 'flashcards:all_focus_blocks' %}" class="btn btn-outline-secondary">
+                            <i class="fas fa-cubes me-2"></i>Browse All Blocks
+                        </a>
+                        <a href="{% url 'flashcards:bulk_upload' %}" class="btn btn-outline-success">
+                            <i class="fas fa-upload me-2"></i>Upload More PDFs
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Help Section -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card border-info">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0"><i class="fas fa-lightbulb me-2"></i>How Study Paths Work</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <h6><i class="fas fa-sitemap text-primary"></i> Prerequisite-Based</h6>
+                            <p class="small">Uses knowledge graph relationships to ensure you learn concepts in the right order. Prerequisite concepts come before dependent ones.</p>
+                        </div>
+                        <div class="col-md-4">
+                            <h6><i class="fas fa-signal text-success"></i> Difficulty Progression</h6>
+                            <p class="small">Starts with beginner concepts and gradually increases difficulty. Perfect for building confidence and avoiding overwhelm.</p>
+                        </div>
+                        <div class="col-md-4">
+                            <h6><i class="fas fa-project-diagram text-info"></i> Concept Clusters</h6>
+                            <p class="small">Groups related concepts together for deeper understanding. Helps you see connections between ideas.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

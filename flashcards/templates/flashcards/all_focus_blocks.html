@@ -1,9 +1,13 @@
 {% extends 'flashcards/base.html' %}
 
-{% block title %}Focus Blocks - Exocortex{% endblock %}
+{% block title %}Advanced Study - Exocortex{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
+    <!-- ✅ ADD: Hidden session data -->
+    <div id="session-data" 
+         data-session-id="{{ focus_session.id|default:'' }}" 
+         style="display: none;"></div>
     
     {% if no_blocks %}
     <!-- No Focus Blocks State -->
@@ -11,403 +15,283 @@
         <div class="col-md-8 text-center py-5">
             <i class="fas fa-target fa-4x text-muted mb-4"></i>
             <h3 class="text-muted">No Focus Blocks Yet</h3>
-            <p class="text-muted mb-4">Upload PDFs on the home to generate AI-powered focus blocks</p>
+            <p class="text-muted mb-4">Upload PDFs to generate AI-powered focus blocks</p>
             <a href="{% url 'flashcards:home' %}" class="btn btn-primary btn-lg">
                 <i class="fas fa-upload me-2"></i>Upload Your First PDF
             </a>
         </div>
     </div>
     
-    {% elif no_new_blocks %}
-    <!-- No New/Overdue Blocks State -->
-    <div class="row justify-content-center">
-        <div class="col-lg-8 text-center">
-            <div class="card shadow-sm">
-                <div class="card-body py-5">
-                    <i class="fas fa-check-circle fa-4x text-success mb-4"></i>
-                    <h3 class="text-success mb-3">All Caught Up! 🎉</h3>
-                    <p class="lead text-muted mb-4">
-                        No new blocks or reviews due today. You're up to date with your learning!
-                    </p>
-                    
-                    <div class="row text-center mb-4">
-                        <div class="col-md-4">
-                            <h5 class="text-primary">{{ all_blocks_count }}</h5>
-                            <small class="text-muted">Total Blocks</small>
-                        </div>
-                        <div class="col-md-4">
-                            <h5 class="text-success">{{ completed_count }}</h5>
-                            <small class="text-muted">Completed</small>
-                        </div>
-                        <div class="col-md-4">
-                            <h5 class="text-warning">0</h5>
-                            <small class="text-muted">Due Today</small>
-                        </div>
-                    </div>
-                    
-                    <div class="d-flex justify-content-center gap-3">
-                        <a href="{% url 'flashcards:focus_schedule' %}" class="btn btn-primary">
-                            <i class="fas fa-calendar-alt me-2"></i>View Schedule
-                        </a>
-                        <a href="{% url 'flashcards:home' %}" class="btn btn-outline-secondary">
-                            <i class="fas fa-plus me-2"></i>Add More Content
-                        </a>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
     {% else %}
     
     <!-- Header -->
     <div class="row mb-4">
         <div class="col-12">
-            <div class="text-center">
-                <h1 class="display-5 mb-3">
-                    <i class="fas fa-target me-3"></i>Focus Blocks
-                </h1>
-                <p class="lead text-muted">AI-powered micro-lessons for optimal learning</p>
-            </div>
-        </div>
-    </div>
-
-    <!-- Study Overview -->
-    <div class="row mb-4">
-        <div class="col-md-3">
-            <div class="card text-center bg-primary text-white">
-                <div class="card-body">
-                    <i class="fas fa-layer-group fa-2x mb-2"></i>
-                    <h4 id="total-blocks-counter">{{ total_blocks }}</h4>
-                    <p class="mb-0">Total Blocks</p>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card text-center bg-success text-white">
-                <div class="card-body">
-                    <i class="fas fa-clock fa-2x mb-2"></i>
-                    <h4 id="total-study-time-counter">{{ total_study_time|floatformat:0 }}m</h4>
-                    <p class="mb-0">Study Time</p>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card text-center bg-info text-white">
-                <div class="card-body">
-                    <i class="fas fa-file-pdf fa-2x mb-2"></i>
-                    <h4>{{ unique_pdfs }}</h4>
-                    <p class="mb-0">Source PDFs</p>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card text-center bg-warning text-dark">
-                <div class="card-body">
-                    <i class="fas fa-brain fa-2x mb-2"></i>
-                    <h4>6-7min</h4>
-                    <p class="mb-0">Per Block</p>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Unified Study Interface -->
-    <div class="row">
-        <div class="col-12">
-            <div class="card shadow">
-                <div class="card-header bg-dark text-white">
+            <div class="card border-primary">
+                <div class="card-header bg-primary text-white">
                     <div class="d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0">
-                            <i class="fas fa-play-circle me-2"></i>Interactive Study Session
-                        </h5>
-                        
-                        <!-- ADD GLOBAL TIMER SECTION -->
-                        <div class="text-center">
-                            <div id="global-timer" style="font-family: monospace; font-size: 1.3rem; font-weight: bold;">
-                                🕐 00:00:00
-                            </div>
-                            <div class="mt-1">
-                                <button class="btn btn-success btn-sm" id="global-start-btn" onclick="startGlobalTimer()">
-                                    <i class="fas fa-play"></i> Start Session
-                                </button>
-                                <button class="btn btn-warning btn-sm" id="global-pause-btn" onclick="pauseGlobalTimer()" style="display: none;">
-                                    <i class="fas fa-pause"></i> Pause
-                                </button>
-                                <button class="btn btn-danger btn-sm" id="global-stop-btn" onclick="stopGlobalTimer()" style="display: none;">
-                                    <i class="fas fa-stop"></i> End Session
-                                </button>
-                                <!-- ADD THIS VIEW DATA BUTTON -->
-                                <button class="btn btn-info btn-sm" onclick="viewCompletions()" title="View Progress">
-                                    <i class="fas fa-chart-line"></i>
-                                </button>
-                            </div>
-                        </div>
-                        
-                        <!-- REPLACE line 107 with better block indicator: -->
-                        <div class="d-flex align-items-center">
-                            <span class="badge bg-primary me-2" id="blockIndicator">Block 1</span>
-                            <span class="badge bg-warning" id="currentDuration">6-7 min</span>
-                            <small class="text-muted ms-2" id="blockProgress">Step 1 of 5</small>
+                        <div>
+                            <h3 class="mb-1">
+                                <i class="fas fa-brain me-2"></i>Advanced Study Session
+                            </h3>
+                            <p class="mb-0">
+                                <i class="fas fa-layer-group me-1"></i>{{ total_blocks }} Focus Blocks
+                                <span class="badge bg-light text-primary ms-2">{{ total_study_time|floatformat:0 }}min total</span>
+                            </p>
                         </div>
                     </div>
                 </div>
-                
-                <!-- Progress Bar -->
-                <div class="progress" style="height: 6px;">
-                    <div class="progress-bar bg-success" id="overallProgress" style="width: 0%"></div>
+                <!-- Enhanced Progress Bar -->
+                <div class="progress" style="height: 8px;">
+                    <div class="progress-bar bg-success" id="main-progress" 
+                         style="width: {{ progress_percentage }}%"></div>
                 </div>
-                
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Main Study Content -->
+        <div class="col-lg-8">
+            {% for block_data in focus_blocks %}
+            <!-- Learning Objectives -->
+            {% if block_data.learning_objectives %}
+            <div class="card mb-4" id="block-{{ forloop.counter0 }}" style="{% if not forloop.first %}display: none;{% endif %}">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0"><i class="fas fa-bullseye me-2"></i>Learning Objectives</h5>
+                </div>
                 <div class="card-body">
-                    <!-- Block Content Container -->
-                    <div id="blockContent">
+                    <ul class="list-unstyled mb-0">
+                        {% for objective in block_data.learning_objectives %}
+                        <li class="mb-2">
+                            <i class="fas fa-check-circle text-success me-2"></i>{{ objective }}
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Interactive Learning Segments -->
+            <div class="card mb-4" id="segments-{{ forloop.counter0 }}" style="{% if not forloop.first %}display: none;{% endif %}">
+                <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-chalkboard-teacher me-2"></i>{{ block_data.block.title }}</h5>
+                    <div class="block-navigation">
+                        <span class="badge bg-light text-dark me-2">
+                            Block <span id="current-block">{{ forloop.counter }}</span> of {{ focus_blocks|length }}
+                        </span>
+        </div>
+                </div>
+                <div class="card-body">
+                    {% for segment in block_data.segments %}
+                    <div class="segment-container mb-4 p-3 border rounded" 
+                         id="segment-{{ forloop.parentloop.counter0 }}-{{ forloop.counter0 }}" 
+                         data-segment-index="{{ forloop.counter0 }}"
+                         data-block-index="{{ forloop.parentloop.counter0 }}"
+                         style="{% if not forloop.first %}display: none;{% endif %}">
                         
-                        {% for block_data in formatted_blocks %}
-                        <div class="focus-block-container" 
-                             data-block-index="{{ forloop.counter0 }}" 
-                             data-focus-block-id="{{ block_data.block.id }}" 
-                             style="display: none;">
-                            
-                            <!-- Block Header -->
-                            <div class="block-header mb-4 p-3 bg-light rounded">
-                                <div class="row align-items-center">
-                                    <div class="col-md-8">
-                                        <h3 class="mb-1">{{ block_data.block.title }}</h3>
-                                        <p class="text-muted mb-1">
-                                            <i class="fas fa-file-pdf me-1"></i>{{ block_data.source_pdf }}
-                                        </p>
-                                        {% if block_data.block.get_core_goal %}
-                                        <p class="text-primary mb-0">
-                                            <i class="fas fa-bullseye me-1"></i>{{ block_data.block.get_core_goal }}
-                                        </p>
-                                        {% endif %}
-                                    </div>
-                                    <div class="col-md-4 text-end">
-                                        <div class="mb-2">
-                                            <span class="badge bg-primary me-1">{{ block_data.total_segments }} segments</span>
-                                            <span class="badge bg-warning">{{ block_data.total_qa }} Q&A</span>
-                                        </div>
-                                        <div class="mb-2">
-                                            <span class="badge bg-info">{{ block_data.block.get_estimated_duration_display }}</span>
-                                        </div>
-                                        
-                                        <!-- REPLACE the timer section you added with this: -->
-                                        <div class="mb-2">
-                                            <div class="text-center">
-                                                <small class="text-muted">Block Timer</small>
-                                                <div id="timer-{{ forloop.counter0 }}" style="font-family: monospace; font-size: 1.0rem; color: #28a745; font-weight: bold;">
-                                                    ⏱️ 00:00:00
-                                                </div>
-                                                <small class="text-muted">Auto</small>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Step Content for this Block -->
-                            <div class="step-content">
-                                
-                                <!-- Revision Step -->
-                                {% if block_data.revision_data %}
-                                <div class="study-step" style="display: none;">
-                                    <div class="step-header mb-3">
-                                        <h4><i class="fas fa-redo text-secondary me-2"></i>Quick Revision</h4>
-                                    </div>
-                                    
-                                    {% if block_data.revision_data.nano_recap %}
-                                    <div class="revision-content bg-light p-4 rounded mb-3">
-                                        <h6>Context Reminder:</h6>
-                                        <p class="mb-0">{{ block_data.revision_data.nano_recap }}</p>
-                                    </div>
-                                    {% endif %}
-                                    
-                                    {% if block_data.revision_data.question %}
-                                    <div class="revision-question border-start border-primary border-4 ps-3">
-                                        <h6>Quick Check:</h6>
-                                        <p><strong>{{ block_data.revision_data.question.prompt }}</strong></p>
-                                        <div class="mt-2">
-                                            <button class="btn btn-sm btn-outline-primary" onclick="toggleAnswer('revision{{ forloop.counter0 }}')">
-                                                <i class="fas fa-eye me-1"></i>Show Answer
-                                            </button>
-                                            <div id="revision{{ forloop.counter0 }}" class="mt-2 text-success" style="display: none;">
-                                                <strong>Answer:</strong> {{ block_data.revision_data.question.answer }}
-                                            </div>
-                                        </div>
-                                    </div>
-                                    {% endif %}
-                                </div>
-                                {% endif %}
-
-                                <!-- Teaching Segments -->
-                                {% for segment in block_data.segments %}
-                                <div class="study-step" style="display: none;">
-                                    <div class="step-header mb-3">
-                                        <h4><i class="fas fa-chalkboard-teacher text-success me-2"></i>{{ segment.title }}</h4>
-                                        <div class="d-flex justify-content-between">
-                                            <p class="text-muted mb-0">Segment {{ forloop.counter }}</p>
-                                            <span class="badge bg-primary">{{ segment.time_sec }}s</span>
-                                        </div>
-                                    </div>
-                                    
-                                    {% if segment.teach %}
-                                    <div class="teaching-content">
-                                        {% for step in segment.teach %}
-                                        <div class="teaching-step mb-3 p-3 rounded border-start border-4 
-                                             {% if step.mode == 'socratic' %}border-info bg-light-blue
-                                             {% elif step.mode == 'example' %}border-success bg-light-green
-                                             {% elif step.mode == 'warning' %}border-warning bg-light-warning
-                                             {% else %}border-secondary bg-light{% endif %}">
-                                            
-                                            <div class="d-flex align-items-start">
-                                                <span class="badge 
-                                                      {% if step.mode == 'socratic' %}bg-info
-                                                      {% elif step.mode == 'example' %}bg-success
-                                                      {% elif step.mode == 'warning' %}bg-warning
-                                                      {% else %}bg-secondary{% endif %} me-3">
-                                                    {{ step.mode|title }}
-                                                </span>
-                                                <div class="flex-grow-1">
-                                                    <p class="mb-0">{{ step.text }}</p>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        {% endfor %}
-                                    </div>
-                                    {% endif %}
-                                </div>
-                                {% endfor %}
-
-                                <!-- Q&A Steps -->
-                                {% for qa in block_data.qa_items %}
-                                <div class="study-step" style="display: none;">
-                                    <div class="step-header mb-3">
-                                        <h4><i class="fas fa-question-circle text-warning me-2"></i>Knowledge Check {{ forloop.counter }}</h4>
-                                    </div>
-                                    
-                                    <div class="qa-interactive">
-                                        <div class="question-card bg-primary text-white p-4 rounded mb-3">
-                                            <h5>{{ qa.prompt }}</h5>
-                                            <span class="badge bg-light text-primary">{{ qa.type|title }} Question</span>
-                                        </div>
-                                        
-                                        <div class="text-center mb-3">
-                                            <button class="btn btn-success btn-lg" onclick="revealAnswer('qa{{ forloop.parentloop.counter0 }}_{{ forloop.counter0 }}')">
-                                                <i class="fas fa-eye me-2"></i>Reveal Answer
-                                            </button>
-                                        </div>
-                                        
-                                        <div id="qa{{ forloop.parentloop.counter0 }}_{{ forloop.counter0 }}" class="answer-section" style="display: none;">
-                                            <div class="answer-card bg-success text-white p-4 rounded mb-3">
-                                                <h6><i class="fas fa-check-circle me-2"></i>Ideal Answer:</h6>
-                                                <p class="mb-0">{{ qa.ideal_answer }}</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                {% endfor %}
-
-                                <!-- Recap Step -->
-                                {% if block_data.recap_data %}
-                                <div class="study-step" style="display: none;">
-                                    <div class="step-header mb-3">
-                                        <h4><i class="fas fa-flag-checkered text-success me-2"></i>Block Complete!</h4>
-                                    </div>
-                                    
-                                    {% if block_data.recap_data.bullets %}
-                                    <div class="recap-content bg-success text-white p-4 rounded mb-4">
-                                        <h5><i class="fas fa-check-circle me-2"></i>Key Takeaways:</h5>
-                                        <ul class="mb-0">
-                                            {% for bullet in block_data.recap_data.bullets %}
-                                            <li>{{ bullet }}</li>
-                                            {% endfor %}
-                                        </ul>
-                                    </div>
-                                    {% endif %}
-                                </div>
-                                {% endif %}
-
+                        <div class="segment-header d-flex justify-content-between align-items-center mb-3">
+                            <h6 class="text-primary mb-0">
+                                <span class="badge bg-primary me-2">{{ forloop.counter }}</span>
+                                {{ segment.type|default:"Learning Segment"|title }}
+                            </h6>
+                            <div>
+                                <span class="badge bg-secondary">{{ segment.time_sec|default:60 }}s</span>
+                                <button class="btn btn-sm btn-outline-success ms-2" 
+                                        onclick="markSegmentComplete({{ forloop.parentloop.counter0 }}, {{ forloop.counter0 }})">
+                                    <i class="fas fa-check"></i> Complete
+                                </button>
                             </div>
                         </div>
-                        {% endfor %}
+                        
+                        <!-- Segment Content -->
+                        {% if segment.content %}
+                        <div class="content-section mb-3">
+                            <div class="p-3 bg-light rounded border-start border-4 border-primary">
+                                {{ segment.content|linebreaks }}
+                            </div>
+                        </div>
+                        {% endif %}
 
+                        {% if segment.explanation %}
+                        <div class="explanation-section mb-3">
+                            <div class="alert alert-info">
+                                <h6><i class="fas fa-lightbulb text-warning"></i> Key Insight:</h6>
+                                {{ segment.explanation|linebreaks }}
                     </div>
                 </div>
-                
-                <!-- Navigation Footer -->
-                <div class="card-footer bg-light">
-                    <!-- Mobile-friendly navigation -->
-                    <div class="row align-items-center">
-                        <div class="col-3">
-                            <button class="btn btn-outline-secondary btn-lg w-100" id="prevBtn" onclick="previousStep()" disabled>
-                                <i class="fas fa-chevron-left"></i>
-                            </button>
-                        </div>
-                        <div class="col-6 text-center">
-                            <!-- Visual progress for current block -->
-                            <div class="progress mb-2" style="height: 8px;">
-                                <div class="progress-bar" id="blockProgressBar" style="width: 20%"></div>
+                                        {% endif %}
+
+                        {% if segment.examples %}
+                        <div class="examples-section mb-3">
+                            <h6><i class="fas fa-list-alt text-success"></i> Examples:</h6>
+                            <div class="row">
+                                {% for example in segment.examples %}
+                                <div class="col-md-6 mb-2">
+                                    <div class="card border-success">
+                                        <div class="card-body p-2">
+                                            <small>{{ example }}</small>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endfor %}
                             </div>
-                            <small class="text-muted" id="stepInfo">Revision • 1/5</small>
+                                    </div>
+                                    {% endif %}
+                                    
+                        <!-- Segment Notes -->
+                        <div class="segment-notes mt-3">
+                            <label class="form-label small text-muted">
+                                <i class="fas fa-sticky-note"></i> Your notes for this segment:
+                            </label>
+                            <textarea class="form-control" 
+                                      placeholder="Quick notes, questions, or insights..."
+                                      data-block="{{ forloop.parentloop.counter0 }}"
+                                      data-segment="{{ forloop.counter0 }}"
+                                      onchange="saveSegmentNote({{ forloop.parentloop.counter0 }}, {{ forloop.counter0 }}, this.value)"></textarea>
+                                            </div>
+                                        </div>
+                    {% endfor %}
+                    
+                    <!-- Navigation Controls -->
+                    <div class="segment-navigation-controls d-flex justify-content-between align-items-center mt-4">
+                        <button class="btn btn-outline-secondary" id="prev-btn-{{ forloop.counter0 }}" onclick="previousSegment({{ forloop.counter0 }})" disabled>
+                            <i class="fas fa-chevron-left me-2"></i>Previous
+                        </button>
+                        
+                        <!-- Simple Progress Bar -->
+                        <div class="segment-progress">
+                            <div class="progress" style="width: 200px; height: 8px;">
+                                <div class="progress-bar bg-success" id="segment-progress-bar-{{ forloop.counter0 }}" style="width: 0%"></div>
+                                        </div>
+                                    </div>
+                                    
+                        <button class="btn btn-primary" id="next-btn-{{ forloop.counter0 }}" onclick="nextSegment({{ forloop.counter0 }})">
+                            Next<i class="fas fa-chevron-right ms-2"></i>
+                        </button>
+                                                </div>
+                                            </div>
+                                        </div>
+
+            <!-- Q&A Section -->
+            {% if block_data.qa_items %}
+            <div class="card mb-4" id="qa-{{ forloop.counter0 }}" style="{% if not forloop.first %}display: none;{% endif %}">
+                <div class="card-header bg-warning text-dark">
+                    <h5 class="mb-0"><i class="fas fa-question-circle me-2"></i>Knowledge Check</h5>
+                                    </div>
+                <div class="card-body">
+                    {% for qa_item in block_data.qa_items %}
+                    <div class="qa-section mb-4 p-3 border rounded">
+                        <div class="question-header mb-3">
+                            <h6 class="text-primary">Question {{ forloop.counter }}:</h6>
+                            <p class="fs-5">{{ qa_item.question }}</p>
+                                        </div>
+                                        
+                        <div class="qa-actions text-center mb-3">
+                            <button class="btn btn-outline-primary" 
+                                    onclick="revealAnswer('qa{{ forloop.parentloop.counter0 }}_{{ forloop.counter }}')">
+                                <i class="fas fa-eye me-1"></i>Show Answer
+                                            </button>
+                                        </div>
+                                        
+                        <div class="answer-section" id="qa{{ forloop.parentloop.counter0 }}_{{ forloop.counter }}" style="display: none;">
+                            <div class="alert alert-success">
+                                <h6><i class="fas fa-check-circle"></i> Answer:</h6>
+                                {{ qa_item.answer|linebreaks }}
+                                    </div>
+                                    
+                            <!-- Understanding Check -->
+                            <div class="understanding-check mt-3">
+                                <p class="small text-muted mb-2">How well did you understand this?</p>
+                                <div class="btn-group btn-group-sm" role="group">
+                                    {% for i in "12345" %}
+                                    <input type="radio" class="btn-check" name="qa{{ forloop.parentloop.counter0 }}_{{ forloop.parentloop.counter }}_understanding" id="qa{{ forloop.parentloop.counter0 }}_{{ forloop.parentloop.counter }}_{{ i }}">
+                                    <label class="btn btn-outline-primary" for="qa{{ forloop.parentloop.counter0 }}_{{ forloop.parentloop.counter }}_{{ i }}">{{ i }}</label>
+                                            {% endfor %}
+                                </div>
+                            </div>
                         </div>
-                        <div class="col-3">
-                            <button class="btn btn-primary btn-lg w-100" id="nextBtn" onclick="nextStep()">
-                                <i class="fas fa-chevron-right"></i>
-                            </button>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+            {% endfor %}
+                </div>
+                
+        <!-- Study Sidebar -->
+        <div class="col-lg-4">
+            <!-- Study Progress -->
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="fas fa-chart-line text-success"></i> Study Progress</h6>
+                        </div>
+                <div class="card-body">
+                    <div class="progress-item mb-3">
+                        <div class="d-flex justify-content-between mb-1">
+                            <small>Overall Progress</small>
+                            <small id="progress-text">{{ progress_percentage }}%</small>
+                        </div>
+                        <div class="progress">
+                            <div class="progress-bar" id="sidebar-progress" style="width: {{ progress_percentage }}%"></div>
                         </div>
                     </div>
                     
-                    <!-- Swipe hint -->
-                    <div class="text-center mt-2">
-                        <small class="text-muted">
-                            <i class="fas fa-hand-point-right me-1"></i>Swipe or tap to navigate
-                        </small>
+                    <div class="study-stats">
+                        <div class="stat-item d-flex justify-content-between">
+                            <span>Current Block:</span>
+                            <span><span id="current-block-number">1</span>/{{ focus_blocks|length }}</span>
+                        </div>
+                        <div class="stat-item d-flex justify-content-between">
+                            <span>Segments:</span>
+                            <span><span id="completed-segments">0</span>/<span id="total-segments">{{ focus_blocks.0.total_segments }}</span></span>
+                        </div>
+                        <div class="stat-item d-flex justify-content-between">
+                            <span>Q&A Items:</span>
+                            <span id="current-qa-count">{{ focus_blocks.0.total_qa }}</span>
+                        </div>
+                        <div class="stat-item d-flex justify-content-between">
+                            <span>Est. Time:</span>
+                            <span id="current-duration">{{ focus_blocks.0.estimated_duration }}</span>
+                        </div>
                     </div>
                 </div>
             </div>
+
+            <!-- Timer Card -->
+            <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0"><i class="fas fa-clock text-warning"></i> Study Timer</h6>
+                    <div class="timer-controls">
+                        <button class="btn btn-sm btn-outline-warning" id="sidebar-pause-btn" onclick="togglePause()">
+                            <i class="fas fa-pause" id="sidebar-pause-icon"></i>
+                            <i class="fas fa-play d-none" id="sidebar-play-icon"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body text-center">
+                    <div class="timer-display mb-3">
+                        <div class="h4 text-primary mb-1" id="session-timer">00:00:00</div>
+                        <small class="text-muted">Total Session Time</small>
+                    </div>
+                    <div class="timer-display">
+                        <div class="h5 text-success mb-1" id="block-timer">00:00</div>
+                        <small class="text-muted">Current Block</small>
         </div>
     </div>
-    
-    <!-- ADD THIS COMPLETION MODAL before the closing container div -->
+            </div>
 
-<!-- Focus Block Completion Modal -->
-<div class="modal fade" id="completionModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header bg-success text-white">
-                <h5 class="modal-title">
-                    <i class="fas fa-check-circle me-2"></i>Focus Block Complete!
-                </h5>
-            </div>
-            <div class="modal-body text-center">
-                <div class="mb-4">
-                    <h6>Block: <span id="completed-block-title"></span></h6>
-                    <p class="text-muted">Time: <span id="completed-block-time"></span></p>
+            <!-- Real-time Notes -->
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="fas fa-edit text-primary"></i> Session Notes</h6>
                 </div>
-                
-                <div class="mb-4">
-                    <label class="form-label h6">How well did you understand this content?</label>
-                    <div class="rating-scale d-flex justify-content-center gap-2 mt-2">
-                        <input type="radio" class="btn-check" name="proficiency" id="prof1" value="1">
-                        <label class="btn btn-outline-danger" for="prof1">1<br><small>Poor</small></label>
-                        
-                        <input type="radio" class="btn-check" name="proficiency" id="prof2" value="2">
-                        <label class="btn btn-outline-warning" for="prof2">2<br><small>Basic</small></label>
-                        
-                        <input type="radio" class="btn-check" name="proficiency" id="prof3" value="3">
-                        <label class="btn btn-outline-info" for="prof3">3<br><small>Good</small></label>
-                        
-                        <input type="radio" class="btn-check" name="proficiency" id="prof4" value="4">
-                        <label class="btn btn-outline-primary" for="prof4">4<br><small>Strong</small></label>
-                        
-                        <input type="radio" class="btn-check" name="proficiency" id="prof5" value="5">
-                        <label class="btn btn-outline-success" for="prof5">5<br><small>Mastered</small></label>
+                <div class="card-body">
+                    <textarea class="form-control" rows="6" id="session-notes" 
+                              placeholder="General thoughts, connections, insights..."></textarea>
+                    <div class="mt-2 text-end">
+                        <small class="text-muted">Auto-saved</small>
                     </div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-primary" onclick="saveCompletion()" id="save-completion-btn" disabled>
-                    <i class="fas fa-save me-2"></i>Save & Continue
-                </button>
             </div>
         </div>
     </div>
@@ -417,215 +301,283 @@
 </div>
 
 <script>
-    window.serverCompletions = [];
-    {% if completion_data %}
-        window.serverCompletions = {{ completion_data|safe }};
-    {% endif %}
-    console.log('📊 Server completion data loaded:', window.serverCompletions);
-</script>
-
-<script>
-console.log('🧪 BASIC TEST: JavaScript is loading...');
-
-// Simple test function
-function testSync() {
-    console.log('🧪 TEST: Function can run');
-    
-    fetch('/api/focus-completions/')
-    .then(response => response.json())
-    .then(data => {
-        console.log('🧪 TEST: API response:', data);
-        if (data.success && data.completions.length > 0) {
-            console.log(`🧪 TEST: Found ${data.completions.length} completions`);
-            // alert(`Found ${data.completions.length} completions in database!`); // REMOVED
-        } else {
-            console.log('🧪 TEST: No completions found');
-        }
-    })
-    .catch(error => {
-        console.log('🧪 TEST: API error:', error);
-    });
-}
-
-// Run test immediately
-console.log('🧪 RUNNING TEST...');
-testSync();
-
-// ✅ ESSENTIAL FUNCTIONS FOR BUTTON FUNCTIONALITY
-
 // Global variables
-// Global variables
-let currentGlobalStepIndex = 0;
+let currentBlockIndex = 0;
+let currentSegmentIndex = 0;
+const totalBlocks = {{ focus_blocks|length }};
+let segmentNotes = {};
+let isPaused = false;
+let sessionTimer = null;
+let blockTimer = null;
+let sessionStartTime = null;
+let blockStartTime = null;
+let totalPausedTime = 0;
+let pauseStartTime = null;
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('🚀 Page loaded, initializing...');
-    showStep(0); // Start with first step
-    
-    // Count total steps for debugging
-    const totalSteps = document.querySelectorAll('.study-step').length;
-    console.log('📊 Total study steps found:', totalSteps);
-    
-    // ✅ DISABLE navigation until session starts
-    disableNavigationButtons();
+    console.log(`🚀 Advanced Study initialized with ${totalBlocks} blocks`);
+    startTimers();
+    showBlock(0);
 });
-let globalTimer = 0;
-let globalTimerInterval = null;
-let globalTimerRunning = false;
-let timers = {};
-let timerIntervals = {};
-let currentActiveTimer = null;
 
-// Navigation functions - BLOCKED until study session starts
-function nextStep() {
-    // ✅ HARD BLOCK: Prevent navigation without active study session
-    if (!globalTimerRunning) {
-        showSessionRequiredToast();
-        return; // Stop execution completely
-    }
+// Timer Functions
+function startTimers() {
+    console.log('⏱️ Starting timers...');
+    const now = new Date();
+    if (!sessionStartTime) sessionStartTime = now;
+    blockStartTime = now;
     
-    // Check if current block is completed BEFORE moving to next step
-    const isBlockCompleted = checkBlockCompletion(currentGlobalStepIndex);
+    if (sessionTimer) clearInterval(sessionTimer);
+    if (blockTimer) clearInterval(blockTimer);
     
-    if (!isBlockCompleted) {
-        // Normal step progression within the same block
-        currentGlobalStepIndex++;
-        showStep(currentGlobalStepIndex);
-        updateButtonStates(); // Update button states after navigation
-    }
-    // If block is completed, the modal will handle progression via moveToNextBlock()
+    sessionTimer = setInterval(updateSessionTimer, 1000);
+    blockTimer = setInterval(updateBlockTimer, 1000);
 }
 
-function previousStep() {
-    // ✅ HARD BLOCK: Prevent navigation without active study session
-    if (!globalTimerRunning) {
-        showSessionRequiredToast();
-        return; // Stop execution completely
-    }
-    
-    if (currentGlobalStepIndex > 0) {
-        currentGlobalStepIndex--;
-        showStep(currentGlobalStepIndex);
-        updateButtonStates(); // Update button states after navigation
+function updateSessionTimer() {
+    if (isPaused) return;
+    const now = new Date();
+    const elapsed = now - sessionStartTime - totalPausedTime;
+    const sessionTimerEl = document.getElementById('session-timer');
+    if (sessionTimerEl) {
+        sessionTimerEl.textContent = formatTime(elapsed);
     }
 }
 
-function showStep(stepIndex) {
-    console.log('🔍 showStep called with index:', stepIndex);
+function updateBlockTimer() {
+    if (isPaused) return;
+    const now = new Date();
+    const elapsed = now - blockStartTime;
+    const blockTimerEl = document.getElementById('block-timer');
+    if (blockTimerEl) {
+        blockTimerEl.textContent = formatTime(elapsed, false);
+    }
+}
+
+function formatTime(milliseconds, includeHours = true) {
+    const totalSeconds = Math.floor(milliseconds / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
     
-    // Hide all focus block containers first
-    const allContainers = document.querySelectorAll('.focus-block-container');
-    allContainers.forEach(container => container.style.display = 'none');
+    if (includeHours) {
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    } else {
+        return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    }
+}
+
+function togglePause() {
+    const sidebarPauseBtn = document.getElementById('sidebar-pause-btn');
+    const sidebarPauseIcon = document.getElementById('sidebar-pause-icon');
+    const sidebarPlayIcon = document.getElementById('sidebar-play-icon');
     
-    // Hide all study steps
-    const allSteps = document.querySelectorAll('.study-step');
-    allSteps.forEach(el => el.style.display = 'none');
+    isPaused = !isPaused;
     
-    console.log('📊 Total steps found:', allSteps.length);
-    console.log('📊 Total containers found:', allContainers.length);
-    
-    // Show current step AND its parent container
-    if (allSteps[stepIndex]) {
-        // Find the parent focus-block-container
-        const currentStep = allSteps[stepIndex];
-        const parentContainer = currentStep.closest('.focus-block-container');
+    if (isPaused) {
+        clearInterval(sessionTimer);
+        clearInterval(blockTimer);
+        pauseStartTime = new Date();
         
-        if (parentContainer) {
-            parentContainer.style.display = 'block';
-            console.log('✅ Showing parent container');
+        if (sidebarPauseIcon) sidebarPauseIcon.classList.add('d-none');
+        if (sidebarPlayIcon) sidebarPlayIcon.classList.remove('d-none');
+        if (sidebarPauseBtn) sidebarPauseBtn.className = 'btn btn-sm btn-success';
+        
+        console.log('⏸️ Session paused');
+    } else {
+        if (pauseStartTime) {
+            totalPausedTime += new Date() - pauseStartTime;
+            pauseStartTime = null;
+        }
+        startTimers();
+        
+        if (sidebarPauseIcon) sidebarPauseIcon.classList.remove('d-none');
+        if (sidebarPlayIcon) sidebarPlayIcon.classList.add('d-none');
+        if (sidebarPauseBtn) sidebarPauseBtn.className = 'btn btn-sm btn-outline-warning';
+        
+        console.log('▶️ Session resumed');
+    }
+}
+
+// Block Navigation
+function showBlock(blockIndex) {
+    console.log(`📚 Showing block ${blockIndex + 1} of ${totalBlocks}`);
+    
+    // Hide all blocks
+    for (let i = 0; i < totalBlocks; i++) {
+        const block = document.getElementById(`block-${i}`);
+        const segments = document.getElementById(`segments-${i}`);
+        const qa = document.getElementById(`qa-${i}`);
+        if (block) block.style.display = 'none';
+        if (segments) segments.style.display = 'none';
+        if (qa) qa.style.display = 'none';
+    }
+    
+    // Show current block
+    const currentBlock = document.getElementById(`block-${blockIndex}`);
+    const currentSegments = document.getElementById(`segments-${blockIndex}`);
+    const currentQa = document.getElementById(`qa-${blockIndex}`);
+    
+    if (currentBlock) currentBlock.style.display = 'block';
+    if (currentSegments) currentSegments.style.display = 'block';
+    if (currentQa) currentQa.style.display = 'block';
+    
+    currentBlockIndex = blockIndex;
+    currentSegmentIndex = 0;
+    
+    // Reset block timer
+    blockStartTime = new Date();
+    
+    // Update UI
+    const currentBlockEl = document.getElementById('current-block');
+    const currentBlockNumberEl = document.getElementById('current-block-number');
+    if (currentBlockEl) currentBlockEl.textContent = blockIndex + 1;
+    if (currentBlockNumberEl) currentBlockNumberEl.textContent = blockIndex + 1;
+    
+    // Show first segment
+    showSegment(blockIndex, 0);
+}
+
+// Segment Navigation  
+function showSegment(blockIndex, segmentIndex) {
+    console.log(`📖 Showing block ${blockIndex}, segment ${segmentIndex}`);
+    
+    // Hide all segments in this block
+    const allSegments = document.querySelectorAll(`[id^="segment-${blockIndex}-"]`);
+    allSegments.forEach(segment => segment.style.display = 'none');
+    
+    // Show current segment
+    const currentSegment = document.getElementById(`segment-${blockIndex}-${segmentIndex}`);
+    if (currentSegment) {
+        currentSegment.style.display = 'block';
+        currentSegmentIndex = segmentIndex;
+        
+        // Update progress bar
+        const progressPercentage = ((segmentIndex + 1) / allSegments.length) * 100;
+        const progressBar = document.getElementById(`segment-progress-bar-${blockIndex}`);
+        if (progressBar) {
+            progressBar.style.width = progressPercentage + '%';
         }
         
-        // Show the step itself
-        currentStep.style.display = 'block';
-        console.log('✅ Showing step', stepIndex);
+        // Update navigation buttons
+        updateNavigationButtons(blockIndex, segmentIndex, allSegments.length);
+    }
+}
+
+function nextSegment(blockIndex) {
+    if (currentSegmentIndex >= 0) {
+        markSegmentComplete(blockIndex, currentSegmentIndex);
+    }
+    const allSegments = document.querySelectorAll(`[id^="segment-${blockIndex}-"]`);
+    if (currentSegmentIndex < allSegments.length - 1) {
+        showSegment(blockIndex, currentSegmentIndex + 1);
     } else {
-        console.log('❌ Step', stepIndex, 'not found');
-    }
-    
-    // Update buttons
-    document.getElementById('prevBtn').disabled = stepIndex === 0;
-    document.getElementById('nextBtn').disabled = stepIndex >= allSteps.length - 1;
-    
-    // Update progress indicator
-    const stepInfo = document.getElementById('stepInfo');
-    if (stepInfo) {
-        stepInfo.textContent = `Step ${stepIndex + 1} of ${allSteps.length}`;
-    }
-    
-    // Update progress bar
-    const progressBar = document.getElementById('overallProgress');
-    if (progressBar && allSteps.length > 0) {
-        const progress = ((stepIndex + 1) / allSteps.length) * 100;
-        progressBar.style.width = `${progress}%`;
-    }
-
-    // ✅ ADD: Start block timer when switching focus blocks
-    const currentBlockIndex = getCurrentBlockIndex(stepIndex);
-    if (globalTimerRunning && currentActiveTimer !== currentBlockIndex) {
-        startBlockTimer(currentBlockIndex);
+        // Move to next block
+        if (blockIndex < totalBlocks - 1) {
+            showBlock(blockIndex + 1);
+        } else {
+            alert('🎉 All blocks completed! Great work!');
+        }
     }
 }
 
-// Timer functions
-function startGlobalTimer() {
-    if (!globalTimerRunning) {
-        globalTimerInterval = setInterval(() => {
-            globalTimer++;
-            updateGlobalTimerDisplay();
-        }, 1000);
-        globalTimerRunning = true;
+function previousSegment(blockIndex) {
+    if (currentSegmentIndex > 0) {
+        showSegment(blockIndex, currentSegmentIndex - 1);
+    } else if (blockIndex > 0) {
+        // Move to previous block's last segment
+        showBlock(blockIndex - 1);
+        const prevSegments = document.querySelectorAll(`[id^="segment-${blockIndex - 1}-"]`);
+        showSegment(blockIndex - 1, prevSegments.length - 1);
+    }
+}
+
+function updateNavigationButtons(blockIndex, segmentIndex, totalSegments) {
+    const prevBtn = document.getElementById(`prev-btn-${blockIndex}`);
+    const nextBtn = document.getElementById(`next-btn-${blockIndex}`);
+    
+    if (prevBtn) {
+        prevBtn.disabled = (blockIndex === 0 && segmentIndex === 0);
+    }
+    
+    if (nextBtn) {
+        if (segmentIndex === totalSegments - 1 && blockIndex === totalBlocks - 1) {
+            nextBtn.innerHTML = '<i class="fas fa-check me-2"></i>Complete Study';
+        } else {
+            nextBtn.innerHTML = 'Next<i class="fas fa-chevron-right ms-2"></i>';
+        }
+    }
+}
+
+function markSegmentComplete(blockIndex, segmentIndex) {
+    console.log('🎯 markSegmentComplete called:', blockIndex, segmentIndex);
+    
+    const segment = document.getElementById(`segment-${blockIndex}-${segmentIndex}`);
+    if (segment) {
+        segment.classList.add('border-success');
         
-        // ✅ ADD: Start the current block timer
-        const currentBlockIndex = getCurrentBlockIndex(currentGlobalStepIndex);
-        startBlockTimer(currentBlockIndex);
+        // Get session ID from HTML element
+        const sessionData = document.getElementById('session-data');
+        const sessionId = sessionData ? sessionData.getAttribute('data-session-id') : null;
         
-        // Update button visibility
-        document.getElementById('global-start-btn').style.display = 'none';
-        document.getElementById('global-pause-btn').style.display = 'inline-block';
-        document.getElementById('global-stop-btn').style.display = 'inline-block';
-        enableNavigationButtons(); // ✅ ADD THIS LINE
+        if (sessionId) {
+            fetch('/mark-segment-complete/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    session_id: sessionId,
+                    segment_index: segmentIndex
+                })
+            })
+            .then(response => {
+                console.log('✅ Response status:', response.status);
+                return response.json();
+            })
+            .then(data => {
+                console.log('✅ Response data:', data);
+                
+                if (data.success) {
+                    // Update overall progress bar
+                    const progressBar = document.getElementById('sidebar-progress');
+                    const progressText = document.getElementById('progress-text');
+                    
+                    if (progressBar) progressBar.style.width = data.progress + '%';
+                    if (progressText) progressText.textContent = data.progress + '%';
+                    
+                    // ✅ ADD: Update segment counter
+                    const completedSegmentsEl = document.getElementById('completed-segments');
+                    const totalSegmentsEl = document.getElementById('total-segments');
+                    
+                    if (completedSegmentsEl && totalSegmentsEl) {
+                        const totalSegments = parseInt(totalSegmentsEl.textContent);
+                        const completedSegments = Math.round((data.progress / 100) * totalSegments);
+                        completedSegmentsEl.textContent = completedSegments;
+                        
+                        console.log(`📊 Segments: ${completedSegments}/${totalSegments}`);
+                    }
+                    
+                    console.log(`📈 Progress updated to ${data.progress}%`);
+                } else {
+                    console.log('❌ Server error:', data.error);
+                }
+            })
+            .catch(error => console.log('❌ Error:', error));
+        } else {
+            console.log('❌ No session ID found');
+        }
+        
     }
 }
 
-function pauseGlobalTimer() {
-    clearInterval(globalTimerInterval);
-    globalTimerRunning = false;
-    disableNavigationButtons(); // ✅ LOCK navigation when paused
-    
-    document.getElementById('global-start-btn').style.display = 'inline-block';
-    document.getElementById('global-pause-btn').style.display = 'none';
-}
-
-function stopGlobalTimer() {
-    clearInterval(globalTimerInterval);
-    globalTimerRunning = false;
-    globalTimer = 0;
-    updateGlobalTimerDisplay();
-    disableNavigationButtons(); // ✅ LOCK navigation when stopped
-    
-    document.getElementById('global-start-btn').style.display = 'inline-block';
-    document.getElementById('global-pause-btn').style.display = 'none';
-    document.getElementById('global-stop-btn').style.display = 'none';
-}
-
-function updateGlobalTimerDisplay() {
-    const hours = Math.floor(globalTimer / 3600);
-    const minutes = Math.floor((globalTimer % 3600) / 60);
-    const seconds = globalTimer % 60;
-    const timeStr = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-    
-    const timerEl = document.getElementById('global-timer');
-    if (timerEl) {
-        timerEl.textContent = `🕐 ${timeStr}`;
+function saveSegmentNote(blockIndex, segmentIndex, note) {
+    if (!segmentNotes[blockIndex]) {
+        segmentNotes[blockIndex] = {};
     }
-}
-
-// Answer reveal functions
-function toggleAnswer(elementId) {
-    const element = document.getElementById(elementId);
-    if (element) {
-        element.style.display = element.style.display === 'none' ? 'block' : 'none';
-    }
+    segmentNotes[blockIndex][segmentIndex] = note;
+    console.log(`💾 Saved note for block ${blockIndex}, segment ${segmentIndex}`);
 }
 
 function revealAnswer(elementId) {
@@ -635,477 +587,37 @@ function revealAnswer(elementId) {
     }
 }
 
-// Completion function
-function saveCompletion() {
-    alert('Completion saved! (Basic version)');
-    nextStep();
-}
-
-// Progress viewer
-function viewCompletions() {
-    alert('Progress: Basic functionality restored!');
-}
-
-// Block Timer Functions
-function startBlockTimer(blockIndex) {
-    console.log('🟢 Starting block timer for block:', blockIndex);
-    
-    // Stop any currently running block timer
-    if (currentActiveTimer !== null) {
-        stopBlockTimer(currentActiveTimer);
-    }
-    
-    // Initialize timer for this block if it doesn't exist
-    if (!timers[blockIndex]) {
-        timers[blockIndex] = 0;
-    }
-    
-    // Start interval for this block
-    timerIntervals[blockIndex] = setInterval(() => {
-        timers[blockIndex]++;
-        updateBlockTimerDisplay(blockIndex);
-    }, 1000);
-    
-    currentActiveTimer = blockIndex;
-    updateBlockTimerDisplay(blockIndex);
-}
-
-function stopBlockTimer(blockIndex) {
-    console.log('🔴 Stopping block timer for block:', blockIndex);
-    
-    if (timerIntervals[blockIndex]) {
-        clearInterval(timerIntervals[blockIndex]);
-        delete timerIntervals[blockIndex];
-    }
-    
-    if (currentActiveTimer === blockIndex) {
-        currentActiveTimer = null;
-    }
-}
-
-function updateBlockTimerDisplay(blockIndex) {
-    const timerElement = document.getElementById(`timer-${blockIndex}`);
-    if (timerElement && timers[blockIndex] !== undefined) {
-        const timeStr = formatTime(timers[blockIndex]);
-        timerElement.textContent = `⏱️ ${timeStr}`;
-    }
-}
-
-function formatTime(totalSeconds) {
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-}
-
-function getCurrentBlockIndex(stepIndex) {
-    // Find which focus block contains this step
-    const allSteps = document.querySelectorAll('.study-step');
-    if (allSteps[stepIndex]) {
-        const currentStep = allSteps[stepIndex];
-        const parentContainer = currentStep.closest('.focus-block-container');
-        if (parentContainer) {
-            return parseInt(parentContainer.dataset.blockIndex);
-        }
-    }
-    return 0;
-}
-
-// Initialize on page load
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('🚀 Page loaded, initializing...');
-    showStep(0); // Start with first step
-    
-    // Count total steps for debugging
-    const totalSteps = document.querySelectorAll('.study-step').length;
-    console.log('📊 Total study steps found:', totalSteps);
+// Cleanup on page unload
+window.addEventListener('beforeunload', function() {
+    if (sessionTimer) clearInterval(sessionTimer);
+    if (blockTimer) clearInterval(blockTimer);
 });
-
-// ✅ FIXED COMPLETION SYSTEM - Prevents Repeated Modals
-
-// Variables for completion tracking
-let currentCompletingBlock = null;
-let completedBlocks = new Set();  // Track which blocks are already completed
-let blockStartTimes = {};
-
-// Detect when a focus block is completed
-function checkBlockCompletion(stepIndex) {
-    const currentBlockIndex = getCurrentBlockIndex(stepIndex);
-    
-    // ✅ PREVENT REPEATED MODALS: Check if block already completed
-    if (completedBlocks.has(currentBlockIndex)) {
-        console.log(`⏭️ Block ${currentBlockIndex} already completed, skipping modal`);
-        return false;
-    }
-    
-    const allSteps = document.querySelectorAll('.study-step');
-    
-    // Get all steps for the current block
-    const currentBlockSteps = Array.from(allSteps).filter(step => {
-        const container = step.closest('.focus-block-container');
-        return container && parseInt(container.dataset.blockIndex) === currentBlockIndex;
-    });
-    
-    // Find current step within this block
-    const currentStep = allSteps[stepIndex];
-    const stepIndexInBlock = currentBlockSteps.indexOf(currentStep);
-    
-    console.log(`📊 Block ${currentBlockIndex}: Step ${stepIndexInBlock + 1}/${currentBlockSteps.length}`);
-    
-    // If this is the last step of the block, check if study session is active
-    if (stepIndexInBlock === currentBlockSteps.length - 1) {
-        
-        // ✅ GUARD: Prevent completion without active study session
-        if (!globalTimerRunning) {
-            console.log('⚠️ Block completion attempted without active study session');
-            showToast('⚠️ Please start the study session first!', 'warning');
-            return false;
-        }
-        
-        const blockTime = timers[currentBlockIndex] || 0;
-        
-        // ✅ GUARD: Prevent completion with zero time
-        if (blockTime === 0) {
-            console.log('⚠️ Block completion attempted with zero study time');
-            showToast('⚠️ Please study the content before marking as complete!', 'warning');
-            return false;
-        }
-        
-        console.log('🎉 Block completed! Showing modal...');
-        showCompletionModal(currentBlockIndex, blockTime);
-        return true;
-    }
-    
-    return false;
-}
-
-function showCompletionModal(blockIndex, completionTime) {
-    console.log('🏆 Showing completion modal for block:', blockIndex, 'Time:', completionTime);
-    
-    // ✅ DECLARE container FIRST (at the very top)
-    const container = document.querySelector(`[data-block-index="${blockIndex}"]`);
-    const focusBlockId = container ? container.dataset.focusBlockId : null;
-    
-    // ✅ DEBUG logging (now container is available)
-    console.log('🔍 FOCUS BLOCK ID DEBUG:');
-    console.log('   blockIndex:', blockIndex);
-    console.log('   container found:', !!container);
-    console.log('   focusBlockId:', focusBlockId);
-    
-    // ✅ MARK BLOCK AS COMPLETED
-    completedBlocks.add(blockIndex);
-    
-    // ✅ Store completion data
-    currentCompletingBlock = {
-        blockIndex: blockIndex,
-        completionTime: completionTime,
-        focusBlockId: focusBlockId,
-        timestamp: new Date().toISOString()
-    };
-    
-    // ✅ Get block title (container already available)
-    const blockTitle = container ? container.querySelector('h3').textContent : `Block ${blockIndex + 1}`;
-    
-    // Update modal content
-    document.getElementById('completed-block-title').textContent = blockTitle;
-    document.getElementById('completed-block-time').textContent = formatTime(completionTime);
-    
-    // Reset form
-    document.querySelectorAll('input[name="proficiency"]').forEach(radio => {
-        radio.checked = false;
-    });
-    document.getElementById('save-completion-btn').disabled = true;
-    
-    // Show modal
-    const modal = new bootstrap.Modal(document.getElementById('completionModal'));
-    modal.show();
-}
-
-// Enhanced saveCompletion function
-async function saveCompletion() {
-    console.log('💾 Saving completion...');
-    
-    const selectedRating = document.querySelector('input[name="proficiency"]:checked');
-    if (!selectedRating) {
-        alert('Please select a proficiency rating first!');
-        return;
-    }
-    
-    const proficiencyScore = parseInt(selectedRating.value);
-    const completionTime = currentCompletingBlock.completionTime;
-    const blockIndex = currentCompletingBlock.blockIndex;
-    
-    console.log('📊 Completion data:', { proficiencyScore, completionTime, blockIndex });
-    
-    // ✅ Use stored focusBlockId instead of re-querying DOM
-    const focusBlockId = currentCompletingBlock.focusBlockId;
-    
-    console.log('💾 Using stored focusBlockId:', focusBlockId);
-    
-    if (focusBlockId) {
-        try {
-            const response = await fetch(`/api/focus-block/${focusBlockId}/complete/`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    proficiency_score: proficiencyScore,
-                    completion_time: completionTime
-                }),
-                signal: AbortSignal.timeout(15000)  // 15 second timeout
-            });
-            
-            // ✅ Check HTTP status first
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-            
-            // ✅ Safe JSON parsing
-            const result = await response.json();
-            
-            if (result.success) {
-                console.log('✅ Saved to database:', result);
-                showToast(`✅ Block completed! Rating: ${proficiencyScore}/5 ⭐`, 'success');
-                
-                // ✅ UPDATE COUNTERS DYNAMICALLY
-                updateStatsAfterCompletion(completionTime);
-            } else {
-                throw new Error(result.error || 'Server returned failure');
-            }
-            
-        } catch (error) {
-            console.error('❌ Database save failed:', error);
-            
-            // ✅ Better error categorization
-            if (error.name === 'AbortError') {
-                showToast('⏳ Request timeout - saved locally', 'warning');
-            } else if (error.message.includes('HTTP 500')) {
-                showToast('🚨 Server error - saved locally', 'warning');
-            } else if (error.message.includes('HTTP 4')) {
-                showToast('❌ Request error - saved locally', 'warning');
-            } else {
-                showToast('⚠️ Network error - saved locally', 'warning');
-            }
-        }
-    } else {
-        console.error('❌ No focusBlockId stored - cannot save to database');
-        showToast('⚠️ Cannot identify block - saved locally only', 'warning');
-    }
-    
-    // Save to localStorage as backup
-    saveToLocalStorage(blockIndex, proficiencyScore, completionTime);
-    
-    // Close modal
-    const modal = bootstrap.Modal.getInstance(document.getElementById('completionModal'));
-    if (modal) {
-        modal.hide();
-    }
-    
-    // ✅ PROPER PROGRESSION: Move to next block's first step
-    setTimeout(() => {
-        moveToNextBlock();
-    }, 2000);  // Brief delay for better UX
-}
-
-function moveToNextBlock() {
-    const allSteps = document.querySelectorAll('.study-step');
-    const currentBlockIndex = getCurrentBlockIndex(currentGlobalStepIndex);
-    
-    // Find the first step of the next block
-    for (let i = currentGlobalStepIndex + 1; i < allSteps.length; i++) {
-        const nextBlockIndex = getCurrentBlockIndex(i);
-        if (nextBlockIndex !== currentBlockIndex) {
-            // Found next block, go to its first step
-            console.log(`⏭️ Moving from block ${currentBlockIndex} to block ${nextBlockIndex}`);
-            currentGlobalStepIndex = i;
-            showStep(currentGlobalStepIndex);
-            return;
-        }
-    }
-    
-    // No more blocks, show completion message
-    console.log('🎉 All blocks completed!');
-    showToast('🎉 Congratulations! All focus blocks completed!', 'success');
-}
-
-function saveToLocalStorage(blockIndex, proficiencyScore, completionTime) {
-    const completions = JSON.parse(localStorage.getItem('focusBlockCompletions') || '[]');
-    
-    const completion = {
-        blockIndex: blockIndex,
-        proficiencyRating: proficiencyScore,
-        completionTime: completionTime,
-        completedAt: new Date().toISOString()
-    };
-    
-    completions.push(completion);
-    localStorage.setItem('focusBlockCompletions', JSON.stringify(completions));
-    console.log('💾 Saved to localStorage:', completion);
-}
-
-function showToast(message, type = 'success') {
-    const toast = document.createElement('div');
-    toast.className = `position-fixed top-0 start-50 translate-middle-x alert alert-${type === 'success' ? 'success' : 'warning'} alert-dismissible mt-3`;
-    toast.style.zIndex = '9999';
-    toast.innerHTML = `
-        <div>${message}</div>
-        <button type="button" class="btn-close" onclick="this.parentElement.remove()"></button>
-    `;
-    
-    document.body.appendChild(toast);
-    
-    setTimeout(() => {
-        if (toast.parentElement) {
-            toast.remove();
-        }
-    }, 4000);
-}
-
-function getCookie(name) {
-    let cookieValue = null;
-    if (document.cookie && document.cookie !== '') {
-        const cookies = document.cookie.split(';');
-        for (let i = 0; i < cookies.length; i++) {
-            const cookie = cookies[i].trim();
-            if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                break;
-            }
-        }
-    }
-    return cookieValue;
-}
-
-// Enable save button when rating is selected
-document.addEventListener('change', function(e) {
-    if (e.target.name === 'proficiency') {
-        document.getElementById('save-completion-btn').disabled = false;
-    }
-});
-
-// Show user guidance for starting study session
-function showStudySessionPrompt() {
-    if (!globalTimerRunning) {
-        const startBtn = document.getElementById('global-start-btn');
-        if (startBtn && startBtn.style.display !== 'none') {
-            // Add visual emphasis to start button
-            startBtn.classList.add('btn-pulse');
-            startBtn.innerHTML = '<i class="fas fa-play"></i> Start Session First!';
-            
-            setTimeout(() => {
-                startBtn.classList.remove('btn-pulse');
-                startBtn.innerHTML = '<i class="fas fa-play"></i> Start Session';
-            }, 3000);
-        }
-    }
-}
-
-// Button state management
-function disableNavigationButtons() {
-    const nextBtn = document.getElementById('nextBtn');
-    const prevBtn = document.getElementById('prevBtn');
-    
-    if (nextBtn) {
-        nextBtn.disabled = true;
-        nextBtn.classList.add('btn-disabled');
-        nextBtn.innerHTML = '<i class="fas fa-lock"></i> Start Session to Navigate';
-        nextBtn.title = 'Please start the study session first';
-    }
-    
-    if (prevBtn) {
-        prevBtn.disabled = true;
-        prevBtn.classList.add('btn-disabled');
-    }
-    
-    console.log('🚫 Navigation buttons DISABLED');
-}
-
-function enableNavigationButtons() {
-    const nextBtn = document.getElementById('nextBtn');
-    const prevBtn = document.getElementById('prevBtn');
-    
-    if (nextBtn) {
-        nextBtn.disabled = false;
-        nextBtn.classList.remove('btn-disabled');
-        nextBtn.innerHTML = '<i class="fas fa-arrow-right"></i> Next';
-        nextBtn.title = 'Go to next step';
-    }
-    
-    if (prevBtn) {
-        prevBtn.disabled = false;
-        prevBtn.classList.remove('btn-disabled');
-    }
-    
-    console.log('✅ Navigation buttons ENABLED');
-    updateButtonStates(); // Set correct initial states
-}
-
-function updateButtonStates() {
-    // Only update if navigation is enabled (session running)
-    if (!globalTimerRunning) return;
-    
-    const prevBtn = document.getElementById('prevBtn');
-    const nextBtn = document.getElementById('nextBtn');
-    const totalSteps = document.querySelectorAll('.study-step').length;
-    
-    // Previous button
-    if (prevBtn) {
-        prevBtn.disabled = (currentGlobalStepIndex === 0);
-    }
-    
-    // Next button  
-    if (nextBtn) {
-        if (currentGlobalStepIndex >= totalSteps - 1) {
-            nextBtn.innerHTML = '<i class="fas fa-flag-checkered"></i> Complete Study';
-        } else {
-            nextBtn.innerHTML = '<i class="fas fa-arrow-right"></i> Next';
-        }
-    }
-}
-
-function showSessionRequiredToast() {
-    showToast('🔒 Please start the study session first!', 'warning');
-    
-    // Highlight the start button
-    const startBtn = document.getElementById('global-start-btn');
-    if (startBtn && startBtn.style.display !== 'none') {
-        startBtn.classList.add('btn-pulse');
-        setTimeout(() => startBtn.classList.remove('btn-pulse'), 2000);
-    }
-}
-
-// ✅ DYNAMIC COUNTER UPDATES
-function updateStatsAfterCompletion(completionTime) {
-    // Update total blocks (decrease by 1)
-    const totalBlocksEl = document.getElementById('total-blocks-counter');
-    if (totalBlocksEl) {
-        const currentCount = parseInt(totalBlocksEl.textContent);
-        const newCount = Math.max(0, currentCount - 1);
-        totalBlocksEl.textContent = newCount;
-        
-        console.log(`📊 Updated total blocks: ${currentCount} → ${newCount}`);
-    }
-    
-    // Update total study time (add completion time)
-    const totalTimeEl = document.getElementById('total-study-time-counter');
-    if (totalTimeEl) {
-        const currentTimeText = totalTimeEl.textContent.replace('m', '');
-        const currentTime = parseInt(currentTimeText) || 0;
-        const additionalMinutes = Math.round(completionTime / 60);
-        const newTime = currentTime + additionalMinutes;
-        totalTimeEl.textContent = `${newTime}m`;
-        
-        console.log(`⏱️ Updated study time: ${currentTime}m → ${newTime}m`);
-    }
-    
-    // Check if no blocks remaining
-    const remainingBlocks = parseInt(totalBlocksEl?.textContent || '0');
-    if (remainingBlocks === 0) {
-        setTimeout(() => {
-            showToast('🎉 All blocks completed! Great job!', 'success');
-        }, 1000);
-    }
-}
 </script>
 
-</div>
+<style>
+.segment-container {
+    transition: all 0.3s ease;
+}
+
+.segment-container.border-success {
+    background-color: #f8fff9 !important;
+}
+
+.timer-display {
+    font-family: 'Courier New', monospace;
+}
+
+.stat-item {
+    padding: 0.25rem 0;
+    border-bottom: 1px solid #eee;
+}
+
+.stat-item:last-child {
+    border-bottom: none;
+}
+
+.progress-item {
+    margin-bottom: 1rem;
+}
+</style>
 {% endblock %}

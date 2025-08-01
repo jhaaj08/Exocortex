@@ -1,0 +1,91 @@
+{% extends 'flashcards/base.html' %}
+
+{% block title %}Start Focus Study - Exocortex{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12 text-center">
+            <h1 class="display-5 mb-3">
+                <i class="fas fa-graduation-cap text-success me-3"></i>Interactive Focus Block Study
+            </h1>
+            <p class="lead text-muted">Choose a document to start your structured learning journey</p>
+        </div>
+    </div>
+
+    <!-- Available PDFs -->
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-file-pdf me-2"></i>Available Study Materials</h5>
+                </div>
+                <div class="card-body">
+                    {% for pdf in processed_pdfs %}
+                    <div class="pdf-item border rounded p-3 mb-3">
+                        <div class="row align-items-center">
+                            <div class="col-md-8">
+                                <h6 class="text-primary mb-1">{{ pdf.name }}</h6>
+                                <p class="text-muted mb-2">{{ pdf.page_count }} pages • {{ pdf.word_count }} words</p>
+                                <small class="text-secondary">Uploaded: {{ pdf.created_at|date:"M d, Y" }}</small>
+                            </div>
+                            <div class="col-md-4 text-end">
+                                <div class="mb-2">
+                                    <span class="badge bg-info">{{ pdf.focus_blocks.count }} focus blocks</span>
+                                </div>
+                                <a href="/debug/focus-chunks/?pdf_id={{ pdf.id }}&analyze=true&group=true&generate_blocks=true" class="btn btn-primary">
+                                    <i class="fas fa-cogs me-2"></i>Generate Study Blocks
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    {% empty %}
+                    <div class="text-center py-4">
+                        <i class="fas fa-upload fa-3x text-muted mb-3"></i>
+                        <h5 class="text-muted">No Study Materials Yet</h5>
+                        <p class="text-muted">Upload some PDFs to create interactive focus blocks for studying</p>
+                        <a href="{% url 'flashcards:home' %}" class="btn btn-success">
+                            <i class="fas fa-upload me-2"></i>Upload PDFs
+                        </a>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Start Guide -->
+    <div class="row justify-content-center mt-5">
+        <div class="col-md-8">
+            <div class="card bg-light">
+                <div class="card-body">
+                    <h6 class="text-primary mb-3"><i class="fas fa-info-circle me-2"></i>How Interactive Study Works</h6>
+                    <div class="row">
+                        <div class="col-md-3 text-center mb-3">
+                            <i class="fas fa-upload fa-2x text-primary mb-2"></i>
+                            <h6>1. Upload PDF</h6>
+                            <small class="text-muted">Upload your study material</small>
+                        </div>
+                        <div class="col-md-3 text-center mb-3">
+                            <i class="fas fa-cogs fa-2x text-warning mb-2"></i>
+                            <h6>2. Generate Blocks</h6>
+                            <small class="text-muted">AI creates focus blocks</small>
+                        </div>
+                        <div class="col-md-3 text-center mb-3">
+                            <i class="fas fa-play fa-2x text-success mb-2"></i>
+                            <h6>3. Interactive Study</h6>
+                            <small class="text-muted">Socratic method learning</small>
+                        </div>
+                        <div class="col-md-3 text-center mb-3">
+                            <i class="fas fa-brain fa-2x text-info mb-2"></i>
+                            <h6>4. Master Concepts</h6>
+                            <small class="text-muted">Deep understanding</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

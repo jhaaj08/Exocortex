@@ -1,0 +1,393 @@
+{% extends 'flashcards/base.html' %}
+
+{% block title %}Knowledge Graph - Exocortex{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 class="display-6 mb-3">
+                <i class="fas fa-project-diagram text-primary me-3"></i>Knowledge Graph
+            </h1>
+            <p class="lead text-muted">Interactive relationships between your focus blocks</p>
+        </div>
+    </div>
+
+    <!-- Stats & Controls -->
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-cubes me-2"></i>Focus Blocks ({{ total_blocks }})</h5>
+                </div>
+                <div class="card-body">
+                    {% if focus_blocks %}
+                    <div class="row">
+                        {% for block in focus_blocks %}
+                        <div class="col-md-6 mb-2">
+                            <div class="card border-light">
+                                <div class="card-body p-2">
+                                    <h6 class="card-title mb-1">{{ block.title|truncatechars:50 }}</h6>
+                                    <small class="text-muted">
+                                        {{ block.pdf_document.name|default:"Unknown" }} • 
+                                        <span class="badge bg-{{ block.difficulty_level|default:'secondary' }}">{{ block.difficulty_level|title }}</span>
+                                    </small>
+                                    <div class="mt-1">
+                                        <a href="{% url 'flashcards:focus_block_study' block.id %}" class="btn btn-sm btn-outline-primary">
+                                            <i class="fas fa-play me-1"></i>Study
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>No new format focus blocks found. 
+                        <a href="{% url 'flashcards:migrate_focus_blocks' %}">Migrate old blocks</a> first.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-cogs me-2"></i>Graph Controls</h5>
+                </div>
+                <div class="card-body">
+                    {% if focus_blocks %}
+                    <form method="post" class="mb-2">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="generate_relationships">
+                        <button type="submit" class="btn btn-warning w-100 mb-2">
+                            <i class="fas fa-link me-2"></i>Generate Relationships
+                        </button>
+                        <small class="text-muted d-block mb-3">
+                            Creates relationships between existing blocks ({{ total_relationships }} exist)
+                        </small>
+                    </form>
+                    
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="generate_graph">
+                        <button type="submit" class="btn btn-primary w-100 mb-3" {% if total_relationships == 0 %}disabled{% endif %}>
+                            <i class="fas fa-magic me-2"></i>Generate Knowledge Graph
+                        </button>
+                    </form>
+                    {% endif %}
+                    
+                    <div class="mt-3">
+                        <h6>Node Categories:</h6>
+                        <div class="mb-2 legend-item" data-category="foundational" style="cursor: pointer;">
+                            <span class="badge" style="background-color: #28a745; width: 20px; height: 20px; border-radius: 50%; display: inline-block;"></span>
+                            <span class="ms-2">Foundational Topics</span>
+                        </div>
+                        <div class="mb-2 legend-item" data-category="intermediate" style="cursor: pointer;">
+                            <span class="badge" style="background-color: #ffc107; width: 20px; height: 20px; border-radius: 50%; display: inline-block;"></span>
+                            <span class="ms-2">Intermediate Topics</span>
+                        </div>
+                        <div class="mb-2 legend-item" data-category="advanced" style="cursor: pointer;">
+                            <span class="badge" style="background-color: #dc3545; width: 20px; height: 20px; border-radius: 50%; display: inline-block;"></span>
+                            <span class="ms-2">Advanced Topics</span>
+                        </div>
+                        
+                        <hr>
+                        
+                        <h6>Relationships:</h6>
+                        <div class="small">
+                            <div class="mb-1">
+                                <span style="color: #dc3545; font-weight: bold;">→</span> 
+                                <span class="ms-1">Prerequisite</span>
+                            </div>
+                            <div class="mb-1">
+                                <span style="color: #007bff; font-weight: bold;">→</span> 
+                                <span class="ms-1">Builds On</span>
+                            </div>
+                            <div class="mb-1">
+                                <span style="color: #28a745; font-weight: bold;">→</span> 
+                                <span class="ms-1">Related</span>
+                            </div>
+                            <div class="mb-1">
+                                <span style="color: #6f42c1; font-weight: bold;">→</span> 
+                                <span class="ms-1">Applies To</span>
+                            </div>
+                        </div>
+                        
+                        <hr>
+                        
+                        <h6>Interaction:</h6>
+                        <div class="small text-muted">
+                            <div>• <strong>Hover</strong> for topic titles</div>
+                            <div>• <strong>Click</strong> to study (new tab)</div>
+                            <div>• <strong>Double-click</strong> to navigate</div>
+                            <div>• Numbers show topic sequence</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Messages -->
+    {% if message %}
+    <div class="alert alert-{% if 'Successfully' in message or '✅' in message %}success{% else %}danger{% endif %} alert-dismissible fade show">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
+
+    <!-- Knowledge Graph Visualization -->
+    {% if knowledge_graph %}
+    <div class="card">
+        <div class="card-header">
+            <h5><i class="fas fa-project-diagram me-2"></i>Knowledge Graph Visualization</h5>
+            <small class="text-muted">
+                {{ knowledge_graph.nodes|length }} nodes • {{ knowledge_graph.edges|length }} relationships
+            </small>
+        </div>
+        <div class="card-body">
+            <!-- Graph Container -->
+            <div id="knowledge-graph" style="height: 600px; border: 1px solid #ddd; border-radius: 5px;"></div>
+            
+            <!-- Relationship Details -->
+            <div class="mt-4">
+                <h6>Relationship Details:</h6>
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>From</th>
+                                <th>To</th>
+                                <th>Relationship</th>
+                                <th>Strength</th>
+                                <th>Reasoning</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for edge in knowledge_graph.edges %}
+                            <tr>
+                                <td>
+                                    {% for node in knowledge_graph.nodes %}
+                                        {% if node.id == edge.from %}{{ node.title|truncatechars:30 }}{% endif %}
+                                    {% endfor %}
+                                </td>
+                                <td>
+                                    {% for node in knowledge_graph.nodes %}
+                                        {% if node.id == edge.to %}{{ node.title|truncatechars:30 }}{% endif %}
+                                    {% endfor %}
+                                </td>
+                                <td>
+                                    <span class="badge bg-info">{{ edge.relationship }}</span>
+                                </td>
+                                <td>
+                                    <div class="progress" style="width: 50px; height: 10px;">
+                                        <div class="progress-bar" style="width: {{ edge.strength_percent }}%"></div>
+                                    </div>
+                                    <small>{{ edge.strength }}</small>
+                                </td>
+                                <td>{{ edge.reasoning|truncatechars:50 }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Include vis.js for graph visualization -->
+    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Prepare nodes data
+        const nodes = new vis.DataSet([
+            {% for node in knowledge_graph.nodes %}
+            {
+                id: '{{ node.id }}',
+                label: '{{ forloop.counter }}',  // Just show numbers on nodes
+                title: '{{ node.title|escapejs }}',  // Full title on hover
+                color: {
+                    background: {% if node.category == 'foundational' %}'#28a745'{% elif node.category == 'advanced' %}'#dc3545'{% else %}'#ffc107'{% endif %},
+                    border: '#333',
+                    highlight: {
+                        background: {% if node.category == 'foundational' %}'#34ce57'{% elif node.category == 'advanced' %}'#e55370'{% else %}'#ffcd39'{% endif %},
+                        border: '#000'
+                    },
+                    hover: {
+                        background: {% if node.category == 'foundational' %}'#34ce57'{% elif node.category == 'advanced' %}'#e55370'{% else %}'#ffcd39'{% endif %},
+                        border: '#000'
+                    }
+                },
+                font: {
+                    color: 'white', 
+                    size: 16,
+                    face: 'Arial',
+                    strokeWidth: 2,
+                    strokeColor: '#000'
+                },
+                shape: 'circle',
+                size: 40,
+                borderWidth: 3,
+                shadow: {
+                    enabled: true,
+                    color: 'rgba(0,0,0,0.3)',
+                    size: 5,
+                    x: 2,
+                    y: 2
+                }
+            },
+            {% endfor %}
+        ]);
+
+        // Prepare edges data
+        const edges = new vis.DataSet([
+            {% for edge in knowledge_graph.edges %}
+            {
+                from: '{{ edge.from }}',
+                to: '{{ edge.to }}',
+                label: '{{ edge.relationship }}',
+                title: '{{ edge.reasoning|escapejs }} (Strength: {{ edge.strength }})',  // Hover tooltip for edges
+                arrows: {
+                    to: {
+                        enabled: true,
+                        scaleFactor: 1.2,
+                        type: 'arrow'
+                    }
+                },
+                width: {{ edge.width_value|floatformat:1 }},
+                color: {
+                    color: {% if edge.relationship == 'prerequisite' %}'#dc3545'{% elif edge.relationship == 'builds-on' %}'#007bff'{% elif edge.relationship == 'related' %}'#28a745'{% else %}'#6f42c1'{% endif %},
+                    highlight: {% if edge.relationship == 'prerequisite' %}'#e55370'{% elif edge.relationship == 'builds-on' %}'#1e88e5'{% elif edge.relationship == 'related' %}'#34ce57'{% else %}'#7e57c2'{% endif %},
+                    hover: {% if edge.relationship == 'prerequisite' %}'#e55370'{% elif edge.relationship == 'builds-on' %}'#1e88e5'{% elif edge.relationship == 'related' %}'#34ce57'{% else %}'#7e57c2'{% endif %},
+                    opacity: 0.8
+                },
+                smooth: {
+                    enabled: true,
+                    type: 'dynamic',
+                    roundness: 0.2
+                },
+                font: {
+                    size: 12,
+                    color: '#333',
+                    strokeWidth: 1,
+                    strokeColor: '#fff'
+                }
+            },
+            {% endfor %}
+        ]);
+
+        // Enhanced network options
+        const options = {
+            layout: {
+                improvedLayout: true,
+                hierarchical: {
+                    enabled: false  // Disable hierarchical for better circular layout
+                }
+            },
+            physics: {
+                enabled: true,
+                stabilization: {
+                    iterations: 200,
+                    updateInterval: 25
+                },
+                barnesHut: {
+                    gravitationalConstant: -2000,
+                    centralGravity: 0.3,
+                    springLength: 150,
+                    springConstant: 0.04,
+                    damping: 0.09,
+                    avoidOverlap: 0.1
+                }
+            },
+            interaction: {
+                hover: true,
+                hoverConnectedEdges: true,
+                selectConnectedEdges: false,
+                tooltipDelay: 200,
+                hideEdgesOnDrag: false,
+                hideNodesOnDrag: false
+            },
+            nodes: {
+                chosen: {
+                    node: function(values, id, selected, hovering) {
+                        values.shadow = true;
+                        values.shadowSize = 10;
+                        values.shadowX = 3;
+                        values.shadowY = 3;
+                    }
+                }
+            },
+            edges: {
+                chosen: {
+                    edge: function(values, id, selected, hovering) {
+                        values.width = values.width * 1.5;
+                    }
+                }
+            }
+        };
+
+        // Create network
+        const container = document.getElementById('knowledge-graph');
+        const data = {nodes: nodes, edges: edges};
+        const network = new vis.Network(container, data, options);
+
+        // Handle node clicks
+        network.on('click', function(params) {
+            if (params.nodes.length > 0) {
+                const nodeId = params.nodes[0];
+                // Navigate to focus block study page
+                window.open(`/study/focus-blocks/${nodeId}/`, '_blank');
+            }
+        });
+
+        // Handle hover events for better UX
+        network.on('hoverNode', function(params) {
+            const nodeId = params.node;
+            // Highlight connected nodes and edges
+            const connectedNodes = network.getConnectedNodes(nodeId);
+            const connectedEdges = network.getConnectedEdges(nodeId);
+            
+            // You could add additional hover effects here
+            container.style.cursor = 'pointer';
+        });
+
+        network.on('blurNode', function(params) {
+            container.style.cursor = 'default';
+        });
+
+        // Add double-click for better interaction
+        network.on('doubleClick', function(params) {
+            if (params.nodes.length > 0) {
+                const nodeId = params.nodes[0];
+                window.location.href = `/study/focus-blocks/${nodeId}/`;
+            }
+        });
+
+        // Center the graph after it's stabilized
+        network.on('stabilizationIterationsDone', function() {
+            network.fit({
+                animation: {
+                    duration: 1000,
+                    easingFunction: 'easeInOutQuad'
+                }
+            });
+        });
+
+        // Add legend interaction
+        const legendItems = document.querySelectorAll('.legend-item');
+        legendItems.forEach(item => {
+            item.addEventListener('click', function() {
+                const category = this.dataset.category;
+                // Filter nodes by category (optional enhancement)
+                console.log('Filter by category:', category);
+            });
+        });
+    });
+    </script>
+    {% endif %}
+
+</div>
+{% endblock %} 

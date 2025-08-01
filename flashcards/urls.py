@@ -53,4 +53,30 @@ urlpatterns = [
     path('focus/<uuid:session_id>/complete/', views.complete_focus_session, name='complete_focus_session'),
     path('api/focus-block/<uuid:focus_block_id>/complete/', views.complete_focus_block_api, name='complete_focus_block_api'),
     path('api/focus-completions/', views.get_focus_completions_api, name='get_focus_completions_api'),
+    path('api/mark-segment-complete/', views.mark_segment_complete_api, name='mark_segment_complete_api'),
+    path('mark-segment-complete/', views.mark_segment_complete, name='mark_segment_complete'),
+    
+    # Focus Block Study URLs
+    path('study/focus-blocks/', views.start_focus_study_session, name='start_focus_study_session'),
+    path('study/focus-blocks/<uuid:block_id>/', views.focus_block_study, name='focus_block_study'),
+    
+    # New Format Knowledge Graph
+    path('knowledge-graph/', views.new_format_knowledge_graph, name='new_format_knowledge_graph'),
+    
+    # Progress/Report URLs
+    path('pdf/<int:pdf_id>/progress/', views.pdf_progress, name='pdf_progress'),
+    
+    # Debug URLs
+    path('debug/focus-chunks/', views.debug_focus_chunks, name='debug_focus_chunks'),
+    path('migrate/focus-blocks/', views.migrate_focus_blocks, name='migrate_focus_blocks'),
+    path('study-planner/', views.generate_study_schedule_view, name='study_planner'),
+    path('study-path/<str:path_type>/', views.start_study_path, name='start_study_path'),
+    path('study-path/<uuid:block_id>/<str:session_key>/', views.focus_block_study_with_path, name='focus_block_study_with_path'),
+    path('study-path/<uuid:block_id>/<str:session_key>/complete/', views.complete_study_path_block, name='complete_study_path_block'),
+    path('debug-focus-data/', views.debug_focus_block_data, name='debug_focus_data'),
+    path('study/advanced/<uuid:block_id>/', views.advanced_focus_study, name='advanced_focus_study'),
+    path('session/<uuid:session_id>/complete/', views.complete_advanced_session, name='complete_advanced_session'),
+    path('session/<uuid:session_id>/update/', views.update_session_progress, name='update_session_progress'),
+    path('api/session/<uuid:session_id>/analytics/', views.session_analytics_api, name='session_analytics_api'),
+    path('test-advanced/', views.test_advanced_study, name='test_advanced_study'),
 ] 
