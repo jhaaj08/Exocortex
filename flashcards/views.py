@@ -1729,77 +1729,70 @@ def all_focus_blocks(request):
     if not all_blocks.exists():
         return render(request, 'flashcards/all_focus_blocks.html', {'no_blocks': True})
 
-    # Create a single focus session for all blocks if needed
-    active_session = None
-    if all_blocks.exists():
-        # Get or create a session for the first block (we'll use it for session-wide tracking)
-        first_block = all_blocks.first()
-        active_session, created = FocusSession.objects.get_or_create(
-            focus_block=first_block,
-            status__in=['active', 'paused'],
-            defaults={
-                'status': 'active',
-                'current_segment': 0,
-            }
+    # ✅ FIXED: Find ANY active session, not just for first block
+    # Find or create continuous study session
+    # Instead of filtering by PDF:
+    study_session = StudySession.objects.filter(
+        session_type='focus_blocks'  # Just find ANY active focus study session
+    ).order_by('-last_accessed').first()
+
+    if not study_session:
+        # Create ONE session for ALL focus blocks
+        study_session = StudySession.objects.create(
+            session_type='focus_blocks',
+            current_focus_block=all_blocks.first()  # Start with first block (any PDF)
+            # No pdf_document field needed
         )
+        print(f"✅ Created new continuous study session: {study_session.session_id}")
+    else:
+        print(f"✅ Found existing study session: {study_session.session_id}")
+        study_session.last_accessed = timezone.now()
+        study_session.save()
         
-        if created:
-            active_session.block_start_times = {str(first_block.id): timezone.now().isoformat()}
-            active_session.save()
-            print(f"✅ Created new unified FocusSession: {active_session.id}")
-        
-        # ✅ ADD: Handle completed sessions
-        if active_session:
-            print(f"🔍 Session segments_completed: {active_session.segments_completed}")
-            print(f"🔍 Current segment: {active_session.current_segment}")
-            
-            # Check what segments should be shown
-            current_block = active_session.focus_block
-            total_segments_in_current_block = len(current_block.get_segments())
-            
-            print(f"🔍 Total segments in current block: {total_segments_in_current_block}")
-            print(f"🔍 Completed segments: {len(active_session.segments_completed)}")
+    # ✅ NEW: Use StudySession's completed_focus_blocks
+    completed_block_ids = study_session.completed_focus_blocks.values_list('id', flat=True)
+    uncompleted_blocks = all_blocks.exclude(id__in=completed_block_ids)
 
-            # Handle completed sessions
-            if len(active_session.segments_completed) >= total_segments_in_current_block:
-                print("⚠️ Current block completed - finding next block!")
-                
-                # Find next uncompleted block
-                remaining_blocks = all_blocks.filter(
-                    models.Q(pdf_document__created_at__gt=current_block.pdf_document.created_at) |
-                    models.Q(
-                        pdf_document__created_at=current_block.pdf_document.created_at,
-                        block_order__gt=current_block.block_order
-                    )
-                ).order_by('pdf_document__created_at', 'block_order')
-                
-                if remaining_blocks.exists():
-                    # Move to next block
-                    next_block = remaining_blocks.first()
-                    print(f"🎯 Moving to next block: {next_block.title}")
-                    
-                    # Create new session for next block
-                    active_session = FocusSession.objects.create(
-                        focus_block=next_block,
-                        status='active',
-                        current_segment=0,
-                        segments_completed=[]
-                    )
-                    print(f"✅ Created new session for next block: {active_session.id}")
-                else:
-                    # All blocks completed!
-                    print("🎉 All blocks completed!")
-                    return render(request, 'flashcards/all_focus_blocks.html', {
-                        'all_completed': True,
-                        'total_blocks': len(all_blocks),
-                        'message': 'Congratulations! You have completed all focus blocks!'
-                    })
+    print(f"📋 Completed blocks: {len(completed_block_ids)}")
+    print(f"📋 Remaining blocks: {uncompleted_blocks.count()}")
 
-        print(f"Created new unified FocusSession: {created}")
-    
+    # Determine current block
+    if not study_session.current_focus_block:
+        # No current block set - start with first uncompleted
+        if uncompleted_blocks.exists():
+            study_session.current_focus_block = uncompleted_blocks.first()
+            study_session.save()
+            print(f"🎯 Set current block to: {study_session.current_focus_block.title}")
+        else:
+            # All blocks completed
+            print("🎉 All blocks completed!")
+            return render(request, 'flashcards/all_focus_blocks.html', {
+                'all_completed': True,
+                'message': 'All focus blocks completed!'
+            })
+    elif study_session.current_focus_block in study_session.completed_focus_blocks.all():
+        # Current block was completed, advance to next
+        if uncompleted_blocks.exists():
+            study_session.current_focus_block = uncompleted_blocks.first()
+            study_session.save()
+            print(f"🔄 Advanced to next block: {study_session.current_focus_block.title}")
+        else:
+            # All blocks completed
+            print("🎉 All blocks completed!")
+            return render(request, 'flashcards/all_focus_blocks.html', {
+                'all_completed': True,
+                'message': 'All focus blocks completed!'
+            })
+
+    current_block = study_session.current_focus_block
+    print(f"📖 Currently studying: {current_block.title}")
+
     # Format blocks for advanced study
+    remaining_blocks = all_blocks.exclude(
+    id__in=study_session.completed_focus_blocks.values_list('id', flat=True)
+    )
     formatted_blocks = []
-    for block in all_blocks:
+    for block in remaining_blocks:
         # Get segments using the model method (now fixed to handle new data structure)
         segments = block.get_segments()
         qa_items = block.get_qa_items()
@@ -1825,14 +1818,82 @@ def all_focus_blocks(request):
     
     context = {
         'focus_blocks': formatted_blocks,
-        'focus_session': active_session,
+        'study_session': study_session,
+        'current_block': current_block,
         'total_blocks': len(formatted_blocks),
         'total_study_time': total_time,
         'unique_pdfs': len(set(block.pdf_document.name for block in all_blocks)),
-        'progress_percentage': active_session.get_completion_percentage() if active_session else 0,
     }
     
     return render(request, 'flashcards/all_focus_blocks.html', context)
+
+@csrf_exempt
+def mark_segment_complete(request):
+    """API endpoint to mark a segment as complete using StudySession"""
+    print("🔍 StudySession mark_segment_complete called")
+    
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            session_id = data.get('session_id')
+            segment_index = data.get('segment_index')
+            
+            print(f"🔍 Received: session_id={session_id}, segment_index={segment_index}")
+            
+            # Find StudySession instead of FocusSession
+            study_session = StudySession.objects.get(id=session_id)
+            print(f"✅ Found StudySession: {study_session.session_id}")
+            print(f"   Current block: {study_session.current_focus_block.title if study_session.current_focus_block else 'None'}")
+            
+            # Before calling mark_segment_completed, store the current block
+            old_block_id = study_session.current_focus_block.id if study_session.current_focus_block else None
+
+            # Mark segment as completed using StudySession method
+            success = study_session.mark_segment_completed(segment_index)
+
+            # After completion, check if block changed
+            new_block_id = study_session.current_focus_block.id if study_session.current_focus_block else None
+            advanced_to_next = (old_block_id != new_block_id)
+            
+            if not success:
+                return JsonResponse({'success': False, 'error': 'No current block set'})
+            
+            # Check if we have a current block after completion
+            if study_session.current_focus_block:
+                # Calculate progress data
+                current_block_progress = study_session.get_current_block_progress()
+                current_block = study_session.current_focus_block
+                
+                print(f"📊 Progress: {current_block_progress}%")
+                
+                return JsonResponse({
+                    'success': True,
+                    'progress': current_block_progress,
+                    'advanced_to_next': advanced_to_next,
+                    'new_block_title': current_block.title,
+                    'completed_segments': len(study_session.segment_progress.get(str(current_block.id), [])),
+                    'total_segments': len(current_block.get_segments()),
+                    'current_block': current_block.title,
+                })
+            else:
+                # All blocks completed
+                print("🎉 All blocks completed!")
+                return JsonResponse({
+                    'success': True,
+                    'all_completed': True,
+                    'message': 'All focus blocks completed!'
+                })
+                
+        except StudySession.DoesNotExist:
+            print(f"❌ StudySession not found: {session_id}")
+            return JsonResponse({'success': False, 'error': 'Study session not found'})
+        except Exception as e:
+            print(f"❌ API Error: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return JsonResponse({'success': False, 'error': str(e)})
+    
+    return JsonResponse({'success': False, 'error': 'Invalid request method'})
 
 
 def bulk_upload(request):
@@ -2259,24 +2320,7 @@ def complete_focus_block_api(request, focus_block_id):
     return JsonResponse({'success': False, 'error': 'Invalid request method'})
 
 
-@csrf_exempt
-def mark_segment_complete_api(request):
-    """API endpoint to mark a segment as complete"""
-    if request.method == 'POST':
-            data = json.loads(request.body)
-            session_id = data.get('segment_id')
-            segment_index = data.get('segment_id')
 
-            try:
-                session = FocusSession.objects.get(id=session_id)
-                session.mark_segment_completed(segment_index, time_spent=0)
-                session.save()
-                return JsonResponse({'success': True, 'progress': session.get_completion_percentage()})
-            except FocusSession.DoesNotExist:
-                return JsonResponse({'success': False, 'error': 'Session not found'})
-            except Exception as e:
-                return JsonResponse({'success': False, 'error': str(e)})
-    return JsonResponse({'success': False, 'error': 'Invalid request method'})
 
 
 @csrf_exempt
@@ -4817,33 +4861,32 @@ def session_analytics_api(request, session_id):
         'status': focus_session.status,
     })
 
-def test_advanced_study(request):
-    """Quick test to see if the advanced study view works"""
-    from django.http import HttpResponse
-    return HttpResponse("<h1>Advanced Study View Works!</h1><p>URL routing is working correctly.</p>")
-
 @csrf_exempt
-def mark_segment_complete(request):
-    print("🔍 mark_segment_complete called")
-    if request.method == 'POST':
-        try:
-            data = json.loads(request.body)
-            session_id = data.get('session_id')
-            segment_index = data.get('segment_index')
-            
-            # Get the session and mark segment complete
-            session = FocusSession.objects.get(id=session_id)
-            session.mark_segment_completed(segment_index, time_spent=0)
-            session.save()
-            
-            return JsonResponse({
-                'success': True,
-                'progress': round(session.get_completion_percentage(), 1)
-            })
-            
-        except FocusSession.DoesNotExist:
-            return JsonResponse({'success': False, 'error': 'Session not found'})
-        except Exception as e:
-            return JsonResponse({'success': False, 'error': str(e)})
-    
-    return JsonResponse({'success': False, 'error': 'Invalid request'})
+def get_session_progress(request):
+    """API endpoint to get current session progress"""
+    try:
+        # Find current active session
+        active_session = FocusSession.objects.filter(
+            status__in=['active', 'paused']
+        ).order_by('-started_at').first()
+        
+        if not active_session:
+            return JsonResponse({'success': False, 'error': 'No active session found'})
+        
+        # Get session progress data
+        current_block = active_session.focus_block
+        total_segments = len(current_block.get_segments())
+        completed_segments = len(active_session.segments_completed)
+        progress_percentage = round(active_session.get_completion_percentage(), 1)
+        
+        return JsonResponse({
+            'success': True,
+            'progress': progress_percentage,
+            'completed_segments': completed_segments,
+            'total_segments': total_segments,
+            'current_block_title': current_block.title,
+            'block_completed': active_session.status == 'completed'
+        })
+        
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})

@@ -415,6 +415,10 @@ class StudySession(models.Model):
     # Focus block tracking
     current_focus_block = models.ForeignKey(FocusBlock, on_delete=models.SET_NULL, null=True, blank=True, related_name='current_sessions')
     completed_focus_blocks = models.ManyToManyField(FocusBlock, blank=True, related_name='completed_sessions')
+
+    # ✅ ADD THESE NEW FIELDS:
+    current_segment = models.IntegerField(default=0, help_text="Current segment index in current block")
+    segment_progress = models.JSONField(default=dict, help_text="Completed segments per block: {block_id: [0,1,2,...]}")
     
     # Legacy flashcard tracking
     cards_shown = models.ManyToManyField(Flashcard, blank=True)
@@ -451,6 +455,77 @@ class StudySession(models.Model):
             return 0
         
         return round((completed_blocks / total_blocks) * 100, 1)
+
+    def get_current_block_progress(self):
+        """Get progress within current block"""
+        if not self.current_focus_block:
+            return 0
+        
+        block_id = str(self.current_focus_block.id)
+        completed_segments = self.segment_progress.get(block_id, [])
+        total_segments = len(self.current_focus_block.get_segments())
+        
+        if total_segments == 0:
+            return 0
+        return (len(completed_segments) / total_segments) * 100
+
+    def mark_segment_completed(self, segment_index):
+        """Mark a segment as completed in current block"""
+        if not self.current_focus_block:
+            return False
+        
+        block_id = str(self.current_focus_block.id)
+        
+        # Initialize segment progress for this block if needed
+        if block_id not in self.segment_progress:
+            self.segment_progress[block_id] = []
+        
+        # Add segment if not already completed
+        if segment_index not in self.segment_progress[block_id]:
+            self.segment_progress[block_id].append(segment_index)
+            self.segment_progress[block_id].sort()  # Keep sorted
+        
+        # Update current segment
+        self.current_segment = segment_index + 1
+        
+        # Check if block is complete
+        total_segments = len(self.current_focus_block.get_segments())
+        completed_segments = len(self.segment_progress[block_id])
+        
+        print(f"🔍 Segment {segment_index} completed. Progress: {completed_segments}/{total_segments}")
+        
+        if completed_segments >= total_segments:
+            # Block completed - add to completed blocks
+            self.completed_focus_blocks.add(self.current_focus_block)
+            print(f"🎉 Block '{self.current_focus_block.title}' completed!")
+            
+            # Advance to next block
+            return self.advance_to_next_block()
+        
+        self.save()
+        return True
+
+    def advance_to_next_block(self):
+        """Move to next uncompleted block"""
+        from django.db.models import Q
+        
+        all_blocks = FocusBlock.objects.all().order_by('created_at', 'block_order')
+        completed_ids = self.completed_focus_blocks.values_list('id', flat=True)
+        uncompleted_blocks = all_blocks.exclude(id__in=completed_ids)
+        
+        if uncompleted_blocks.exists():
+            next_block = uncompleted_blocks.first()
+            self.current_focus_block = next_block
+            self.current_segment = 0
+            self.save()
+            print(f"🔄 Advanced to next block: {next_block.title}")
+            return True
+        else:
+            # All blocks completed
+            self.current_focus_block = None
+            self.save()
+            print("🎉 All blocks completed!")
+            return False
 
 class FocusSession(models.Model):
     """Track individual focus block study sessions"""
@@ -566,3 +641,4 @@ class FocusBlockRelationship(models.Model):
             to_block=self.from_block,
             relationship_type=self.relationship_type
         ).first() 
+

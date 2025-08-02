@@ -53,8 +53,8 @@ urlpatterns = [
     path('focus/<uuid:session_id>/complete/', views.complete_focus_session, name='complete_focus_session'),
     path('api/focus-block/<uuid:focus_block_id>/complete/', views.complete_focus_block_api, name='complete_focus_block_api'),
     path('api/focus-completions/', views.get_focus_completions_api, name='get_focus_completions_api'),
-    path('api/mark-segment-complete/', views.mark_segment_complete_api, name='mark_segment_complete_api'),
     path('mark-segment-complete/', views.mark_segment_complete, name='mark_segment_complete'),
+    path('api/session-progress/', views.get_session_progress, name='get_session_progress'),
     
     # Focus Block Study URLs
     path('study/focus-blocks/', views.start_focus_study_session, name='start_focus_study_session'),
@@ -78,5 +78,4 @@ urlpatterns = [
     path('session/<uuid:session_id>/complete/', views.complete_advanced_session, name='complete_advanced_session'),
     path('session/<uuid:session_id>/update/', views.update_session_progress, name='update_session_progress'),
     path('api/session/<uuid:session_id>/analytics/', views.session_analytics_api, name='session_analytics_api'),
-    path('test-advanced/', views.test_advanced_study, name='test_advanced_study'),
 ] 

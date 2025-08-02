@@ -6,7 +6,7 @@
 <div class="container-fluid">
     <!-- ✅ ADD: Hidden session data -->
     <div id="session-data" 
-         data-session-id="{{ focus_session.id|default:'' }}" 
+         data-session-id="{{ study_session.id|default:'' }}" 
          style="display: none;"></div>
     
     {% if no_blocks %}
@@ -301,297 +301,254 @@
 </div>
 
 <script>
-// Global variables
+// === MINIMAL JAVASCRIPT - BASIC NAVIGATION ONLY ===
+
 let currentBlockIndex = 0;
 let currentSegmentIndex = 0;
-const totalBlocks = {{ focus_blocks|length }};
-let segmentNotes = {};
-let isPaused = false;
-let sessionTimer = null;
-let blockTimer = null;
-let sessionStartTime = null;
-let blockStartTime = null;
-let totalPausedTime = 0;
-let pauseStartTime = null;
 
-// Initialize on page load
+// Initialize page
 document.addEventListener('DOMContentLoaded', function() {
-    console.log(`🚀 Advanced Study initialized with ${totalBlocks} blocks`);
-    startTimers();
-    showBlock(0);
-});
-
-// Timer Functions
-function startTimers() {
-    console.log('⏱️ Starting timers...');
-    const now = new Date();
-    if (!sessionStartTime) sessionStartTime = now;
-    blockStartTime = now;
+    console.log('🚀 Checking for auto-events...');
     
-    if (sessionTimer) clearInterval(sessionTimer);
-    if (blockTimer) clearInterval(blockTimer);
+    // Monitor all click events
+    document.addEventListener('click', function(event) {
+        console.log('👆 Click detected on:', event.target.tagName, event.target.className, event.target.id);
+    });
     
-    sessionTimer = setInterval(updateSessionTimer, 1000);
-    blockTimer = setInterval(updateBlockTimer, 1000);
-}
-
-function updateSessionTimer() {
-    if (isPaused) return;
-    const now = new Date();
-    const elapsed = now - sessionStartTime - totalPausedTime;
-    const sessionTimerEl = document.getElementById('session-timer');
-    if (sessionTimerEl) {
-        sessionTimerEl.textContent = formatTime(elapsed);
-    }
-}
-
-function updateBlockTimer() {
-    if (isPaused) return;
-    const now = new Date();
-    const elapsed = now - blockStartTime;
-    const blockTimerEl = document.getElementById('block-timer');
-    if (blockTimerEl) {
-        blockTimerEl.textContent = formatTime(elapsed, false);
-    }
-}
-
-function formatTime(milliseconds, includeHours = true) {
-    const totalSeconds = Math.floor(milliseconds / 1000);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-    
-    if (includeHours) {
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-    } else {
-        return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-    }
-}
-
-function togglePause() {
-    const sidebarPauseBtn = document.getElementById('sidebar-pause-btn');
-    const sidebarPauseIcon = document.getElementById('sidebar-pause-icon');
-    const sidebarPlayIcon = document.getElementById('sidebar-play-icon');
-    
-    isPaused = !isPaused;
-    
-    if (isPaused) {
-        clearInterval(sessionTimer);
-        clearInterval(blockTimer);
-        pauseStartTime = new Date();
-        
-        if (sidebarPauseIcon) sidebarPauseIcon.classList.add('d-none');
-        if (sidebarPlayIcon) sidebarPlayIcon.classList.remove('d-none');
-        if (sidebarPauseBtn) sidebarPauseBtn.className = 'btn btn-sm btn-success';
-        
-        console.log('⏸️ Session paused');
-    } else {
-        if (pauseStartTime) {
-            totalPausedTime += new Date() - pauseStartTime;
-            pauseStartTime = null;
-        }
-        startTimers();
-        
-        if (sidebarPauseIcon) sidebarPauseIcon.classList.remove('d-none');
-        if (sidebarPlayIcon) sidebarPlayIcon.classList.add('d-none');
-        if (sidebarPauseBtn) sidebarPauseBtn.className = 'btn btn-sm btn-outline-warning';
-        
-        console.log('▶️ Session resumed');
-    }
-}
-
-// Block Navigation
-function showBlock(blockIndex) {
-    console.log(`📚 Showing block ${blockIndex + 1} of ${totalBlocks}`);
-    
-    // Hide all blocks
-    for (let i = 0; i < totalBlocks; i++) {
-        const block = document.getElementById(`block-${i}`);
-        const segments = document.getElementById(`segments-${i}`);
-        const qa = document.getElementById(`qa-${i}`);
-        if (block) block.style.display = 'none';
-        if (segments) segments.style.display = 'none';
-        if (qa) qa.style.display = 'none';
-    }
-    
-    // Show current block
-    const currentBlock = document.getElementById(`block-${blockIndex}`);
-    const currentSegments = document.getElementById(`segments-${blockIndex}`);
-    const currentQa = document.getElementById(`qa-${blockIndex}`);
-    
-    if (currentBlock) currentBlock.style.display = 'block';
-    if (currentSegments) currentSegments.style.display = 'block';
-    if (currentQa) currentQa.style.display = 'block';
-    
-    currentBlockIndex = blockIndex;
-    currentSegmentIndex = 0;
-    
-    // Reset block timer
-    blockStartTime = new Date();
-    
-    // Update UI
-    const currentBlockEl = document.getElementById('current-block');
-    const currentBlockNumberEl = document.getElementById('current-block-number');
-    if (currentBlockEl) currentBlockEl.textContent = blockIndex + 1;
-    if (currentBlockNumberEl) currentBlockNumberEl.textContent = blockIndex + 1;
+    // Monitor any timers
+    const originalSetTimeout = window.setTimeout;
+    window.setTimeout = function(fn, delay) {
+        console.log('⏰ setTimeout called with delay:', delay);
+        console.trace('setTimeout call stack:');
+        return originalSetTimeout(fn, delay);
+    };
     
     // Show first segment
-    showSegment(blockIndex, 0);
+    showSegment(0, 0);
+});
+
+// Show specific block
+function showBlock(blockIndex) {
+    console.log('📖 Showing block:', blockIndex);
+    
+    // Hide all blocks
+    const allBlocks = document.querySelectorAll('.focus-block-container');
+    allBlocks.forEach(block => block.style.display = 'none');
+    
+    // Show target block
+    const targetBlock = allBlocks[blockIndex];
+    if (targetBlock) {
+        targetBlock.style.display = 'block';
+        currentBlockIndex = blockIndex;
+        currentSegmentIndex = 0;
+        showSegment(blockIndex, 0);
+    }
 }
 
-// Segment Navigation  
+// Show specific segment
 function showSegment(blockIndex, segmentIndex) {
-    console.log(`📖 Showing block ${blockIndex}, segment ${segmentIndex}`);
+    console.log('📝 === showSegment() called ===', blockIndex, segmentIndex);
+    
+    // Prevent runaway calls
+    if (segmentIndex === currentSegmentIndex) {
+        console.log('⚠️ Already showing this segment, skipping');
+        return;
+    }
     
     // Hide all segments in this block
     const allSegments = document.querySelectorAll(`[id^="segment-${blockIndex}-"]`);
-    allSegments.forEach(segment => segment.style.display = 'none');
+    console.log('Found segments in block:', allSegments.length);
     
-    // Show current segment
-    const currentSegment = document.getElementById(`segment-${blockIndex}-${segmentIndex}`);
-    if (currentSegment) {
-        currentSegment.style.display = 'block';
+    allSegments.forEach(segment => {
+        segment.style.display = 'none';
+    });
+    
+    // Show target segment
+    const targetSegment = document.getElementById(`segment-${blockIndex}-${segmentIndex}`);
+    if (targetSegment) {
+        targetSegment.style.display = 'block';
         currentSegmentIndex = segmentIndex;
-        
-        // Update progress bar
-        const progressPercentage = ((segmentIndex + 1) / allSegments.length) * 100;
-        const progressBar = document.getElementById(`segment-progress-bar-${blockIndex}`);
-        if (progressBar) {
-            progressBar.style.width = progressPercentage + '%';
-        }
-        
-        // Update navigation buttons
-        updateNavigationButtons(blockIndex, segmentIndex, allSegments.length);
-    }
-}
-
-function nextSegment(blockIndex) {
-    if (currentSegmentIndex >= 0) {
-        markSegmentComplete(blockIndex, currentSegmentIndex);
-    }
-    const allSegments = document.querySelectorAll(`[id^="segment-${blockIndex}-"]`);
-    if (currentSegmentIndex < allSegments.length - 1) {
-        showSegment(blockIndex, currentSegmentIndex + 1);
+        console.log('✅ Showing segment:', segmentIndex);
     } else {
-        // Move to next block
-        if (blockIndex < totalBlocks - 1) {
-            showBlock(blockIndex + 1);
-        } else {
-            alert('🎉 All blocks completed! Great work!');
-        }
+        console.log('❌ Target segment not found:', `segment-${blockIndex}-${segmentIndex}`);
     }
+    
+    updateNavigationButtons();
+    console.log('=== showSegment() finished ===');
 }
 
-function previousSegment(blockIndex) {
+let isProcessing = false;
+
+function nextSegment() {
+    console.log('🔄 === nextSegment() called ===');
+    console.log('Current segment:', currentSegmentIndex);
+    
+    // Mark current segment complete first
+    markSegmentComplete(currentBlockIndex, currentSegmentIndex);
+    
+    // Check if next segment exists in current block
+    const nextSegmentIndex = currentSegmentIndex + 1;
+    const nextSegmentEl = document.getElementById(`segment-${currentBlockIndex}-${nextSegmentIndex}`);
+    
+    console.log('Looking for:', `segment-${currentBlockIndex}-${nextSegmentIndex}`);
+    console.log('Found next segment:', nextSegmentEl !== null);
+    
+    if (nextSegmentEl) {
+        console.log('✅ Moving to next segment');
+        showSegment(currentBlockIndex, nextSegmentIndex);
+    } else {
+        console.log('📝 End of segments in current block');
+        // markSegmentComplete() will handle block advancement automatically
+        // No need for manual alerts or reloads
+    }
+    
+    console.log('=== nextSegment() finished ===');
+}
+
+function previousSegment() {
     if (currentSegmentIndex > 0) {
-        showSegment(blockIndex, currentSegmentIndex - 1);
-    } else if (blockIndex > 0) {
-        // Move to previous block's last segment
-        showBlock(blockIndex - 1);
-        const prevSegments = document.querySelectorAll(`[id^="segment-${blockIndex - 1}-"]`);
-        showSegment(blockIndex - 1, prevSegments.length - 1);
+        showSegment(currentBlockIndex, currentSegmentIndex - 1);
     }
 }
 
-function updateNavigationButtons(blockIndex, segmentIndex, totalSegments) {
-    const prevBtn = document.getElementById(`prev-btn-${blockIndex}`);
-    const nextBtn = document.getElementById(`next-btn-${blockIndex}`);
+// Update navigation buttons
+function updateNavigationButtons() {
+    const prevBtn = document.getElementById('prev-btn');
+    const nextBtn = document.getElementById('next-btn');
     
-    if (prevBtn) {
-        prevBtn.disabled = (blockIndex === 0 && segmentIndex === 0);
-    }
-    
+    if (prevBtn) prevBtn.disabled = (currentSegmentIndex === 0);
     if (nextBtn) {
-        if (segmentIndex === totalSegments - 1 && blockIndex === totalBlocks - 1) {
-            nextBtn.innerHTML = '<i class="fas fa-check me-2"></i>Complete Study';
-        } else {
-            nextBtn.innerHTML = 'Next<i class="fas fa-chevron-right ms-2"></i>';
-        }
+        const nextSegmentExists = document.getElementById(`segment-${currentBlockIndex}-${currentSegmentIndex + 1}`);
+        nextBtn.disabled = !nextSegmentExists;
     }
 }
 
-function markSegmentComplete(blockIndex, segmentIndex) {
-    console.log('🎯 markSegmentComplete called:', blockIndex, segmentIndex);
+function updateProgressDisplay(progressPercent, completedSegments) {
+    console.log('📊 Updating progress display:', progressPercent + '%', completedSegments, 'segments completed');
     
+    // Update progress bar width
+    const progressBar = document.getElementById('sidebar-progress');
+    if (progressBar) {
+        progressBar.style.width = progressPercent + '%';
+        console.log('✅ Progress bar updated to', progressPercent + '%');
+    } else {
+        console.log('⚠️ Progress bar element not found (sidebar-progress)');
+    }
+    
+    // Update progress percentage text
+    const progressText = document.getElementById('progress-text');
+    if (progressText) {
+        progressText.textContent = Math.round(progressPercent) + '%';
+        console.log('✅ Progress text updated to', Math.round(progressPercent) + '%');
+    } else {
+        console.log('⚠️ Progress text element not found (progress-text)');
+    }
+    
+    // Update completed segments counter
+    const completedEl = document.getElementById('completed-segments');
+    if (completedEl) {
+        completedEl.textContent = completedSegments;
+        console.log('✅ Completed segments updated to', completedSegments);
+    } else {
+        console.log('⚠️ Completed segments element not found (completed-segments)');
+    }
+    
+    // Optional: Update total segments if needed
+    const totalSegmentsEl = document.getElementById('total-segments');
+    if (totalSegmentsEl) {
+        console.log('✅ Total segments element found:', totalSegmentsEl.textContent);
+    } else {
+        console.log('⚠️ Total segments element not found (total-segments)');
+    }
+    
+    console.log('📊 Progress display update complete');
+}
+
+// Simple complete function (no AJAX)
+function markSegmentComplete(blockIndex, segmentIndex) {
+    console.log('✅ Marking segment complete:', blockIndex, segmentIndex);
+    
+    // Visual feedback first
     const segment = document.getElementById(`segment-${blockIndex}-${segmentIndex}`);
     if (segment) {
-        segment.classList.add('border-success');
-        
-        // Get session ID from HTML element
-        const sessionData = document.getElementById('session-data');
-        const sessionId = sessionData ? sessionData.getAttribute('data-session-id') : null;
-        
-        if (sessionId) {
-            fetch('/mark-segment-complete/', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    session_id: sessionId,
-                    segment_index: segmentIndex
-                })
+        segment.style.backgroundColor = '#d4edda';
+        segment.style.border = '2px solid #155724';
+    }
+    
+    // Get session ID
+    const sessionId = document.getElementById('session-data')?.getAttribute('data-session-id');
+    
+    if (sessionId) {
+        fetch('/mark-segment-complete/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({
+                session_id: sessionId,
+                segment_index: segmentIndex
             })
-            .then(response => {
-                console.log('✅ Response status:', response.status);
-                return response.json();
-            })
-            .then(data => {
-                console.log('✅ Response data:', data);
+        })
+        .then(response => response.json())
+        .then(data => {
+            console.log('🔍 Django response:', data);
+            
+            if (data.success) {
+                console.log('✅ Backend updated, progress:', data.progress + '%');
+                updateProgressDisplay(data.progress, segmentIndex + 1);
                 
-                if (data.success) {
-                    // Update overall progress bar
-                    const progressBar = document.getElementById('sidebar-progress');
-                    const progressText = document.getElementById('progress-text');
+                // ✅ CHECK: Did we advance to next block?
+                if (data.advanced_to_next) {
+                    console.log('🔄 Advanced to next block:', data.new_block_title);
+                    console.log('🔄 Reloading page to show next block...');
                     
-                    if (progressBar) progressBar.style.width = data.progress + '%';
-                    if (progressText) progressText.textContent = data.progress + '%';
+                    // Auto-reload to get next block
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 1000); // 1 second delay for visual feedback
                     
-                    // ✅ ADD: Update segment counter
-                    const completedSegmentsEl = document.getElementById('completed-segments');
-                    const totalSegmentsEl = document.getElementById('total-segments');
+                } else if (data.all_completed) {
+                    console.log('🎉 All blocks completed!');
+                    alert('🎉 Congratulations! All focus blocks completed!');
                     
-                    if (completedSegmentsEl && totalSegmentsEl) {
-                        const totalSegments = parseInt(totalSegmentsEl.textContent);
-                        const completedSegments = Math.round((data.progress / 100) * totalSegments);
-                        completedSegmentsEl.textContent = completedSegments;
-                        
-                        console.log(`📊 Segments: ${completedSegments}/${totalSegments}`);
-                    }
-                    
-                    console.log(`📈 Progress updated to ${data.progress}%`);
                 } else {
-                    console.log('❌ Server error:', data.error);
+                    console.log('📝 Continuing with current block');
+                    // Normal advancement within same block - do nothing
+                    // nextSegment() will be called separately
                 }
-            })
-            .catch(error => console.log('❌ Error:', error));
-        } else {
-            console.log('❌ No session ID found');
+                
+            } else {
+                console.error('❌ Backend error:', data.error);
+                alert('Error updating progress: ' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('❌ Network error:', error);
+            alert('Network error updating progress');
+        });
+    } else {
+        console.error('❌ No session ID found');
+    }
+}
+
+// Helper function for CSRF token
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
         }
-        
     }
+    return cookieValue;
 }
 
-function saveSegmentNote(blockIndex, segmentIndex, note) {
-    if (!segmentNotes[blockIndex]) {
-        segmentNotes[blockIndex] = {};
-    }
-    segmentNotes[blockIndex][segmentIndex] = note;
-    console.log(`💾 Saved note for block ${blockIndex}, segment ${segmentIndex}`);
-}
-
-function revealAnswer(elementId) {
-    const element = document.getElementById(elementId);
-    if (element) {
-        element.style.display = 'block';
-    }
-}
-
-// Cleanup on page unload
-window.addEventListener('beforeunload', function() {
-    if (sessionTimer) clearInterval(sessionTimer);
-    if (blockTimer) clearInterval(blockTimer);
-});
+console.log('✅ Minimal JavaScript loaded');
 </script>
 
 <style>

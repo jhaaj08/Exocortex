@@ -49,10 +49,11 @@ class FlashcardAdmin(admin.ModelAdmin):
 
 @admin.register(StudySession)
 class StudySessionAdmin(admin.ModelAdmin):
-    list_display = ['session_id', 'source_name', 'current_page', 'cards_per_page', 'last_accessed']
-    list_filter = ['created_at', 'last_accessed']
+    list_display = ['session_id', 'source_name', 'current_page', 'session_type', 'last_accessed']
+    list_filter = ['session_type', 'created_at', 'last_accessed']
     readonly_fields = ['session_id', 'created_at', 'last_accessed']
-    filter_horizontal = ['cards_shown']
+    filter_horizontal = ['cards_shown', 'completed_focus_blocks']
+    search_fields = ['folder__name', 'pdf_document__name']
     
     def source_name(self, obj):
         if obj.folder:
