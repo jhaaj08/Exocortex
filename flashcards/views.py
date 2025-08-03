@@ -821,6 +821,48 @@ def create_interactive_focus_block_from_group(group, pdf_document, block_order):
         
         block_data = json.loads(response_content.strip())
         
+        # ✅ NEW: Combine segments and Q&A before storing
+        original_segments = block_data.get('segments', [])
+        qa_items = block_data.get('qa_items', [])
+        
+        print(f"🔍 Before combining:")
+        print(f"   Content segments: {len(original_segments)}")
+        print(f"   Q&A items: {len(qa_items)}")
+        
+        # Combine segments + Q&A
+        all_segments = list(original_segments)  # Copy content segments
+        
+        # Add Q&A as additional segments (FIXED - don't use empty content)
+        for i, qa in enumerate(qa_items):
+            # Extract question and answer from the qa dictionary
+            question_text = qa.get('question', '')
+            answer_text = qa.get('answer', '')
+            
+            qa_segment = {
+                'type': 'knowledge_check',
+                'title': f'Knowledge Check {i+1}',
+                'question': question_text,
+                'answer': answer_text,
+                'difficulty': qa.get('difficulty', ''),
+                'content': f"<strong>Q: {question_text}</strong><br><br><em>A: {answer_text}</em>",  # Temporary HTML for compatibility
+                'duration_seconds': 90
+            }
+            all_segments.append(qa_segment)
+        
+        # ✅ Store combined data
+        combined_block_data = {
+            'title': block_data.get('title', group['unified_concept']),
+            'learning_objectives': block_data.get('learning_objectives', []),
+            'segments': all_segments,  # ✅ Now includes content + Q&A
+            'qa_items': [],  # ✅ Empty since Q&A is now in segments
+            'total_duration': block_data.get('total_duration', 420),
+            'difficulty_level': block_data.get('difficulty_level', 'intermediate')
+        }
+        
+        print(f"🔍 After combining:")
+        print(f"   Total segments: {len(all_segments)}")
+        print(f"   Q&A items: {len(combined_block_data['qa_items'])}")
+        
         # ✅ FIXED: Create concept unit with correct field names
         max_order = ConceptUnit.objects.filter(pdf_document=pdf_document).aggregate(
             max_order=models.Max('concept_order')
@@ -829,21 +871,21 @@ def create_interactive_focus_block_from_group(group, pdf_document, block_order):
         
         concept_unit = ConceptUnit.objects.create(
             pdf_document=pdf_document,
-            title=group['unified_concept'],  # ✅ FIXED: Use 'title' not 'concept_title'
+            title=group['unified_concept'],
             concept_order=next_order,
-            complexity_score=group.get('confidence', 0.75)  # ✅ FIXED: Use 'complexity_score'
+            complexity_score=group.get('confidence', 0.75)
         )
         
-        # Create focus block
+        # Create focus block with combined data
         focus_block = FocusBlock.objects.create(
             pdf_document=pdf_document,
             main_concept_unit=concept_unit,
             block_order=block_order,
-            title=block_data.get('title', group['unified_concept']),
-            target_duration=block_data.get('total_duration', 420),
-            compact7_data=block_data,
-            difficulty_level=block_data.get('difficulty_level', 'intermediate'),
-            learning_objectives=block_data.get('learning_objectives', [])
+            title=combined_block_data.get('title', group['unified_concept']),
+            target_duration=combined_block_data.get('total_duration', 420),
+            compact7_data=combined_block_data,  # ✅ Now contains combined segments
+            difficulty_level=combined_block_data.get('difficulty_level', 'intermediate'),
+            learning_objectives=combined_block_data.get('learning_objectives', [])
         )
         
         return focus_block
