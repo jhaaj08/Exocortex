@@ -518,8 +518,8 @@ def process_pdf_complete(pdf_document):
             # Ensure the PDF is marked as processed (task should have done this already)
             pdf_document.refresh_from_db()
             if not pdf_document.processed:
-            pdf_document.processed = True
-            pdf_document.save()
+                pdf_document.processed = True
+                pdf_document.save()
             
             return True, f"📚 Content already exists as '{duplicate_info['existing_name']}'!", {}
         
