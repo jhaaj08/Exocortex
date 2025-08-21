@@ -695,20 +695,12 @@ def extract_pdf_text_task(self, pdf_document_id):
                 }
             }
         
-        # ✅ STEP 3: Extract text using existing service
+        # ✅ STEP 3: Extract text using file content method (Railway compatible)
         try:
             extractor = PDFTextExtractor()
-            pdf_path = pdf_document.pdf_file.path
             
-            # Try pdfplumber first
-            text, page_count = extractor.extract_text_pdfplumber(pdf_path)
-            extraction_method = "pdfplumber"
-            
-            # Fallback to PyPDF2
-            if not text or len(text.strip()) < 50:
-                logger.info(f"📄 pdfplumber failed, trying PyPDF2 fallback...")
-                text, page_count = extractor.extract_text_pypdf2(pdf_path)
-                extraction_method = "pypdf2"
+            # Use the new file content method instead of file path
+            text, page_count, extraction_method = extractor.extract_text_from_file_content(pdf_document)
             
             # Validate extraction
             if not text or len(text.strip()) < 50:
@@ -728,7 +720,7 @@ def extract_pdf_text_task(self, pdf_document_id):
                     'duplicate_info': None
                 }
             
-            logger.info(f"✅ Text extracted successfully: {len(text)} characters, {page_count} pages")
+            logger.info(f"✅ Text extracted successfully using {extraction_method}: {len(text)} characters, {page_count} pages")
             
         except Exception as extraction_error:
             error_msg = f"Text extraction failed: {str(extraction_error)}"

@@ -8,6 +8,7 @@ from .models import TextChunk
 from .concept_service import analyze_pdf_concepts
 import os
 import tempfile
+import io
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,27 @@ class PDFTextExtractor:
             logger.error(f"PyPDF2 extraction failed: {str(e)}")
             return None, 0
     
+    def extract_text_pypdf2_from_content(self, file_content):
+        """Extract text using PyPDF2 from file content (for Railway compatibility)"""
+        try:
+            # Create BytesIO object from file content
+            file_stream = io.BytesIO(file_content)
+            reader = PyPDF2.PdfReader(file_stream)
+            text = ""
+            page_count = len(reader.pages)
+            
+            pages_to_process = min(page_count, self.max_pages)
+            
+            for page_num in range(pages_to_process):
+                page = reader.pages[page_num]
+                text += page.extract_text() + "\n\n"
+            
+            return text.strip(), page_count
+        
+        except Exception as e:
+            logger.error(f"PyPDF2 extraction failed: {str(e)}")
+            return None, 0
+    
     def extract_text_pdfplumber(self, pdf_path):
         """Extract text using pdfplumber (more accurate but slower)"""
         try:
@@ -58,21 +80,71 @@ class PDFTextExtractor:
             logger.error(f"pdfplumber extraction failed: {str(e)}")
             return None, 0
     
+    def extract_text_pdfplumber_from_content(self, file_content):
+        """Extract text using pdfplumber from file content (for Railway compatibility)"""
+        try:
+            # Create BytesIO object from file content
+            file_stream = io.BytesIO(file_content)
+            with pdfplumber.open(file_stream) as pdf:
+                text = ""
+                page_count = len(pdf.pages)
+                
+                pages_to_process = min(page_count, self.max_pages)
+                
+                for page_num in range(pages_to_process):
+                    page = pdf.pages[page_num]
+                    page_text = page.extract_text()
+                    if page_text:
+                        text += page_text + "\n\n"
+                
+                return text.strip(), page_count
+        
+        except Exception as e:
+            logger.error(f"pdfplumber extraction failed: {str(e)}")
+            return None, 0
+    
+    def extract_text_from_file_content(self, pdf_document):
+        """Extract text from PDF using file content instead of file path (Railway compatible)"""
+        try:
+            logger.info(f"📂 Found PDF: {pdf_document.name}")
+            
+            # Read file content using Django's file API
+            with pdf_document.pdf_file.open('rb') as file:
+                file_content = file.read()
+            
+            pdf_document.file_size = len(file_content)
+            
+            # Try pdfplumber first
+            text, page_count = self.extract_text_pdfplumber_from_content(file_content)
+            extraction_method = "pdfplumber"
+            
+            # Fallback to PyPDF2 if needed
+            if not text or len(text.strip()) < 50:
+                logger.info("📄 pdfplumber failed, trying PyPDF2 fallback...")
+                text, page_count = self.extract_text_pypdf2_from_content(file_content)
+                extraction_method = "pypdf2"
+            
+            # Validate extraction
+            if not text or len(text.strip()) < 50:
+                error_msg = f"Could not extract meaningful text from PDF: {pdf_document.name}"
+                logger.error(error_msg)
+                return None, 0, None
+            
+            logger.info(f"✅ Text extracted successfully using {extraction_method}: {len(text)} characters, {page_count} pages")
+            return text, page_count, extraction_method
+            
+        except Exception as e:
+            logger.error(f"Text extraction failed: {str(e)}")
+            return None, 0, None
+    
     def extract_and_process_pdf(self, pdf_document, analyze_concepts=True):
         """
         Main method to extract, clean, chunk, and analyze PDF text
         Returns tuple: (success, error_message, processing_stats)
         """
         try:
-            # Step 1: Extract raw text
-            pdf_path = pdf_document.pdf_file.path
-            pdf_document.file_size = pdf_document.pdf_file.size
-            
-            # Try pdfplumber first, then PyPDF2 as fallback
-            raw_text, page_count = self.extract_text_pdfplumber(pdf_path)
-            if not raw_text:
-                logger.info("pdfplumber failed, trying PyPDF2 as fallback")
-                raw_text, page_count = self.extract_text_pypdf2(pdf_path)
+            # Step 1: Extract raw text using file content (Railway compatible)
+            raw_text, page_count, extraction_method = self.extract_text_from_file_content(pdf_document)
             
             if not raw_text:
                 return False, "Could not extract text from PDF. The file might be scanned images or corrupted.", {}
@@ -102,7 +174,8 @@ class PDFTextExtractor:
                 'chunk_count': len(chunks),
                 'paragraphs': stats['paragraphs'],
                 'concept_units': 0,
-                'concept_analysis_success': False
+                'concept_analysis_success': False,
+                'extraction_method': extraction_method
             }
             
             # Step 5: Analyze concepts with LLM (optional)

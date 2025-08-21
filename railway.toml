@@ -9,16 +9,10 @@ restartPolicyType = "always"
 name = "web"
 healthcheckPath = "/"
 healthcheckTimeout = 300
-volumes = [
-  { source = "/app/media", target = "/app/media" }
-]
 
 # Worker service configuration
 [[services]]  
 name = "worker"
-volumes = [
-  { source = "/app/media", target = "/app/media" }
-]
 
 [environments.production]
 variables = { RAILWAY_ENVIRONMENT = "production" }
