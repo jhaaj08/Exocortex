@@ -2,9 +2,18 @@
 builder = "nixpacks"
 
 [deploy]
+restartPolicyType = "always"
+
+# Only web services need health checks
+[[services]]
+name = "web"
 healthcheckPath = "/"
 healthcheckTimeout = 300
-restartPolicyType = "always"
+
+# Worker services don't need health checks
+[[services]]  
+name = "worker"
+# No healthcheck configuration
 
 [environments.production]
 variables = { RAILWAY_ENVIRONMENT = "production" }
