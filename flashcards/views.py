@@ -31,6 +31,8 @@ from collections import defaultdict
 from collections import deque
 from .tasks import extract_pdf_text_task
 from .tasks import complete_pdf_processing_with_knowledge_graph
+from .storage_utils import materialize_file_to_tmp
+from .pdf_service import PDFTextExtractor
 
 logger = logging.getLogger(__name__)
 
@@ -58,15 +60,24 @@ def upload(request):
                 from .tasks import complete_pdf_processing_with_knowledge_graph
                 from django.db import transaction
                 
-                # 🚀 ASYNC FIX: Use .delay() with transaction safety
-                transaction.on_commit(
-                    lambda: complete_pdf_processing_with_knowledge_graph.delay(
-                        pdf_document.id,
+                # 🚀 ASYNC FIX: Use .delay() with transaction safety, pass file bytes to avoid cross-container FS
+                def _enqueue_after_commit(doc_id):
+                    try:
+                        from .models import PDFDocument
+                        doc = PDFDocument.objects.get(id=doc_id)
+                        with doc.pdf_file.open('rb') as f:
+                            file_bytes = f.read()
+                    except Exception:
+                        file_bytes = None
+                    complete_pdf_processing_with_knowledge_graph.delay(
+                        doc_id,
                         similarity_threshold=0.60,
                         dedup_threshold=0.85,
-                        kg_threshold=0.75
+                        kg_threshold=0.75,
+                        file_bytes=file_bytes
                     )
-                )
+
+                transaction.on_commit(lambda doc_id=pdf_document.id: _enqueue_after_commit(doc_id))
                 
                 # Store task ID for progress tracking (optional)
                 # Note: task ID will be generated after transaction commit
@@ -457,121 +468,134 @@ def process_pdf_complete(pdf_document):
     """Check duplicates FIRST with lightweight text extraction"""
     import hashlib
     import time
-    
+    from .storage_utils import materialize_file_to_tmp
+    from .pdf_service import PDFTextExtractor
+
     start_time = time.time()
     try:
         print(f"🚀 Processing: {pdf_document.name}")
-        
-        # ✅ STEP 1: Use Celery task for text extraction
-        print("📄 Step 1: Using Celery task for text extraction...")
-        
-        from .tasks import extract_pdf_text_task
-        
+
+        # Use a storage-aware temp path for initial/lightweight extraction if needed
+        extractor = PDFTextExtractor()
+        local_path, cleanup = materialize_file_to_tmp(pdf_document.pdf_file)
         try:
-            # Call the Celery task (synchronous execution)
-            print(f"🔄 Starting extraction task for PDF ID: {pdf_document.id}")
-            extraction_result = extract_pdf_text_task(pdf_document.id)
-            
-            if not extraction_result['success']:
-                error_msg = f"Text extraction failed: {extraction_result['message']}"
-                print(f"❌ {error_msg}")
-                return False, error_msg, {}
-            
-            # Get the results from the task
-            extraction_data = extraction_result['data']
-            duplicate_info = extraction_result['duplicate_info']
-            
-            print(f"✅ Extraction completed successfully:")
-            print(f"   📊 {extraction_data['word_count']:,} words from {extraction_data['page_count']} pages")
-            print(f"   🔍 Hash: {extraction_data['content_hash'][:12]}...")
-            print(f"   ⏱️ Duration: {extraction_data['processing_duration']}s")
-            
-            # ✅ STEP 2: Handle duplicate detection from the task
-            if duplicate_info['is_duplicate']:
-                print(f"🛑 DUPLICATE FOUND: {duplicate_info['existing_name']} - STOPPING ALL PROCESSING")
-                
-                # Ensure the PDF is marked as processed (task should have done this already)
-                pdf_document.refresh_from_db()
-                if not pdf_document.processed:
-                    pdf_document.processed = True
-                    pdf_document.save()
-            
-                return True, f"📚 Content already exists as '{duplicate_info['existing_name']}'!", {}
-            
-            # ✅ STEP 3: No duplicates - continue with focus block generation
-            print("🆕 Unique content confirmed - continuing with focus block generation...")
-            
-            # Refresh the PDF document to get updated data from the task
-            pdf_document.refresh_from_db()
-            
-            # Verify the task updated the database correctly
-            if not pdf_document.extracted_text:
-                error_msg = "Task completed but no extracted text found in database"
-                print(f"❌ {error_msg}")
-                return False, error_msg, {}
-            
-            if not pdf_document.content_hash:
-                error_msg = "Task completed but no content hash found in database"
-                print(f"❌ {error_msg}")
-                return False, error_msg, {}
-            
-            print(f"📋 Verified database update: {len(pdf_document.extracted_text)} characters stored")
-            
-        except Exception as task_error:
-            error_msg = f"Celery task execution failed: {str(task_error)}"
+            # Prefer pdfplumber, fall back to PyPDF2
+            text, page_count = extractor.extract_text_pdfplumber(local_path)
+            if not text:
+                text, page_count = extractor.extract_text_pypdf2(local_path)
+        finally:
+            cleanup()
+
+        # If this local pre-check succeeded, you can proceed. Otherwise, keep the existing
+        # Celery pipeline path (which we'll fix in step 2 by passing bytes or moving media to S3).
+        print(f"✅ Local pre-check extracted {len(text or '')} chars from {page_count} pages")
+
+        # Existing Celery-driven pipeline (kept as-is)
+        print("📄 Step 1: Using Celery task for text extraction...")
+        from .tasks import extract_pdf_text_task
+        print(f"🔄 Starting extraction task for PDF ID: {pdf_document.id}")
+        extraction_result = extract_pdf_text_task(pdf_document.id)
+        
+        if not extraction_result['success']:
+            error_msg = f"Text extraction failed: {extraction_result['message']}"
             print(f"❌ {error_msg}")
             return False, error_msg, {}
         
-        # ✅ STEP 4: No duplicates - NOW do the heavy processing
-        print("🆕 Unique content - starting heavy processing...")
+        # Get the results from the task
+        extraction_data = extraction_result['data']
+        duplicate_info = extraction_result['duplicate_info']
         
+        print(f"✅ Extraction completed successfully:")
+        print(f"   📊 {extraction_data['word_count']:,} words from {extraction_data['page_count']} pages")
+        print(f"   🔍 Hash: {extraction_data['content_hash'][:12]}...")
+        print(f"   ⏱️ Duration: {extraction_data['processing_duration']}s")
         
+        # ✅ STEP 2: Handle duplicate detection from the task
+        if duplicate_info['is_duplicate']:
+            print(f"🛑 DUPLICATE FOUND: {duplicate_info['existing_name']} - STOPPING ALL PROCESSING")
+            
+            # Ensure the PDF is marked as processed (task should have done this already)
+            pdf_document.refresh_from_db()
+            if not pdf_document.processed:
+                pdf_document.processed = True
+                pdf_document.save()
+            
+            return True, f"📚 Content already exists as '{duplicate_info['existing_name']}'!", {}
         
-        # ✅ STEP 5: NEW - Generate new format focus blocks directly
-        blocks_success, blocks_message, focus_blocks = generate_new_format_focus_blocks(pdf_document)
-        if not blocks_success:
-            return False, f"New focus blocks failed: {blocks_message}", {}
+        # ✅ STEP 3: No duplicates - continue with focus block generation
+        print("🆕 Unique content confirmed - continuing with focus block generation...")
         
-        # ✅ STEP 6: NEW - Auto-update knowledge graph
-        try:
-            update_knowledge_graph_with_new_blocks(focus_blocks)
-            print("🕸️ Knowledge graph updated with new blocks")
-        except Exception as e:
-            print(f"⚠️ Knowledge graph update failed: {str(e)} (blocks still created)")
+        # Refresh the PDF document to get updated data from the task
+        pdf_document.refresh_from_db()
         
-        pdf_document.processed = True
-       
-        end_time = time.time()
-        processing_duration = round(end_time - start_time, 2)
-        print(f"🕐 Processing ended at: {end_time}")
-        pdf_document.processing_duration = processing_duration
-        print(f"💾 About to save processing_duration: {pdf_document.processing_duration}")
-        pdf_document.save()
-        print(f"✅ Saved! PDF processing_duration in DB: {pdf_document.processing_duration}")
-        # Store processing info in cache for progress page
-        from django.core.cache import cache
-        processing_info = {
-            'pdf_name': pdf_document.name,
-            'pdf_size': pdf_document.pdf_file.size if pdf_document.pdf_file else 0,
-            'page_count': pdf_document.page_count or 0,
-            'word_count': pdf_document.word_count or 0,
-            'total_duration': processing_duration,
-            'focus_blocks_created': [
-                {
-                    'title': block.title,
-                    'id': str(block.id),
-                    'segments_count': len(block.compact7_data.get('segments', [])),
-                    'difficulty': block.difficulty_level,
-                    'duration': block.target_duration
-                }
-                for block in focus_blocks
-            ],
-            'success': True
-        }
-        cache.set(f'pdf_progress_{pdf_document.id}', processing_info, timeout=3600)
+        # Verify the task updated the database correctly
+        if not pdf_document.extracted_text:
+            error_msg = "Task completed but no extracted text found in database"
+            print(f"❌ {error_msg}")
+            return False, error_msg, {}
+        
+        if not pdf_document.content_hash:
+            error_msg = "Task completed but no content hash found in database"
+            print(f"❌ {error_msg}")
+            return False, error_msg, {}
+        
+        print(f"📋 Verified database update: {len(pdf_document.extracted_text)} characters stored")
+        
+    except Exception as task_error:
+        error_msg = f"Celery task execution failed: {str(task_error)}"
+        print(f"❌ {error_msg}")
+        return False, error_msg, {}
+    
+    # ✅ STEP 4: No duplicates - NOW do the heavy processing
+    print("🆕 Unique content - starting heavy processing...")
+    
+    
+    
+    # ✅ STEP 5: NEW - Generate new format focus blocks directly
+    blocks_success, blocks_message, focus_blocks = generate_new_format_focus_blocks(pdf_document)
+    if not blocks_success:
+        return False, f"New focus blocks failed: {blocks_message}", {}
+    
+    # ✅ STEP 6: NEW - Auto-update knowledge graph
+    try:
+        update_knowledge_graph_with_new_blocks(focus_blocks)
+        print("🕸️ Knowledge graph updated with new blocks")
+    except Exception as e:
+        print(f"⚠️ Knowledge graph update failed: {str(e)} (blocks still created)")
+    
+    pdf_document.processed = True
+   
+    end_time = time.time()
+    processing_duration = round(end_time - start_time, 2)
+    print(f"🕐 Processing ended at: {end_time}")
+    pdf_document.processing_duration = processing_duration
+    print(f"💾 About to save processing_duration: {pdf_document.processing_duration}")
+    pdf_document.save()
+    print(f"✅ Saved! PDF processing_duration in DB: {pdf_document.processing_duration}")
+    # Store processing info in cache for progress page
+    from django.core.cache import cache
+    processing_info = {
+        'pdf_name': pdf_document.name,
+        'pdf_size': pdf_document.pdf_file.size if pdf_document.pdf_file else 0,
+        'page_count': pdf_document.page_count or 0,
+        'word_count': pdf_document.word_count or 0,
+        'total_duration': processing_duration,
+        'focus_blocks_created': [
+            {
+                'title': block.title,
+                'id': str(block.id),
+                'segments_count': len(block.compact7_data.get('segments', [])),
+                'difficulty': block.difficulty_level,
+                'duration': block.target_duration
+            }
+            for block in focus_blocks
+        ],
+        'success': True
+    }
+    cache.set(f'pdf_progress_{pdf_document.id}', processing_info, timeout=3600)
 
 
-        return True, f"✅ Processed! Generated {len(focus_blocks)} new format focus blocks.", {}
+    return True, f"✅ Processed! Generated {len(focus_blocks)} new format focus blocks.", {}
         
     except Exception as e:
         return False, f"Error: {str(e)}", {}
@@ -2227,15 +2251,24 @@ def bulk_upload(request):
                     from .tasks import complete_pdf_processing_with_knowledge_graph
                     from django.db import transaction
                     
-                    # 🚀 ASYNC FIX: Use .delay() with transaction safety
-                    transaction.on_commit(
-                        lambda: complete_pdf_processing_with_knowledge_graph.delay(
-                            pdf_doc.id,
+                    # 🚀 ASYNC FIX: Use .delay() with transaction safety and pass bytes
+                    def _enqueue_after_commit_bulk(doc_id):
+                        try:
+                            from .models import PDFDocument
+                            d = PDFDocument.objects.get(id=doc_id)
+                            with d.pdf_file.open('rb') as f:
+                                fb = f.read()
+                        except Exception:
+                            fb = None
+                        complete_pdf_processing_with_knowledge_graph.delay(
+                            doc_id,
                             similarity_threshold=0.60,
                             dedup_threshold=0.85,
-                            kg_threshold=0.75
+                            kg_threshold=0.75,
+                            file_bytes=fb
                         )
-                    )
+
+                    transaction.on_commit(lambda did=pdf_doc.id: _enqueue_after_commit_bulk(did))
                     
                     # Store task ID for progress tracking
                     # Note: task ID will be generated after transaction commit
