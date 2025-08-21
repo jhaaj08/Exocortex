@@ -461,7 +461,7 @@ def merge_duplicate_focus_blocks(keep_block, merge_block):
 
 # ✅ UPDATED COMPLETE PIPELINE: Extract → Chunk → Generate Focus Blocks
 @shared_task
-def complete_pdf_processing_pipeline(pdf_document_id, similarity_threshold=0.60, comprehensive_coverage=True):
+def complete_pdf_processing_pipeline(pdf_document_id, similarity_threshold=0.60, comprehensive_coverage=True, file_b64=None):
     """
     Complete pipeline: Extract text → Advanced chunking → Generate focus blocks
     
@@ -475,7 +475,7 @@ def complete_pdf_processing_pipeline(pdf_document_id, similarity_threshold=0.60,
     try:
         # Step 1: Extract text
         logger.info("📄 Step 1: Extracting text...")
-        extraction_result = extract_pdf_text_task(pdf_document_id)
+        extraction_result = extract_pdf_text_task(pdf_document_id, file_b64=file_b64)
         
         if not extraction_result['success']:
             error_msg = f"Text extraction failed: {extraction_result['message']}"
@@ -564,7 +564,7 @@ def complete_pdf_processing_pipeline(pdf_document_id, similarity_threshold=0.60,
 
 # ✅ ENHANCED COMPLETE PIPELINE: Extract → Chunk → Generate → Embed → Deduplicate
 @shared_task
-def complete_pdf_processing_with_deduplication(pdf_document_id, similarity_threshold=0.60, dedup_threshold=0.85):
+def complete_pdf_processing_with_deduplication(pdf_document_id, similarity_threshold=0.60, dedup_threshold=0.85, file_b64=None):
     """
     Complete pipeline with deduplication: Extract → Chunk → Generate → Embed → Deduplicate
     """
@@ -576,7 +576,7 @@ def complete_pdf_processing_with_deduplication(pdf_document_id, similarity_thres
     try:
         # Step 1-3: Run the existing pipeline
         logger.info("📄 Steps 1-3: Running extraction, chunking, and focus block generation...")
-        pipeline_result = complete_pdf_processing_pipeline(pdf_document_id, similarity_threshold)
+        pipeline_result = complete_pdf_processing_pipeline(pdf_document_id, similarity_threshold, file_b64=file_b64)
         
         if not pipeline_result['success']:
             return pipeline_result
@@ -625,7 +625,7 @@ def complete_pdf_processing_with_deduplication(pdf_document_id, similarity_thres
 logger = logging.getLogger(__name__)
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
-def extract_pdf_text_task(self, pdf_document_id):
+def extract_pdf_text_task(self, pdf_document_id, file_b64=None):
     """
     Self-contained Celery task for PDF text extraction
     
@@ -695,12 +695,26 @@ def extract_pdf_text_task(self, pdf_document_id):
                 }
             }
         
-        # ✅ STEP 3: Extract text via storage-safe method (works with S3)
+        # ✅ STEP 3: Extract text from base64 if provided; else fallback to storage-safe method
         try:
             extractor = PDFTextExtractor()
-            
-            # Use default_storage-backed read (local or S3)
-            text, page_count, extraction_method = extractor.extract_text_from_file_content(pdf_document)
+
+            if file_b64:
+                import base64
+                try:
+                    file_content = base64.b64decode(file_b64)
+                except Exception as decode_err:
+                    raise Exception(f"Failed to decode base64: {decode_err}")
+
+                # Prefer pdfplumber, fallback to PyPDF2
+                text, page_count = extractor.extract_text_pdfplumber_from_content(file_content)
+                extraction_method = "pdfplumber"
+                if not text or len(text.strip()) < 50:
+                    text, page_count = extractor.extract_text_pypdf2_from_content(file_content)
+                    extraction_method = "pypdf2"
+            else:
+                # Use default_storage-backed read (local or S3)
+                text, page_count, extraction_method = extractor.extract_text_from_file_content(pdf_document)
             
             # Validate extraction
             if not text or len(text.strip()) < 50:
@@ -1738,7 +1752,7 @@ def create_comprehensive_focus_block(client, community_data, pdf_document, block
 
 # ✅ ENHANCED COMPLETE PIPELINE: Extract → Chunk → Generate → Embed → Deduplicate → Knowledge Graph
 @shared_task
-def complete_pdf_processing_with_knowledge_graph(pdf_document_id, similarity_threshold=0.60, dedup_threshold=0.85, kg_threshold=0.75):
+def complete_pdf_processing_with_knowledge_graph(pdf_document_id, similarity_threshold=0.60, dedup_threshold=0.85, kg_threshold=0.75, file_b64=None):
     """
     Complete pipeline with knowledge graph: Extract → Chunk → Generate → Embed → Deduplicate → Build Knowledge Graph
     """
@@ -1751,7 +1765,7 @@ def complete_pdf_processing_with_knowledge_graph(pdf_document_id, similarity_thr
         # Steps 1-5: Run the existing pipeline with deduplication
         logger.info("📄 Steps 1-5: Running complete pipeline with deduplication...")
         pipeline_result = complete_pdf_processing_with_deduplication(
-            pdf_document_id, similarity_threshold, dedup_threshold
+            pdf_document_id, similarity_threshold, dedup_threshold, file_b64=file_b64
         )
         
         if not pipeline_result['success']:

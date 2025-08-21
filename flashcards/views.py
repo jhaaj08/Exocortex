@@ -60,15 +60,25 @@ def upload(request):
                 from .tasks import complete_pdf_processing_with_knowledge_graph
                 from django.db import transaction
                 
-                # 🚀 ASYNC FIX: Use .delay() with transaction safety
-                transaction.on_commit(
-                    lambda: complete_pdf_processing_with_knowledge_graph.delay(
-                        pdf_document.id,
+                # 🚀 ASYNC FIX: Use .delay() with transaction safety and pass base64
+                import base64
+                def _enqueue_after_commit(doc_id):
+                    try:
+                        from .models import PDFDocument
+                        doc = PDFDocument.objects.get(id=doc_id)
+                        with doc.pdf_file.open('rb') as f:
+                            file_b64 = base64.b64encode(f.read()).decode('ascii')
+                    except Exception:
+                        file_b64 = None
+                    complete_pdf_processing_with_knowledge_graph.delay(
+                        doc_id,
                         similarity_threshold=0.60,
                         dedup_threshold=0.85,
-                        kg_threshold=0.75
+                        kg_threshold=0.75,
+                        file_b64=file_b64
                     )
-                )
+
+                transaction.on_commit(lambda doc_id=pdf_document.id: _enqueue_after_commit(doc_id))
                 
                 # Store task ID for progress tracking (optional)
                 # Note: task ID will be generated after transaction commit
@@ -2242,21 +2252,30 @@ def bulk_upload(request):
                     from .tasks import complete_pdf_processing_with_knowledge_graph
                     from django.db import transaction
                     
-                    # 🚀 ASYNC FIX: Use .delay() with transaction safety
-                    transaction.on_commit(
-                        lambda: complete_pdf_processing_with_knowledge_graph.delay(
-                            pdf_doc.id,
+                    # 🚀 ASYNC FIX: Use .delay() with transaction safety and pass base64
+                    import base64
+                    def _enqueue_after_commit_bulk(doc_id):
+                        try:
+                            from .models import PDFDocument
+                            d = PDFDocument.objects.get(id=doc_id)
+                            with d.pdf_file.open('rb') as f:
+                                fb64 = base64.b64encode(f.read()).decode('ascii')
+                        except Exception:
+                            fb64 = None
+                        complete_pdf_processing_with_knowledge_graph.delay(
+                            doc_id,
                             similarity_threshold=0.60,
                             dedup_threshold=0.85,
-                            kg_threshold=0.75
+                            kg_threshold=0.75,
+                            file_b64=fb64
                         )
-                    )
+
+                    transaction.on_commit(lambda did=pdf_doc.id: _enqueue_after_commit_bulk(did))
                     
                     # Store task ID for progress tracking
                     # Note: task ID will be generated after transaction commit
                     pdf_doc.save()
-                    
-                        uploaded_count += 1
+                    uploaded_count += 1
                     print(f"✅ {file.name}: Processing started in background")
                             
                 except Exception as e:
