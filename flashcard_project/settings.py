@@ -30,7 +30,7 @@ SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-c8hejgnc%kza27xf903
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'True').lower() == 'true'
 
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,*.railway.app').split(',')
 
 
 # Application definition
@@ -189,8 +189,8 @@ if not DEBUG:
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
 # Celery Configuration
-CELERY_BROKER_URL = 'redis://localhost:6379/0'  # or 'memory://' for testing
-CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'  # or 'cache+memcached://127.0.0.1:11211/'
+CELERY_BROKER_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+CELERY_RESULT_BACKEND = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
 
 # Celery Task Configuration
 CELERY_ACCEPT_CONTENT = ['json']
