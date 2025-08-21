@@ -30,7 +30,7 @@ SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-c8hejgnc%kza27xf903
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'True').lower() == 'true'
 
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,*.railway.app,healthcheck.railway.app').split(',')
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '*').split(',') if os.getenv('RAILWAY_ENVIRONMENT') else ['localhost', '127.0.0.1']
 
 
 # Application definition
@@ -202,8 +202,10 @@ CSRF_COOKIE_HTTPONLY = False
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
 # Celery Configuration
-CELERY_BROKER_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
-CELERY_RESULT_BACKEND = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+print(f"🔴 Redis URL being used: {REDIS_URL}")  # Debug
+CELERY_BROKER_URL = REDIS_URL
+CELERY_RESULT_BACKEND = REDIS_URL
 
 # Celery Task Configuration
 CELERY_ACCEPT_CONTENT = ['json']
