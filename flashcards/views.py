@@ -56,17 +56,20 @@ def upload(request):
                 
                 # 🚀 ONLY call the comprehensive pipeline from tasks.py
                 from .tasks import complete_pdf_processing_with_knowledge_graph
+                from django.db import transaction
                 
-                # 🚀 ASYNC FIX: Use .delay() for background processing
-                task = complete_pdf_processing_with_knowledge_graph.delay(
-                    pdf_document.id,
-                    similarity_threshold=0.60,
-                    dedup_threshold=0.85,
-                    kg_threshold=0.75
+                # 🚀 ASYNC FIX: Use .delay() with transaction safety
+                transaction.on_commit(
+                    lambda: complete_pdf_processing_with_knowledge_graph.delay(
+                        pdf_document.id,
+                        similarity_threshold=0.60,
+                        dedup_threshold=0.85,
+                        kg_threshold=0.75
+                    )
                 )
                 
                 # Store task ID for progress tracking (optional)
-                pdf_document.task_id = getattr(task, 'id', None)
+                # Note: task ID will be generated after transaction commit
                 pdf_document.save()
                 
                 messages.success(request, f'📤 {pdf_document.name} uploaded! Processing in background...')
@@ -2222,17 +2225,20 @@ def bulk_upload(request):
                 try:
                     print(f"🚀 Processing {file.name} with comprehensive pipeline...")
                     from .tasks import complete_pdf_processing_with_knowledge_graph
+                    from django.db import transaction
                     
-                    # 🚀 ASYNC FIX: Use .delay() for background processing
-                    task = complete_pdf_processing_with_knowledge_graph.delay(
-                        pdf_doc.id,
-                        similarity_threshold=0.60,
-                        dedup_threshold=0.85,
-                        kg_threshold=0.75
+                    # 🚀 ASYNC FIX: Use .delay() with transaction safety
+                    transaction.on_commit(
+                        lambda: complete_pdf_processing_with_knowledge_graph.delay(
+                            pdf_doc.id,
+                            similarity_threshold=0.60,
+                            dedup_threshold=0.85,
+                            kg_threshold=0.75
+                        )
                     )
                     
                     # Store task ID for progress tracking
-                    pdf_doc.task_id = getattr(task, 'id', None)
+                    # Note: task ID will be generated after transaction commit
                     pdf_doc.save()
                     
                     uploaded_count += 1
@@ -5359,7 +5365,7 @@ def save_block_rating(request):
         print(f"❌ Error saving block rating: {e}")
         return JsonResponse({'success': False, 'error': str(e)})
 
-def extract_pdf_text_task(pdf_document_id):
+def extract_pdf_text_local(pdf_document_id):
     """
     Heavy text extraction task - designed for Celery background processing
     
@@ -5501,7 +5507,7 @@ try:
         Celery task wrapper for PDF text extraction
         """
         try:
-            result = extract_pdf_text_task(pdf_document_id)
+            result = extract_pdf_text_local(pdf_document_id)
             
             if not result['success']:
                 # Retry on failure (up to max_retries)
