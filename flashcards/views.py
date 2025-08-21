@@ -60,24 +60,15 @@ def upload(request):
                 from .tasks import complete_pdf_processing_with_knowledge_graph
                 from django.db import transaction
                 
-                # 🚀 ASYNC FIX: Use .delay() with transaction safety, pass file bytes to avoid cross-container FS
-                def _enqueue_after_commit(doc_id):
-                    try:
-                        from .models import PDFDocument
-                        doc = PDFDocument.objects.get(id=doc_id)
-                        with doc.pdf_file.open('rb') as f:
-                            file_bytes = f.read()
-                    except Exception:
-                        file_bytes = None
-                    complete_pdf_processing_with_knowledge_graph.delay(
-                        doc_id,
+                # 🚀 ASYNC FIX: Use .delay() with transaction safety
+                transaction.on_commit(
+                    lambda: complete_pdf_processing_with_knowledge_graph.delay(
+                        pdf_document.id,
                         similarity_threshold=0.60,
                         dedup_threshold=0.85,
-                        kg_threshold=0.75,
-                        file_bytes=file_bytes
+                        kg_threshold=0.75
                     )
-
-                transaction.on_commit(lambda doc_id=pdf_document.id: _enqueue_after_commit(doc_id))
+                )
                 
                 # Store task ID for progress tracking (optional)
                 # Note: task ID will be generated after transaction commit
@@ -470,11 +461,11 @@ def process_pdf_complete(pdf_document):
     import time
     from .storage_utils import materialize_file_to_tmp
     from .pdf_service import PDFTextExtractor
-
+    
     start_time = time.time()
     try:
         print(f"🚀 Processing: {pdf_document.name}")
-
+        
         # Use a storage-aware temp path for initial/lightweight extraction if needed
         extractor = PDFTextExtractor()
         local_path, cleanup = materialize_file_to_tmp(pdf_document.pdf_file)
@@ -517,8 +508,8 @@ def process_pdf_complete(pdf_document):
             # Ensure the PDF is marked as processed (task should have done this already)
             pdf_document.refresh_from_db()
             if not pdf_document.processed:
-                pdf_document.processed = True
-                pdf_document.save()
+            pdf_document.processed = True
+            pdf_document.save()
             
             return True, f"📚 Content already exists as '{duplicate_info['existing_name']}'!", {}
         
@@ -545,57 +536,57 @@ def process_pdf_complete(pdf_document):
         error_msg = f"Celery task execution failed: {str(task_error)}"
         print(f"❌ {error_msg}")
         return False, error_msg, {}
+        
+        # ✅ STEP 4: No duplicates - NOW do the heavy processing
+        print("🆕 Unique content - starting heavy processing...")
+        
     
-    # ✅ STEP 4: No duplicates - NOW do the heavy processing
-    print("🆕 Unique content - starting heavy processing...")
-    
-    
-    
-    # ✅ STEP 5: NEW - Generate new format focus blocks directly
-    blocks_success, blocks_message, focus_blocks = generate_new_format_focus_blocks(pdf_document)
-    if not blocks_success:
-        return False, f"New focus blocks failed: {blocks_message}", {}
-    
-    # ✅ STEP 6: NEW - Auto-update knowledge graph
-    try:
-        update_knowledge_graph_with_new_blocks(focus_blocks)
-        print("🕸️ Knowledge graph updated with new blocks")
-    except Exception as e:
-        print(f"⚠️ Knowledge graph update failed: {str(e)} (blocks still created)")
-    
-    pdf_document.processed = True
-   
-    end_time = time.time()
-    processing_duration = round(end_time - start_time, 2)
-    print(f"🕐 Processing ended at: {end_time}")
-    pdf_document.processing_duration = processing_duration
-    print(f"💾 About to save processing_duration: {pdf_document.processing_duration}")
-    pdf_document.save()
-    print(f"✅ Saved! PDF processing_duration in DB: {pdf_document.processing_duration}")
-    # Store processing info in cache for progress page
-    from django.core.cache import cache
-    processing_info = {
-        'pdf_name': pdf_document.name,
-        'pdf_size': pdf_document.pdf_file.size if pdf_document.pdf_file else 0,
-        'page_count': pdf_document.page_count or 0,
-        'word_count': pdf_document.word_count or 0,
-        'total_duration': processing_duration,
-        'focus_blocks_created': [
-            {
-                'title': block.title,
-                'id': str(block.id),
-                'segments_count': len(block.compact7_data.get('segments', [])),
-                'difficulty': block.difficulty_level,
-                'duration': block.target_duration
-            }
-            for block in focus_blocks
-        ],
-        'success': True
-    }
-    cache.set(f'pdf_progress_{pdf_document.id}', processing_info, timeout=3600)
+        
+        # ✅ STEP 5: NEW - Generate new format focus blocks directly
+        blocks_success, blocks_message, focus_blocks = generate_new_format_focus_blocks(pdf_document)
+        if not blocks_success:
+            return False, f"New focus blocks failed: {blocks_message}", {}
+        
+        # ✅ STEP 6: NEW - Auto-update knowledge graph
+        try:
+            update_knowledge_graph_with_new_blocks(focus_blocks)
+            print("🕸️ Knowledge graph updated with new blocks")
+        except Exception as e:
+            print(f"⚠️ Knowledge graph update failed: {str(e)} (blocks still created)")
+        
+        pdf_document.processed = True
+       
+        end_time = time.time()
+        processing_duration = round(end_time - start_time, 2)
+        print(f"🕐 Processing ended at: {end_time}")
+        pdf_document.processing_duration = processing_duration
+        print(f"💾 About to save processing_duration: {pdf_document.processing_duration}")
+        pdf_document.save()
+        print(f"✅ Saved! PDF processing_duration in DB: {pdf_document.processing_duration}")
+        # Store processing info in cache for progress page
+        from django.core.cache import cache
+        processing_info = {
+            'pdf_name': pdf_document.name,
+            'pdf_size': pdf_document.pdf_file.size if pdf_document.pdf_file else 0,
+            'page_count': pdf_document.page_count or 0,
+            'word_count': pdf_document.word_count or 0,
+            'total_duration': processing_duration,
+            'focus_blocks_created': [
+                {
+                    'title': block.title,
+                    'id': str(block.id),
+                    'segments_count': len(block.compact7_data.get('segments', [])),
+                    'difficulty': block.difficulty_level,
+                    'duration': block.target_duration
+                }
+                for block in focus_blocks
+            ],
+            'success': True
+        }
+        cache.set(f'pdf_progress_{pdf_document.id}', processing_info, timeout=3600)
 
 
-    return True, f"✅ Processed! Generated {len(focus_blocks)} new format focus blocks.", {}
+        return True, f"✅ Processed! Generated {len(focus_blocks)} new format focus blocks.", {}
         
     except Exception as e:
         return False, f"Error: {str(e)}", {}
@@ -2251,30 +2242,21 @@ def bulk_upload(request):
                     from .tasks import complete_pdf_processing_with_knowledge_graph
                     from django.db import transaction
                     
-                    # 🚀 ASYNC FIX: Use .delay() with transaction safety and pass bytes
-                    def _enqueue_after_commit_bulk(doc_id):
-                        try:
-                            from .models import PDFDocument
-                            d = PDFDocument.objects.get(id=doc_id)
-                            with d.pdf_file.open('rb') as f:
-                                fb = f.read()
-                        except Exception:
-                            fb = None
-                        complete_pdf_processing_with_knowledge_graph.delay(
-                            doc_id,
+                    # 🚀 ASYNC FIX: Use .delay() with transaction safety
+                    transaction.on_commit(
+                        lambda: complete_pdf_processing_with_knowledge_graph.delay(
+                            pdf_doc.id,
                             similarity_threshold=0.60,
                             dedup_threshold=0.85,
-                            kg_threshold=0.75,
-                            file_bytes=fb
+                            kg_threshold=0.75
                         )
-
-                    transaction.on_commit(lambda did=pdf_doc.id: _enqueue_after_commit_bulk(did))
+                    )
                     
                     # Store task ID for progress tracking
                     # Note: task ID will be generated after transaction commit
                     pdf_doc.save()
                     
-                    uploaded_count += 1
+                        uploaded_count += 1
                     print(f"✅ {file.name}: Processing started in background")
                             
                 except Exception as e:

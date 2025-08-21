@@ -257,3 +257,17 @@ CELERY_RESULT_PERSISTENT = True
 # ✅ TASK EXECUTION SETTINGS
 CELERY_TASK_ACKS_LATE = True  # Acknowledge tasks after completion
 CELERY_TASK_REJECT_ON_WORKER_LOST = True  # Retry if worker dies
+
+import os
+
+USE_S3 = os.getenv("USE_S3") == "1"
+if USE_S3:
+    INSTALLED_APPS += ["storages"]
+
+    DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
+    AWS_STORAGE_BUCKET_NAME = os.environ["AWS_STORAGE_BUCKET_NAME"]
+    AWS_S3_REGION_NAME = os.getenv("AWS_S3_REGION_NAME", "us-east-1")
+    AWS_S3_SIGNATURE_VERSION = "s3v4"
+    AWS_S3_FILE_OVERWRITE = False
+    AWS_DEFAULT_ACL = None
+    AWS_QUERYSTRING_AUTH = True  # signed URLs for private files
