@@ -262,12 +262,21 @@ import os
 
 USE_S3 = os.getenv("USE_S3") == "1"
 if USE_S3:
-    INSTALLED_APPS += ["storages"]
-
-    DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
-    AWS_STORAGE_BUCKET_NAME = os.environ["AWS_STORAGE_BUCKET_NAME"]
-    AWS_S3_REGION_NAME = os.getenv("AWS_S3_REGION_NAME", "us-east-1")
-    AWS_S3_SIGNATURE_VERSION = "s3v4"
-    AWS_S3_FILE_OVERWRITE = False
-    AWS_DEFAULT_ACL = None
-    AWS_QUERYSTRING_AUTH = True  # signed URLs for private files
+    # Only enable S3 if all required env vars are present; otherwise fall back safely
+    required = {
+        "AWS_STORAGE_BUCKET_NAME": os.getenv("AWS_STORAGE_BUCKET_NAME"),
+        "AWS_ACCESS_KEY_ID": os.getenv("AWS_ACCESS_KEY_ID"),
+        "AWS_SECRET_ACCESS_KEY": os.getenv("AWS_SECRET_ACCESS_KEY"),
+    }
+    if all(required.values()):
+        INSTALLED_APPS += ["storages"]
+        DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
+        AWS_STORAGE_BUCKET_NAME = required["AWS_STORAGE_BUCKET_NAME"]
+        AWS_S3_REGION_NAME = os.getenv("AWS_S3_REGION_NAME", "us-east-1")
+        AWS_S3_SIGNATURE_VERSION = "s3v4"
+        AWS_S3_FILE_OVERWRITE = False
+        AWS_DEFAULT_ACL = None
+        AWS_QUERYSTRING_AUTH = True  # signed URLs for private files
+    else:
+        # Missing S3 config; disable S3 to avoid startup crash
+        USE_S3 = False
