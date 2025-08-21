@@ -57,19 +57,20 @@ def upload(request):
                 # 🚀 ONLY call the comprehensive pipeline from tasks.py
                 from .tasks import complete_pdf_processing_with_knowledge_graph
                 
-                result = complete_pdf_processing_with_knowledge_graph(
+                # 🚀 ASYNC FIX: Use .delay() for background processing
+                task = complete_pdf_processing_with_knowledge_graph.delay(
                     pdf_document.id,
                     similarity_threshold=0.60,
                     dedup_threshold=0.85,
                     kg_threshold=0.75
                 )
                 
-                if result['success']:
-                    messages.success(request, f'✅ {pdf_document.name}: {result["message"]}')
-                    return redirect('flashcards:pdf_progress', pdf_id=pdf_document.id)
-                else:
-                    messages.error(request, f'❌ {pdf_document.name}: {result["message"]}')
-                    
+                # Store task ID for progress tracking (optional)
+                pdf_document.task_id = getattr(task, 'id', None)
+                pdf_document.save()
+                
+                messages.success(request, f'📤 {pdf_document.name} uploaded! Processing in background...')
+                return redirect('flashcards:pdf_progress', pdf_id=pdf_document.id)
             except Exception as e:
                 messages.error(request, f'❌ Pipeline error: {str(e)}')
     
@@ -2222,31 +2223,20 @@ def bulk_upload(request):
                     print(f"🚀 Processing {file.name} with comprehensive pipeline...")
                     from .tasks import complete_pdf_processing_with_knowledge_graph
                     
-                    result = complete_pdf_processing_with_knowledge_graph(
+                    # 🚀 ASYNC FIX: Use .delay() for background processing
+                    task = complete_pdf_processing_with_knowledge_graph.delay(
                         pdf_doc.id,
                         similarity_threshold=0.60,
                         dedup_threshold=0.85,
                         kg_threshold=0.75
                     )
                     
-                    if result['success']:
-                        uploaded_count += 1
-                        
-                        # Extract summary info
-                        pipeline_results = result.get('results', {})
-                        focus_blocks_data = pipeline_results.get('pipeline', {}).get('results', {}).get('focus_blocks', {}).get('data', {})
-                        blocks_created = focus_blocks_data.get('focus_blocks_created', 0)
-                        
-                        print(f"✅ {file.name}: {blocks_created} focus blocks created")
-                    else:
-                        message = result.get('message', 'Unknown error')
-                        if 'duplicate' in message.lower() or 'already exists' in message.lower():
-                            duplicate_count += 1
-                            print(f"🔄 {file.name}: Duplicate detected")
-                        else:
-                            error_count += 1
-                            messages.warning(request, f'{file.name}: {message}')
-                            print(f"❌ {file.name}: {message}")
+                    # Store task ID for progress tracking
+                    pdf_doc.task_id = getattr(task, 'id', None)
+                    pdf_doc.save()
+                    
+                    uploaded_count += 1
+                    print(f"✅ {file.name}: Processing started in background")
                             
                 except Exception as e:
                     error_count += 1
