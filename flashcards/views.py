@@ -5405,19 +5405,11 @@ def extract_pdf_text_task(pdf_document_id):
         
         print(f"📄 Starting text extraction for: {pdf_document.name}")
         
-        # ✅ STEP 1: Extract text from PDF file
+        # ✅ STEP 1: Extract text using file content method (Railway compatible)
         extractor = PDFTextExtractor()
-        pdf_path = pdf_document.pdf_file.path
         
-        # Try pdfplumber first
-        text, page_count = extractor.extract_text_pdfplumber(pdf_path)
-        extraction_method = "pdfplumber"
-        
-        # Fallback to PyPDF2 if needed
-        if not text or len(text.strip()) < 50:
-            print("📄 pdfplumber failed, trying PyPDF2 fallback...")
-            text, page_count = extractor.extract_text_pypdf2(pdf_path)
-            extraction_method = "pypdf2"
+        # Use the new file content method instead of file path
+        text, page_count, extraction_method = extractor.extract_text_from_file_content(pdf_document)
         
         # Validate extraction success
         if not text or len(text.strip()) < 50:

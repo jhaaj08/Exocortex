@@ -216,24 +216,44 @@ CSRF_COOKIE_HTTPONLY = False
 # OpenAI API Configuration
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
-# Celery Configuration
+# ✅ IMPROVED CELERY CONFIGURATION FOR RAILWAY
 REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
-print(f"🔴 Redis URL being used: {REDIS_URL}")  # Debug
+
+# Only print debug info in development
+if DEBUG:
+    print(f"🔴 Redis URL being used: {REDIS_URL}")
+
 CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL
 
-# Celery Task Configuration
+# ✅ RAILWAY-OPTIMIZED CELERY SETTINGS
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'UTC'
 
-# Task routing
-CELERY_TASK_ROUTES = {
-    'flashcards.tasks.extract_pdf_text_task': {'queue': 'pdf_processing'},
-    'flashcards.tasks.cleanup_failed_extractions': {'queue': 'cleanup'},
-}
+# ✅ REMOVE NAMED QUEUES (Railway doesn't handle them well)
+CELERY_TASK_ROUTES = {}  # Use default queue only
 
-# Task time limits
-CELERY_TASK_TIME_LIMIT = 600  # 10 minutes
-CELERY_TASK_SOFT_TIME_LIMIT = 540  # 9 minutes
+# ✅ RAILWAY-OPTIMIZED TIMEOUTS
+CELERY_TASK_TIME_LIMIT = 1800  # 30 minutes
+CELERY_TASK_SOFT_TIME_LIMIT = 1500  # 25 minutes
+
+# ✅ CELERY WORKER CONFIGURATION
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1  # Process one task at a time
+CELERY_WORKER_MAX_TASKS_PER_CHILD = 50  # Restart worker after 50 tasks
+CELERY_WORKER_DISABLE_RATE_LIMITS = True
+
+# ✅ CONNECTION SETTINGS
+CELERY_BROKER_POOL_LIMIT = 10
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_BROKER_CONNECTION_RETRY = True
+CELERY_BROKER_CONNECTION_MAX_RETRIES = 10
+
+# ✅ RESULT BACKEND SETTINGS
+CELERY_RESULT_EXPIRES = 3600  # Results expire after 1 hour
+CELERY_RESULT_PERSISTENT = True
+
+# ✅ TASK EXECUTION SETTINGS
+CELERY_TASK_ACKS_LATE = True  # Acknowledge tasks after completion
+CELERY_TASK_REJECT_ON_WORKER_LOST = True  # Retry if worker dies
