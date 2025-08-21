@@ -696,6 +696,7 @@ def extract_pdf_text_task(self, pdf_document_id, file_b64=None):
             }
         
         # ✅ STEP 3: Extract text from base64 if provided; else fallback to storage-safe method
+        file_content = None  # Initialize for later file size calculation
         try:
             extractor = PDFTextExtractor()
 
@@ -756,7 +757,15 @@ def extract_pdf_text_task(self, pdf_document_id, file_b64=None):
         # ✅ STEP 4: Calculate content metrics
         content_hash = hashlib.sha256(text.encode('utf-8')).hexdigest()
         word_count = len(text.split())
-        file_size = pdf_document.pdf_file.size if pdf_document.pdf_file else 0
+        
+        # Calculate file size safely - use base64 content if available, otherwise try storage
+        if file_content is not None:
+            file_size = len(file_content)
+        else:
+            try:
+                file_size = pdf_document.pdf_file.size if pdf_document.pdf_file else 0
+            except Exception:
+                file_size = 0  # Fallback when file not accessible
         
         logger.info(f"📊 Content metrics - Hash: {content_hash[:12]}..., Words: {word_count:,}")
         
