@@ -30,7 +30,22 @@ SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-c8hejgnc%kza27xf903
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'True').lower() == 'true'
 
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '*').split(',') if os.getenv('RAILWAY_ENVIRONMENT') else ['localhost', '127.0.0.1']
+# Hosts configuration - smart defaults for Railway + local development
+RAW_ALLOWED = os.getenv("DJANGO_ALLOWED_HOSTS") or os.getenv("ALLOWED_HOSTS")
+if RAW_ALLOWED:
+    ALLOWED_HOSTS = [h.strip() for h in RAW_ALLOWED.split(",") if h.strip()]
+else:
+    # Sensible defaults for local + Railway
+    ALLOWED_HOSTS = [
+        "localhost",
+        "127.0.0.1",
+        ".up.railway.app",       # your app domain(s)
+        ".railway.app",          # includes healthcheck.railway.app
+    ]
+
+# When DEBUG is true, it's often convenient to allow everything locally
+if DEBUG and "*" not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append("*")
 
 
 # Application definition
