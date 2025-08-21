@@ -5,6 +5,7 @@ import os
 import hashlib
 from difflib import SequenceMatcher
 
+
 class Folder(models.Model):
     """Model to store information about uploaded folders"""
     name = models.CharField(max_length=255)
@@ -40,7 +41,15 @@ class PDFDocument(models.Model):
     extracted_text = models.TextField(blank=True)
     cleaned_text = models.TextField(blank=True)  # ✅ ADD BACK
     processing_duration = models.FloatField(null=True, blank=True, help_text="Processing time in seconds")
-    # ✅ ADD: Deduplication fields
+    
+    # ✅ ADD: Advanced chunking data
+    advanced_chunks = models.JSONField(
+        default=dict, 
+        blank=True, 
+        help_text="Community-detected chunks with embeddings and metadata"
+    )
+    
+    # Deduplication fields
     is_duplicate = models.BooleanField(default=False)
     duplicate_of = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='duplicates')
     similarity_score = models.FloatField(default=0.0)
@@ -319,6 +328,27 @@ class FocusBlock(models.Model):
     learning_objectives = models.JSONField(default=list, help_text="List of learning objectives")
     prerequisite_concepts = models.JSONField(default=list, help_text="Prerequisite concepts")
     
+    # ✅ ADD: Embedding for deduplication
+    content_embedding = models.JSONField(
+        default=list, 
+        blank=True, 
+        help_text="Semantic embedding vector for deduplication (1536 dimensions)"
+    )
+    content_hash = models.CharField(
+        max_length=64, 
+        blank=True, 
+        db_index=True, 
+        help_text="Hash of content for quick duplicate detection"
+    )
+    is_merged = models.BooleanField(
+        default=False, 
+        help_text="True if this block was created by merging duplicates"
+    )
+    merged_from_blocks = models.JSONField(
+        default=list, 
+        help_text="List of block IDs that were merged into this one"
+    )
+    
     created_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:
@@ -420,6 +450,12 @@ class StudySession(models.Model):
     current_segment = models.IntegerField(default=0, help_text="Current segment index in current block")
     segment_progress = models.JSONField(default=dict, help_text="Completed segments per block: {block_id: [0,1,2,...]}")
     
+    # Block completion tracking
+    block_completion_data = models.JSONField(
+        default=dict,
+        help_text="Block completion data: {block_id: {rating: 1-5, time_spent: seconds, notes: 'text', timestamp: 'ISO'}}"
+    )
+    
     # Legacy flashcard tracking
     cards_shown = models.ManyToManyField(Flashcard, blank=True)
     current_page = models.IntegerField(default=1)
@@ -438,6 +474,20 @@ class StudySession(models.Model):
     
     created_at = models.DateTimeField(auto_now_add=True)
     last_accessed = models.DateTimeField(auto_now=True)
+    
+    # Phase 1: session lifecycle + planned playlist
+    status = models.CharField(
+        max_length=20,
+        choices=[('active','Active'), ('completed','Completed'), ('abandoned','Abandoned')],
+        default='active',
+    )
+    ended_at = models.DateTimeField(null=True, blank=True)
+    
+    planned_blocks = models.JSONField(default=list, help_text="Ordered list of planned FocusBlock ids as strings")
+    plan_position = models.IntegerField(default=0, help_text="Index into planned_blocks for current position")
+    
+    target_duration_min = models.IntegerField(null=True, blank=True)
+    mix_ratio_review = models.FloatField(default=0.3)
     
     def __str__(self):
         source = self.folder.name if self.folder else (self.pdf_document.name if self.pdf_document else "Unknown")
@@ -506,13 +556,16 @@ class StudySession(models.Model):
         return True
 
     def advance_to_next_block(self):
-        """Move to next uncompleted block"""
-        from django.db.models import Q
-        
+        """Move to next uncompleted block (prefer planned playlist if present)"""
+        from django.utils import timezone
+        # Use planned playlist if present
+        if self.planned_blocks:
+            return self.advance_by_plan()
+
         all_blocks = FocusBlock.objects.all().order_by('created_at', 'block_order')
         completed_ids = self.completed_focus_blocks.values_list('id', flat=True)
         uncompleted_blocks = all_blocks.exclude(id__in=completed_ids)
-        
+
         if uncompleted_blocks.exists():
             next_block = uncompleted_blocks.first()
             self.current_focus_block = next_block
@@ -523,9 +576,227 @@ class StudySession(models.Model):
         else:
             # All blocks completed
             self.current_focus_block = None
+            self.status = 'completed'
+            self.ended_at = timezone.now()
             self.save()
             print("🎉 All blocks completed!")
             return False
+    
+    def save_block_completion(self, block_id, proficiency_rating, time_spent_seconds, notes=""):
+        """Save block completion data including rating, time, and notes"""
+        from datetime import datetime
+        
+        block_id = str(block_id)
+        
+        # Initialize block_completion_data if needed
+        if not isinstance(self.block_completion_data, dict):
+            self.block_completion_data = {}
+        
+        # Save completion data
+        self.block_completion_data[block_id] = {
+            'proficiency_rating': proficiency_rating,
+            'time_spent_seconds': time_spent_seconds,
+            'notes': notes,
+            'timestamp': datetime.now().isoformat(),
+            'completed_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+        
+        self.save()
+        
+        print(f"✅ Saved block completion: Block {block_id}, Rating: {proficiency_rating}/5, Time: {time_spent_seconds}s")
+        return True
+    
+    # Phase 1: planning helpers
+    def set_plan(self, block_ids):
+        """Set the planned playlist and position; ensure current block is first uncompleted in plan."""
+        self.planned_blocks = [str(bid) for bid in block_ids]
+        self.plan_position = 0
+        # set current block to first planned that's not completed
+        for bid in self.planned_blocks:
+            try:
+                fb = FocusBlock.objects.get(id=bid)
+            except FocusBlock.DoesNotExist:
+                continue
+            if fb not in self.completed_focus_blocks.all():
+                self.current_focus_block = fb
+                break
+        self.status = 'active'
+        self.save()
+
+    def advance_by_plan(self):
+        """Advance using planned playlist; complete session when plan is exhausted."""
+        from django.utils import timezone
+        if not self.planned_blocks:
+            return self.advance_to_next_block()
+
+        n = len(self.planned_blocks)
+        pos = self.plan_position + 1
+        while pos < n:
+            try:
+                fb = FocusBlock.objects.get(id=self.planned_blocks[pos])
+            except FocusBlock.DoesNotExist:
+                pos += 1
+                continue
+            if fb not in self.completed_focus_blocks.all():
+                self.plan_position = pos
+                self.current_focus_block = fb
+                self.current_segment = 0
+                self.save()
+                print(f"🔄 Advanced by plan to: {fb.title}")
+                return True
+            pos += 1
+
+        # Plan exhausted
+        self.current_focus_block = None
+        self.status = 'completed'
+        self.ended_at = timezone.now()
+        self.save()
+        print("🎉 Planned playlist completed!")
+        return False
+    
+    @classmethod
+    def create_intelligent_plan(cls, user, target_duration_min=60, review_ratio=0.3):
+        """Create an intelligent study plan mixing new and review blocks"""
+        from django.contrib.auth.models import User
+        
+        # For now, use first admin user if user is None
+        if user is None:
+            user = User.objects.filter(is_superuser=True).first()
+            if not user:
+                print("⚠️ No admin user found, using simple plan")
+                return cls._create_simple_plan(target_duration_min)
+        
+        print(f"🧠 Creating intelligent plan for {user.username}")
+        print(f"📊 Target: {target_duration_min}min, Review ratio: {review_ratio:.0%}")
+        
+        # Get different types of blocks
+        due_states = UserBlockState.get_due_blocks_for_user(user)
+        struggling_states = UserBlockState.get_struggling_blocks_for_user(user)
+        new_blocks = UserBlockState.get_new_blocks_for_user(user)
+        
+        due_blocks = [state.block for state in due_states[:10]]  # Limit due blocks
+        struggling_blocks = [state.block for state in struggling_states[:5]]  # Priority struggling
+        
+        print(f"📚 Found: {len(due_blocks)} due, {len(struggling_blocks)} struggling, {len(new_blocks)} new")
+        
+        # Calculate target counts
+        avg_block_duration = 7  # minutes
+        total_blocks = max(1, target_duration_min // avg_block_duration)
+        review_count = int(total_blocks * review_ratio)
+        new_count = total_blocks - review_count
+        
+        # Build review list (prioritize struggling, then due)
+        review_blocks = []
+        review_blocks.extend(struggling_blocks[:review_count])
+        
+        if len(review_blocks) < review_count:
+            remaining_review = review_count - len(review_blocks)
+            review_blocks.extend([b for b in due_blocks if b not in review_blocks][:remaining_review])
+        
+        # Add new blocks
+        new_blocks_list = list(new_blocks[:new_count])
+        
+        # Combine and order using knowledge graph
+        all_planned_blocks = review_blocks + new_blocks_list
+        ordered_blocks = cls._order_by_prerequisites(all_planned_blocks)
+        
+        print(f"✅ Plan created: {len(review_blocks)} review + {len(new_blocks_list)} new = {len(ordered_blocks)} total")
+        
+        return [str(block.id) for block in ordered_blocks]
+    
+    @classmethod
+    def _create_simple_plan(cls, target_duration_min=60):
+        """Fallback: simple plan with all uncompleted blocks"""
+        print("📝 Creating simple plan (all uncompleted blocks)")
+        
+        # Get all focus blocks, excluding completed ones
+        all_completed_ids = StudySession.objects.values_list('completed_focus_blocks', flat=True).distinct()
+        uncompleted_blocks = FocusBlock.objects.exclude(id__in=all_completed_ids).order_by('created_at', 'block_order')
+        
+        # Limit by target duration
+        avg_block_duration = 7  # minutes
+        max_blocks = target_duration_min // avg_block_duration
+        
+        limited_blocks = uncompleted_blocks[:max_blocks]
+        print(f"📊 Simple plan: {len(limited_blocks)} blocks (max {max_blocks})")
+        
+        return [str(block.id) for block in limited_blocks]
+    
+    @classmethod
+    def _order_by_prerequisites(cls, blocks):
+        """Order blocks based on prerequisite relationships from knowledge graph"""
+        try:
+            # Try to use knowledge graph for ordering
+            from django.db.models import Q
+            
+            # Get all prerequisite relationships
+            prereq_relationships = FocusBlockRelationship.objects.filter(
+                relationship_type='prerequisite',
+                from_block__in=blocks,
+                to_block__in=blocks
+            ).select_related('from_block', 'to_block')
+            
+            if not prereq_relationships.exists():
+                # No relationships found, return original order
+                print("📋 No prerequisites found, using default order")
+                return blocks
+            
+            # Build dependency graph
+            dependencies = {}
+            for block in blocks:
+                dependencies[block.id] = []
+            
+            for rel in prereq_relationships:
+                # to_block depends on from_block
+                if rel.to_block.id in dependencies:
+                    dependencies[rel.to_block.id].append(rel.from_block.id)
+            
+            # Topological sort
+            ordered_ids = cls._topological_sort(dependencies)
+            
+            # Convert back to blocks in sorted order
+            block_dict = {block.id: block for block in blocks}
+            ordered_blocks = []
+            
+            for block_id in ordered_ids:
+                if block_id in block_dict:
+                    ordered_blocks.append(block_dict[block_id])
+            
+            # Add any remaining blocks that weren't in the dependency graph
+            remaining_blocks = [b for b in blocks if b not in ordered_blocks]
+            ordered_blocks.extend(remaining_blocks)
+            
+            print(f"🔗 Applied prerequisite ordering: {len(ordered_blocks)} blocks")
+            return ordered_blocks
+            
+        except Exception as e:
+            print(f"⚠️ Error ordering by prerequisites: {e}")
+            return blocks
+    
+    @classmethod
+    def _topological_sort(cls, dependencies):
+        """Simple topological sort for prerequisite ordering"""
+        # Kahn's algorithm
+        in_degree = {}
+        for node in dependencies:
+            in_degree[node] = len(dependencies[node])
+        
+        # Find nodes with no dependencies
+        queue = [node for node in in_degree if in_degree[node] == 0]
+        result = []
+        
+        while queue:
+            node = queue.pop(0)
+            result.append(node)
+            
+            # Find nodes that depend on this node
+            for other_node, deps in dependencies.items():
+                if node in deps:
+                    in_degree[other_node] -= 1
+                    if in_degree[other_node] == 0:
+                        queue.append(other_node)
+        
+        return result
 
 class FocusSession(models.Model):
     """Track individual focus block study sessions"""
@@ -641,4 +912,174 @@ class FocusBlockRelationship(models.Model):
             to_block=self.from_block,
             relationship_type=self.relationship_type
         ).first() 
+
+
+class UserBlockState(models.Model):
+    """Phase 2: Track per-user scheduling state for each focus block (spaced repetition)"""
+    
+    STATUS_CHOICES = [
+        ('new', 'New'),
+        ('learning', 'Learning'),
+        ('review', 'Review'),
+        ('lapsed', 'Lapsed'),
+        ('suspended', 'Suspended'),
+    ]
+    
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='block_states')
+    block = models.ForeignKey(FocusBlock, on_delete=models.CASCADE, related_name='user_states')
+    
+    # Scheduling state
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='new')
+    last_reviewed_at = models.DateTimeField(null=True, blank=True)
+    next_due_at = models.DateTimeField(null=True, blank=True)
+    
+    # Spaced repetition parameters
+    review_count = models.IntegerField(default=0, help_text="Number of times reviewed")
+    lapses = models.IntegerField(default=0, help_text="Number of times marked as difficult/forgotten")
+    ease_factor = models.FloatField(default=2.5, help_text="SM-2 ease factor (1.3-4.0)")
+    stability = models.FloatField(default=1.0, help_text="Memory stability in days")
+    
+    # Performance tracking
+    avg_rating = models.FloatField(null=True, blank=True, help_text="Average proficiency rating (1-5)")
+    recent_qa_score = models.FloatField(null=True, blank=True, help_text="Recent Q&A accuracy (0-1)")
+    total_time_spent = models.IntegerField(default=0, help_text="Total study time in seconds")
+    
+    # Metadata
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        unique_together = ['user', 'block']
+        ordering = ['next_due_at', '-updated_at']
+        indexes = [
+            models.Index(fields=['user', 'status']),
+            models.Index(fields=['next_due_at']),
+            models.Index(fields=['status', 'next_due_at']),
+        ]
+    
+    def __str__(self):
+        return f"{self.user.username} → {self.block.title} ({self.status})"
+    
+    def is_due(self):
+        """Check if this block is due for review"""
+        if not self.next_due_at:
+            return self.status == 'new'
+        from django.utils import timezone
+        return timezone.now() >= self.next_due_at
+    
+    def days_until_due(self):
+        """Get days until due (negative if overdue)"""
+        if not self.next_due_at:
+            return 0
+        from django.utils import timezone
+        delta = self.next_due_at - timezone.now()
+        return delta.days
+    
+    def update_from_rating(self, rating, time_spent_seconds=0, qa_correct=0, qa_total=0):
+        """Update scheduling parameters based on new rating (1-5)"""
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        self.last_reviewed_at = timezone.now()
+        self.review_count += 1
+        self.total_time_spent += time_spent_seconds
+        
+        # Update average rating
+        if self.avg_rating is None:
+            self.avg_rating = rating
+        else:
+            # Weighted average: recent ratings have more influence
+            self.avg_rating = (self.avg_rating * 0.7) + (rating * 0.3)
+        
+        # Update Q&A score if provided
+        if qa_total > 0:
+            qa_score = qa_correct / qa_total
+            if self.recent_qa_score is None:
+                self.recent_qa_score = qa_score
+            else:
+                self.recent_qa_score = (self.recent_qa_score * 0.6) + (qa_score * 0.4)
+        
+        # SM-2 algorithm adaptation
+        if rating >= 3:
+            # Successful recall
+            if self.status == 'new':
+                self.status = 'learning'
+                self.next_due_at = timezone.now() + timedelta(days=1)
+            elif self.status == 'learning':
+                self.status = 'review'
+                self.next_due_at = timezone.now() + timedelta(days=6)
+            else:
+                # Review mode: use ease factor
+                interval_days = max(1, int(self.stability * self.ease_factor))
+                self.next_due_at = timezone.now() + timedelta(days=interval_days)
+                self.stability = interval_days
+            
+            # Adjust ease factor based on rating
+            if rating == 5:
+                self.ease_factor = min(4.0, self.ease_factor + 0.15)
+            elif rating == 4:
+                self.ease_factor = min(4.0, self.ease_factor + 0.1)
+            # rating == 3: no change
+        else:
+            # Poor recall (rating 1-2): lapse
+            self.lapses += 1
+            self.status = 'lapsed'
+            self.ease_factor = max(1.3, self.ease_factor - 0.2)
+            self.stability = max(1, self.stability * 0.8)
+            # Short retry interval
+            self.next_due_at = timezone.now() + timedelta(hours=6)
+        
+        self.save()
+        print(f"📅 Updated {self.user.username} → {self.block.title}: {self.status}, due in {self.days_until_due()} days")
+    
+    @classmethod
+    def get_due_blocks_for_user(cls, user, include_overdue=True):
+        """Get blocks that are due for review for a specific user"""
+        from django.utils import timezone
+        
+        queryset = cls.objects.filter(user=user)
+        
+        if include_overdue:
+            # Include new blocks (no due date) and overdue blocks
+            queryset = queryset.filter(
+                models.Q(next_due_at__isnull=True, status='new') |
+                models.Q(next_due_at__lte=timezone.now())
+            )
+        else:
+            # Only blocks due today (not overdue)
+            today = timezone.now().date()
+            queryset = queryset.filter(
+                models.Q(next_due_at__isnull=True, status='new') |
+                models.Q(next_due_at__date=today)
+            )
+        
+        return queryset.select_related('block').order_by('next_due_at', 'status')
+    
+    @classmethod
+    def get_new_blocks_for_user(cls, user, exclude_completed=True):
+        """Get new blocks that user hasn't studied yet"""
+        studied_block_ids = cls.objects.filter(user=user).values_list('block_id', flat=True)
+        
+        queryset = FocusBlock.objects.exclude(id__in=studied_block_ids)
+        
+        if exclude_completed:
+            # Also exclude blocks completed in any study session
+            from django.db.models import Q
+            completed_in_sessions = StudySession.objects.filter(
+                completed_focus_blocks__isnull=False
+            ).values_list('completed_focus_blocks', flat=True)
+            queryset = queryset.exclude(id__in=completed_in_sessions)
+        
+        return queryset.order_by('created_at', 'block_order')
+    
+    @classmethod
+    def get_struggling_blocks_for_user(cls, user, threshold_rating=2.5):
+        """Get blocks where user is struggling (low avg rating or recent lapses)"""
+        return cls.objects.filter(
+            user=user
+        ).filter(
+            models.Q(avg_rating__lt=threshold_rating) |
+            models.Q(status='lapsed') |
+            models.Q(lapses__gte=2)
+        ).select_related('block').order_by('avg_rating', '-lapses') 
 

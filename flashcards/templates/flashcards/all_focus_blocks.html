@@ -5,7 +5,7 @@
 
 {% block content %}
 <div class="container-fluid">
-
+    
     <!-- Hidden StudySession data for JS -->
     <div id="session-data"
          data-session-id="{{ study_session.id|default:'' }}"
@@ -23,7 +23,7 @@
             </a>
         </div>
     </div>
-
+    
     {% else %}
     {# ───────────────────────── HEADER ──────────────────────────── #}
     <div class="row mb-4">
@@ -38,15 +38,15 @@
                                 {{ total_study_time|floatformat:0 }} min total
                             </span>
                         </p>
-                    </div>
-                </div>
+                        </div>
+                        </div>
                 <div class="progress" style="height:8px;">
                     <div class="progress-bar bg-success" id="main-progress"
                          style="width:{{ progress_percentage }}%"></div>
+                        </div>
+                    </div>
+                    </div>
                 </div>
-            </div>
-        </div>
-    </div>
 
     {# ─────────────────── MAIN LAYOUT (2-column) ─────────────────── #}
     <div class="row">
@@ -77,16 +77,17 @@
             {# ===== Segments Card =========================================== #}
             <div class="card mb-4"
                  id="segments-{{ forloop.counter0 }}"
-                 style="{% if not forloop.first %}display:none;{% endif %}">
+                 data-block-id="{{ block_data.block.id }}"
+                 style="{% if block_data.block.id != current_block.id %}display:none;{% endif %}">
                 <div class="card-header bg-success text-white d-flex justify-content-between">
-                    <h5 class="mb-0">
+                        <h5 class="mb-0">
                         <i class="fas fa-chalkboard-teacher me-2"></i>{{ block_data.block.title }}
-                    </h5>
+                        </h5>
                     <span class="badge bg-light text-dark">
-                        Block <span id="current-block">{{ forloop.counter }}</span>
-                        / {{ focus_blocks|length }}
+                        Block <span id="current-block">{{ current_block_position }}</span>
+                        / {{ total_all_blocks }}
                     </span>
-                </div>
+                            </div>
 
                 <div class="card-body">
                     {% for segment in block_data.segments %}
@@ -112,7 +113,7 @@
                                 </button>
                             </div>
                         </div>
-
+                        
                         {# --- Segment content chunks -------------------------- #}
                         {% if segment.content %}
                         <div class="content-section mb-3">
@@ -126,31 +127,31 @@
                                     {# Question (always visible) #}
                                     <div class="question-display mb-3 p-3 bg-white rounded">
                                         <strong>{{ segment.question }}</strong>
-                                    </div>
-                                    
+                </div>
+                
                                     {# Reveal Answer Button #}
                                     <div class="text-center mb-3">
                                         <button class="btn btn-primary" onclick="revealAnswer('qa_{{ forloop.parentloop.counter0 }}_{{ forloop.counter0 }}')">
                                             <i class="fas fa-eye me-1"></i>
                                             <span id="qa_{{ forloop.parentloop.counter0 }}_{{ forloop.counter0 }}_btntext">Show Answer</span>
                                         </button>
-                                    </div>
-                                    
+                                        </div>
+                                        
                                     {# Hidden Answer #}
                                     <div id="qa_{{ forloop.parentloop.counter0 }}_{{ forloop.counter0 }}" style="display:none;">
                                         <div class="alert alert-success">
                                             <h6><i class="fas fa-lightbulb"></i> Answer:</h6>
                                             {{ segment.answer }}
+                                                </div>
+                                            </div>
                                         </div>
-                                    </div>
-                                </div>
                             {% else %}
                                 {# Regular Content Segment #}
                                 <div class="p-3 bg-light rounded border-start border-4 border-primary">
                                     {{ segment.content|safe }}
-                                </div>
+                                    </div>
                             {% endif %}
-                        </div>
+                                </div>
                         {% endif %}
 
                         {% if segment.explanation %}
@@ -158,10 +159,10 @@
                             <div class="alert alert-info">
                                 <h6><i class="fas fa-lightbulb text-warning"></i> Key Insight:</h6>
                                 {{ segment.explanation|linebreaks }}
-                            </div>
-                        </div>
-                        {% endif %}
-
+                                    </div>
+                                    </div>
+                                    {% endif %}
+                                    
                         {% if segment.examples %}
                         <div class="examples-section mb-3">
                             <h6><i class="fas fa-list-alt text-success"></i> Examples:</h6>
@@ -170,12 +171,12 @@
                                 <div class="col-md-6 mb-2">
                                     <div class="card border-success">
                                         <div class="card-body p-2"><small>{{ example }}</small></div>
+                                            </div>
+                                        </div>
+                                {% endfor %}
                                     </div>
                                 </div>
-                                {% endfor %}
-                            </div>
-                        </div>
-                        {% endif %}
+                                {% endif %}
 
                         {# --- Personal notes ---------------------------------- #}
                         <div class="segment-notes mt-3">
@@ -187,8 +188,8 @@
                                       data-block="{{ forloop.parentloop.counter0 }}"
                                       data-segment="{{ forloop.counter0 }}"
                                       onchange="saveSegmentNote({{ forloop.parentloop.counter0 }}, {{ forloop.counter0 }}, this.value)"></textarea>
-                        </div>
-                    </div>
+                                        </div>
+                                    </div>
                     {% endfor %}
 
                     {# --- Segment navigation bar ----------------------------- #}
@@ -205,17 +206,17 @@
                                 <div class="progress-bar bg-success"
                                      id="segment-progress-bar-{{ forloop.counter0 }}"
                                      style="width:0%"></div>
-                            </div>
-                        </div>
+                                                </div>
+                                            </div>
 
                         <button class="btn btn-primary"
                                 id="next-btn-{{ forloop.counter0 }}"
                                 onclick="nextSegment({{ forloop.counter0 }})">
                             Next<i class="fas fa-chevron-right ms-2"></i>
                         </button>
-                    </div>
-                </div>
-            </div>
+                                        </div>
+                                    </div>
+                                </div>
 
             {# ===== Knowledge-Check Card ==================================== #}
             {% if block_data.qa_items %}
@@ -226,8 +227,8 @@
                     <h5 class="mb-0">
                         <i class="fas fa-question-circle me-2"></i>Knowledge Check
                     </h5>
-                </div>
-
+                                    </div>
+                                    
                 <div class="card-body">
                     {% for qa_item in block_data.qa_items %}
                     {% with qid='qa'|add:forloop.parentloop.counter0|add:'_'|add:forloop.counter0 %}
@@ -238,17 +239,17 @@
                             <strong class="text-info">
                                 <i class="fas fa-question-circle me-2"></i>{{ qa_item.question }}
                             </strong>
-                        </div>
-
+                                        </div>
+                                        
                         <!-- Toggle button -->
                         <div class="qa-actions text-center mb-3">
                             <button class="btn btn-outline-primary"
                                     onclick="revealAnswer('{{ qid }}')">
                                 <i class="fas fa-eye me-1"></i>
                                 <span id="{{ qid }}_btntext">Show Answer</span>
-                            </button>
-                        </div>
-
+                                            </button>
+                                        </div>
+                                        
                         <!-- Hidden answer -->
                         <div class="answer-section"
                              id="{{ qid }}"
@@ -256,7 +257,7 @@
                             <div class="alert alert-success">
                                 <h6><i class="fas fa-check-circle"></i> Answer:</h6>
                                 {{ qa_item.answer|linebreaks }}
-                            </div>
+                                            </div>
 
                             <!-- Self-rating -->
                             <div class="understanding-check mt-3">
@@ -272,19 +273,19 @@
                                     <label class="btn btn-outline-primary"
                                            for="{{ qid }}_{{ i }}">{{ i }}</label>
                                     {% endfor %}
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
-                        </div>
 
                         {% if qa_item.tag %}
                         <small class="badge bg-secondary mt-2">{{ qa_item.tag }}</small>
                         {% endif %}
-                    </div>
+                                    </div>
                     {% endwith %}
-                    {% endfor %}
-                </div>
-            </div>
-            {% endif %}
+                                            {% endfor %}
+                                    </div>
+                                </div>
+                                {% endif %}
         {% endfor %}  {# End for block loop #}
         </div><!-- /col-lg-8 -->
 
@@ -296,7 +297,7 @@
                     <h6 class="mb-0">
                         <i class="fas fa-chart-line text-success"></i> Study Progress
                     </h6>
-                </div>
+                            </div>
                 <div class="card-body">
                     <div class="progress-item mb-3">
                         <div class="d-flex justify-content-between mb-1">
@@ -307,33 +308,37 @@
                             <div class="progress-bar"
                                  id="sidebar-progress"
                                  style="width:{{ progress_percentage }}%"></div>
-                        </div>
                     </div>
-
+                </div>
+                
                     <div class="study-stats">
                         <div class="stat-item d-flex justify-content-between">
                             <span>Current Block:</span>
-                            <span><span id="current-block-number">1</span>/{{ focus_blocks|length }}</span>
+                            <span><span id="current-block-number">{{ current_block_position }}</span>/{{ total_all_blocks }}</span>
                         </div>
                         <div class="stat-item d-flex justify-content-between">
-                            <span>Segments:</span>
+                            <span>Segments (Current):</span>
                             <span>
-                                <span id="completed-segments">0</span>/
+                                <span id="completed-segments">1</span>/
                                 <span id="total-segments">{{ focus_blocks.0.total_segments }}</span>
                             </span>
-                        </div>
+                            </div>
                         <div class="stat-item d-flex justify-content-between">
-                            <span>Q&A Items:</span>
+                            <span>Q&A Items (Current):</span>
                             <span id="current-qa-count">{{ focus_blocks.0.total_qa }}</span>
                         </div>
                         <div class="stat-item d-flex justify-content-between">
-                            <span>Est. Time:</span>
+                            <span>Est. Time (Current):</span>
                             <span id="current-duration">{{ focus_blocks.0.estimated_duration }}</span>
                         </div>
-                    </div>
+                        <div class="stat-item d-flex justify-content-between">
+                            <span><strong>All Blocks Total:</strong></span>
+                            <span><strong><span id="all-blocks-stats">Loading...</span></strong></span>
                 </div>
             </div>
-
+                    </div>
+                </div>
+                
             {# ===== Timer Card ============================================== #}
             <div class="card mb-3">
                 <div class="card-header d-flex justify-content-between align-items-center">
@@ -345,27 +350,27 @@
                             onclick="togglePause()">
                         <i class="fas fa-pause" id="sidebar-pause-icon"></i>
                         <i class="fas fa-play d-none" id="sidebar-play-icon"></i>
-                    </button>
-                </div>
+                            </button>
+                        </div>
                 <div class="card-body text-center">
                     <div class="timer-display mb-3">
                         <div class="h4 text-primary mb-1" id="session-timer">00:00:00</div>
                         <small class="text-muted">Total Session Time</small>
-                    </div>
+                            </div>
                     <div class="timer-display">
                         <div class="h5 text-success mb-1" id="block-timer">00:00</div>
                         <small class="text-muted">Current Block</small>
+                        </div>
+                        </div>
                     </div>
-                </div>
-            </div>
-
+                    
             {# ===== Session Notes ========================================== #}
             <div class="card mb-3">
                 <div class="card-header">
                     <h6 class="mb-0">
                         <i class="fas fa-edit text-primary"></i> Session Notes
                     </h6>
-                </div>
+                    </div>
                 <div class="card-body">
                     <textarea class="form-control"
                               rows="6"
@@ -373,14 +378,104 @@
                               placeholder="General thoughts, connections, insights…"></textarea>
                     <div class="mt-2 text-end">
                         <small class="text-muted">Auto-saved</small>
-                    </div>
                 </div>
             </div>
+        </div>
         </div><!-- /col-lg-4 -->
     </div><!-- /row -->
     {% endif %}
 </div><!-- /container-fluid -->
 
+{# ──────────────── BLOCK COMPLETION MODAL ──────────────── #}
+<div class="modal fade" id="blockCompletionModal" tabindex="-1" aria-labelledby="blockCompletionModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title" id="blockCompletionModalLabel">
+                    <i class="fas fa-check-circle me-2"></i>Block Completed!
+                </h5>
+            </div>
+            <div class="modal-body text-center">
+                <div class="mb-4">
+                    <i class="fas fa-trophy text-warning fa-3x mb-3"></i>
+                    <h6 class="mb-2">Congratulations! You've completed:</h6>
+                    <h5 class="text-primary" id="completed-block-title">Block Title</h5>
+                </div>
+                
+                <div class="row mb-4">
+                    <div class="col-6">
+                        <div class="card bg-light">
+                            <div class="card-body py-2">
+                                <small class="text-muted">Time Spent</small>
+                                <div class="h5 text-success mb-0" id="block-completion-time">00:00</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="card bg-light">
+                            <div class="card-body py-2">
+                                <small class="text-muted">Segments</small>
+                                <div class="h5 text-info mb-0" id="block-completion-segments">0</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mb-4">
+                    <h6 class="mb-3">How well did you understand this block?</h6>
+                    <div class="proficiency-rating d-flex justify-content-center gap-3">
+                        <input type="radio" class="btn-check" name="blockProficiency" id="prof1" value="1">
+                        <label class="btn btn-outline-danger" for="prof1">
+                            <div class="rating-number">1</div>
+                            <small>Poor</small>
+                        </label>
+                        
+                        <input type="radio" class="btn-check" name="blockProficiency" id="prof2" value="2">
+                        <label class="btn btn-outline-warning" for="prof2">
+                            <div class="rating-number">2</div>
+                            <small>Below Avg</small>
+                        </label>
+                        
+                        <input type="radio" class="btn-check" name="blockProficiency" id="prof3" value="3">
+                        <label class="btn btn-outline-primary" for="prof3">
+                            <div class="rating-number">3</div>
+                            <small>Average</small>
+                        </label>
+                        
+                        <input type="radio" class="btn-check" name="blockProficiency" id="prof4" value="4">
+                        <label class="btn btn-outline-success" for="prof4">
+                            <div class="rating-number">4</div>
+                            <small>Good</small>
+                        </label>
+                        
+                        <input type="radio" class="btn-check" name="blockProficiency" id="prof5" value="5">
+                        <label class="btn btn-outline-success" for="prof5">
+                            <div class="rating-number">5</div>
+                            <small>Excellent</small>
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label small text-muted">Additional Notes (Optional)</label>
+                    <textarea class="form-control" 
+                              id="block-completion-notes" 
+                              rows="2" 
+                              placeholder="Any thoughts, questions, or insights about this block..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" onclick="skipRating()">
+                    Skip Rating
+                </button>
+                <button type="button" class="btn btn-success" onclick="saveBlockRating()" id="saveRatingBtn" disabled>
+                    <i class="fas fa-arrow-right me-2"></i>Continue to Next Block
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+    
 {# ──────────────────── JAVASCRIPT ──────────────────── #}
 <script>
 /* ---------- Knowledge-check toggle ------------------ */
@@ -422,9 +517,38 @@ function revealSegmentAnswer(id) {
 let currentBlockIndex = 0;
 let currentSegmentIndex = 0;
 
-document.addEventListener('DOMContentLoaded', () => {
-    showSegment(0,0);
-});
+// Show the correct current block after page load
+function showCurrentBlock() {
+    console.log('🎯 Finding current block to display...');
+    
+    {% if current_block %}
+    const currentBlockId = "{{ current_block.id }}";
+    console.log(`Looking for block with ID: ${currentBlockId}`);
+    
+    // Hide all blocks first
+    const allBlocks = document.querySelectorAll('[id^="segments-"]');
+    allBlocks.forEach(block => block.style.display = 'none');
+    
+    // Show the current block
+    const currentBlockEl = document.querySelector(`[data-block-id="${currentBlockId}"]`);
+    if (currentBlockEl) {
+        currentBlockEl.style.display = 'block';
+        const blockIndex = currentBlockEl.id.split('-')[1];
+        currentBlockIndex = parseInt(blockIndex);
+        console.log(`✅ Showing current block: ${currentBlockIndex}`);
+        showSegment(currentBlockIndex, 0);
+        updateCurrentBlockStats(currentBlockIndex);
+    } else {
+        console.log('❌ Current block element not found, showing first block');
+        showSegment(0, 0);
+    }
+    {% else %}
+    console.log('No current block from backend, showing first block');
+    showSegment(0, 0);
+    {% endif %}
+}
+
+// This will be handled by the main DOMContentLoaded below
 
 function showBlock(blockIdx){
     const allBlocks = document.querySelectorAll('[id^="segments-"]');
@@ -435,6 +559,7 @@ function showBlock(blockIdx){
         currentBlockIndex = blockIdx;
         currentSegmentIndex = 0;
         showSegment(blockIdx,0);
+        updateCurrentBlockStats(blockIdx);  // Update stats when switching blocks
     }
 }
 
@@ -502,14 +627,30 @@ function markSegmentComplete(blockIdx, segIdx){
     .then(r => r.json())
     .then(data => {
         if(data.success){
-            updateProgressDisplay(data.progress, segIdx + 1);
-            if(data.advanced_to_next){ setTimeout(() => location.reload(), 1000); }
-            if(data.all_completed){ alert('🎉 All focus blocks completed!'); }
+            updateProgressDisplay(data.progress, segIdx + 2);
+            
+            if(data.advanced_to_next){ 
+                // Block completed! Show rating modal instead of immediately advancing
+                const currentBlockData = {
+                    id: data.completed_block_id || currentCompletedBlock?.id,
+                    title: data.completed_block_title || 'Completed Block',
+                    segments_count: data.total_segments || 0
+                };
+                
+                // Calculate block completion time (from blockStartTime to now)
+                const blockTimeSpent = blockStartTime ? (new Date() - blockStartTime) : 0;
+                
+                console.log('🎉 Block completed! Showing rating modal...', currentBlockData);
+                showBlockCompletionModal(currentBlockData, blockTimeSpent);
+            }
+            else if(data.all_completed){ 
+                alert('🎉 All focus blocks completed!'); 
+            }
         }else{
             alert('Error: ' + (data.error || 'unknown'));
         }
-    })
-    .catch(e => alert('Network error'));
+        })
+        .catch(e => alert('Network error'));
 }
 
 function getCookie(name){
@@ -517,6 +658,424 @@ function getCookie(name){
     const parts = value.split(`; ${name}=`);
     if(parts.length === 2) return decodeURIComponent(parts.pop().split(';').shift());
     return '';
+}
+
+// ========== TIMER FUNCTIONALITY ==========
+let sessionStartTime = null;
+let blockStartTime = null;
+let sessionTimer = null;
+let blockTimer = null;
+let isPaused = false;
+let totalPausedTime = 0;
+let pauseStartTime = null;
+
+// Initialize everything when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('🚀 Initializing page...');
+    
+    // 1. Show correct current block first
+    showCurrentBlock();
+    
+    // 2. Start timers
+    startTimers();
+    
+    // 3. Calculate and update stats
+    calculateAndUpdateStats();
+    
+    // 4. Update current block stats (after currentBlockIndex is set)
+    updateCurrentBlockStats(currentBlockIndex);
+    
+    console.log('✅ Page initialization complete');
+});
+
+// Calculate correct statistics from the DOM
+function calculateAndUpdateStats() {
+    console.log('📊 Calculating block statistics...');
+    
+    let totalSegments = 0;
+    let totalQAItems = 0;
+    let totalBlocks = 0;
+    
+    // Count segments and Q&A from all visible blocks in the page
+    const blockContainers = document.querySelectorAll('[id^="segments-"]');
+    
+    blockContainers.forEach((container, index) => {
+        // Count segments in this block
+        const segments = container.querySelectorAll('[id^="segment-"]');
+        const blockSegments = segments.length;
+        totalSegments += blockSegments;
+        
+        // Count Q&A items in this block (both in segments and separate sections)
+        const qaSegments = container.querySelectorAll('.qa-segment');  // Q&A within segments
+        const qaItems = container.querySelectorAll('.qa-section');     // Separate Q&A items
+        const blockQA = qaSegments.length + qaItems.length;
+        totalQAItems += blockQA;
+        
+        totalBlocks++;
+        
+        console.log(`  Block ${index + 1}: ${blockSegments} segments, ${blockQA} Q&A items`);
+    });
+    
+    console.log(`✅ Totals: ${totalBlocks} blocks, ${totalSegments} segments, ${totalQAItems} Q&A items`);
+    
+    // Update the display
+    const statsElement = document.getElementById('all-blocks-stats');
+    if (statsElement) {
+        statsElement.innerHTML = `
+            ${totalSegments} segments • ${totalQAItems} Q&A • ${totalBlocks} blocks
+        `;
+    } else {
+        console.log('❌ all-blocks-stats element not found');
+    }
+    
+    // Also update the current block's Q&A count if it's showing 0
+    const currentQAEl = document.getElementById('current-qa-count');
+    if (currentQAEl && currentQAEl.textContent === '0') {
+        // Get Q&A count from first visible block
+        const firstBlock = document.querySelector('[id^="segments-"]:not([style*="display: none"])');
+        if (firstBlock) {
+            const qaSegments = firstBlock.querySelectorAll('.qa-segment');
+            const qaItems = firstBlock.querySelectorAll('.qa-section');
+            const firstBlockQA = qaSegments.length + qaItems.length;
+            currentQAEl.textContent = firstBlockQA;
+            console.log(`🔧 Fixed current block Q&A count: ${firstBlockQA}`);
+        }
+    }
+}
+
+function startTimers() {
+    console.log('🕐 Starting study timers...');
+    
+    const now = new Date();
+    if (!sessionStartTime) {
+        sessionStartTime = now;
+    }
+    blockStartTime = now;
+    
+    // Clear any existing timers
+    if (sessionTimer) clearInterval(sessionTimer);
+    if (blockTimer) clearInterval(blockTimer);
+    
+    // Start session timer (updates every second)
+    sessionTimer = setInterval(updateSessionTimer, 1000);
+    
+    // Start block timer (updates every second)
+    blockTimer = setInterval(updateBlockTimer, 1000);
+    
+    console.log('✅ Timers started successfully');
+}
+
+function stopTimers() {
+    console.log('⏹️ Stopping timers...');
+    if (sessionTimer) {
+        clearInterval(sessionTimer);
+        sessionTimer = null;
+    }
+    if (blockTimer) {
+        clearInterval(blockTimer);
+        blockTimer = null;
+    }
+}
+
+function togglePause() {
+    const pauseBtn = document.getElementById('sidebar-pause-btn');
+    const pauseIcon = document.getElementById('sidebar-pause-icon');
+    const playIcon = document.getElementById('sidebar-play-icon');
+    
+    if (isPaused) {
+        // Resume timers
+        console.log('▶️ Resuming timers...');
+        if (pauseStartTime) {
+            totalPausedTime += new Date() - pauseStartTime;
+            pauseStartTime = null;
+        }
+        startTimers();
+        isPaused = false;
+        
+        // Update button appearance
+        pauseIcon.classList.remove('d-none');
+        playIcon.classList.add('d-none');
+        pauseBtn.classList.remove('btn-success');
+        pauseBtn.classList.add('btn-outline-warning');
+        
+        // Enable next buttons
+        enableAllNextButtons();
+            } else {
+        // Pause timers
+        console.log('⏸️ Pausing timers...');
+        stopTimers();
+        pauseStartTime = new Date();
+        isPaused = true;
+        
+        // Update button appearance
+        pauseIcon.classList.add('d-none');
+        playIcon.classList.remove('d-none');
+        pauseBtn.classList.remove('btn-outline-warning');
+        pauseBtn.classList.add('btn-success');
+        
+        // Disable next buttons
+        disableAllNextButtons();
+    }
+}
+
+function updateSessionTimer() {
+    if (isPaused || !sessionStartTime) return;
+    
+    const now = new Date();
+    const elapsed = now - sessionStartTime - totalPausedTime;
+    const sessionTimerEl = document.getElementById('session-timer');
+    
+    if (sessionTimerEl) {
+        sessionTimerEl.textContent = formatTime(elapsed, true);
+    }
+}
+
+function updateBlockTimer() {
+    if (isPaused || !blockStartTime) return;
+    
+    const now = new Date();
+    const elapsed = now - blockStartTime;
+    const blockTimerEl = document.getElementById('block-timer');
+    
+    if (blockTimerEl) {
+        blockTimerEl.textContent = formatTime(elapsed, false);
+    }
+}
+
+function formatTime(milliseconds, includeHours = true) {
+    const totalSeconds = Math.floor(milliseconds / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    
+    if (includeHours && hours > 0) {
+        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            } else {
+        return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    }
+}
+
+// Reset block timer when moving to a NEW BLOCK (not segments within same block)
+function resetBlockTimer() {
+    blockStartTime = new Date();
+    console.log('🔄 Block timer reset for new block');
+}
+
+// Update current block statistics when switching blocks
+function updateCurrentBlockStats(blockIndex) {
+    const blockContainer = document.getElementById(`segments-${blockIndex}`);
+    if (!blockContainer) return;
+    
+    // Count segments in current block
+    const segments = blockContainer.querySelectorAll('[id^="segment-"]');
+    const segmentCount = segments.length;
+    
+    // Count Q&A in current block
+    const qaSegments = blockContainer.querySelectorAll('.qa-segment');
+    const qaItems = blockContainer.querySelectorAll('.qa-section');
+    const qaCount = qaSegments.length + qaItems.length;
+    
+    // Update sidebar (segments and Q&A only - don't override block number from Django)
+    document.getElementById('total-segments').textContent = segmentCount;
+    document.getElementById('current-qa-count').textContent = qaCount;
+    // Note: current-block-number is correctly set by Django template, don't override
+    
+    console.log(`📊 Updated current block stats: ${segmentCount} segments, ${qaCount} Q&A (block number preserved from Django)`);
+}
+
+// Button state management functions
+function disableAllNextButtons() {
+    console.log('🚫 Disabling all next buttons (timer paused)');
+    const nextButtons = document.querySelectorAll('[id^="next-btn-"]');
+    nextButtons.forEach(btn => {
+        btn.disabled = true;
+        btn.style.opacity = '0.5';
+        btn.style.cursor = 'not-allowed';
+        btn.title = 'Resume timer to continue studying';
+    });
+    
+    // Show pause indicator
+    showPauseIndicator();
+}
+
+function enableAllNextButtons() {
+    console.log('✅ Enabling all next buttons (timer resumed)');
+    const nextButtons = document.querySelectorAll('[id^="next-btn-"]');
+    nextButtons.forEach(btn => {
+        btn.disabled = false;
+        btn.style.opacity = '1';
+        btn.style.cursor = 'pointer';
+        btn.title = 'Continue to next segment';
+    });
+    
+    // Hide pause indicator
+    hidePauseIndicator();
+}
+
+function showPauseIndicator() {
+    // Remove existing indicator
+    hidePauseIndicator();
+    
+    // Create pause indicator
+    const indicator = document.createElement('div');
+    indicator.id = 'pause-indicator';
+    indicator.innerHTML = `
+        <div style="
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: linear-gradient(135deg, #ff6b6b, #ee5a24);
+            color: white;
+            padding: 12px 20px;
+            border-radius: 25px;
+            box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3);
+            z-index: 1000;
+            font-weight: bold;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            animation: pulseGlow 2s infinite;
+        ">
+            <i class="fas fa-pause"></i>
+            Study Paused
+        </div>
+    `;
+    
+    document.body.appendChild(indicator);
+}
+
+function hidePauseIndicator() {
+    const existing = document.getElementById('pause-indicator');
+    if (existing) {
+        existing.remove();
+    }
+}
+
+// Modify existing nextSegment to check if timer is paused
+const originalNextSegment = nextSegment;
+nextSegment = function(blockIdx) {
+    if (isPaused) {
+        alert('⏸️ Please resume the timer to continue studying!\n\nClick the play button ▶️ in the timer to resume.');
+            return;
+        }
+    return originalNextSegment.call(this, blockIdx);
+};
+
+// Modify existing markSegmentComplete to check pause status only
+const originalMarkSegmentComplete = markSegmentComplete;
+markSegmentComplete = function(blockIdx, segIdx) {
+    if (isPaused) {
+        alert('⏸️ Please resume the timer to continue studying!\n\nClick the play button ▶️ in the timer to resume.');
+        return;
+    }
+    // Note: Block timer should NOT reset on segment completion - only on new block
+    return originalMarkSegmentComplete.call(this, blockIdx, segIdx);
+};
+
+// ========== BLOCK COMPLETION RATING FUNCTIONALITY ==========
+let currentCompletedBlock = null;
+let blockCompletionTime = 0;
+
+// Show block completion modal with rating
+function showBlockCompletionModal(blockData, timeSpent) {
+    console.log('🏆 Showing block completion modal...', blockData);
+    
+    currentCompletedBlock = blockData;
+    blockCompletionTime = timeSpent;
+    
+    // Populate modal data
+    document.getElementById('completed-block-title').textContent = blockData.title || 'Completed Block';
+    document.getElementById('block-completion-time').textContent = formatTime(timeSpent, false);
+    document.getElementById('block-completion-segments').textContent = blockData.segments_count || 0;
+    
+    // Reset form
+    document.querySelectorAll('input[name="blockProficiency"]').forEach(radio => radio.checked = false);
+    document.getElementById('block-completion-notes').value = '';
+    document.getElementById('saveRatingBtn').disabled = true;
+    
+    // Show modal
+    const modal = new bootstrap.Modal(document.getElementById('blockCompletionModal'));
+    modal.show();
+}
+
+// Enable/disable save button based on rating selection
+document.addEventListener('change', function(e) {
+    if (e.target.name === 'blockProficiency') {
+        document.getElementById('saveRatingBtn').disabled = false;
+        console.log(`✅ Rating selected: ${e.target.value}`);
+    }
+});
+
+// Save block rating and continue
+function saveBlockRating() {
+    const selectedRating = document.querySelector('input[name="blockProficiency"]:checked');
+    if (!selectedRating) {
+        alert('Please select a proficiency rating before continuing.');
+        return;
+    }
+    
+    const rating = parseInt(selectedRating.value);
+    const notes = document.getElementById('block-completion-notes').value.trim();
+    
+    console.log('💾 Saving block rating...', {
+        block: currentCompletedBlock,
+        rating: rating,
+        time: blockCompletionTime,
+        notes: notes
+    });
+    
+    // Send data to backend
+    const sessionId = document.getElementById('session-data').dataset.sessionId;
+    if (sessionId) {
+        fetch('/save-block-rating/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({
+                session_id: sessionId,
+                block_id: currentCompletedBlock.id,
+                proficiency_rating: rating,
+                time_spent_seconds: Math.floor(blockCompletionTime / 1000),
+                notes: notes
+            })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                console.log('✅ Block rating saved successfully');
+                // Hide modal and proceed
+                const modal = bootstrap.Modal.getInstance(document.getElementById('blockCompletionModal'));
+                modal.hide();
+                
+                // Reset block timer for the new block and proceed
+                resetBlockTimer();
+                setTimeout(() => location.reload(), 500);
+        } else {
+                alert('Error saving rating: ' + (data.error || 'Unknown error'));
+            }
+        })
+        .catch(e => {
+            console.error('❌ Error saving rating:', e);
+            alert('Network error while saving rating. Please try again.');
+        });
+    } else {
+        console.warn('⚠️ No session ID found, proceeding without saving');
+        skipRating();
+    }
+}
+
+// Skip rating and continue
+function skipRating() {
+    console.log('⏭️ Skipping block rating');
+    const modal = bootstrap.Modal.getInstance(document.getElementById('blockCompletionModal'));
+    modal.hide();
+    
+    // Reset block timer for the new block and proceed
+    resetBlockTimer();
+    setTimeout(() => location.reload(), 300);
 }
 </script>
 
@@ -527,5 +1086,79 @@ function getCookie(name){
 .stat-item{padding:.25rem 0;border-bottom:1px solid #eee;}
 .stat-item:last-child{border-bottom:none;}
 .progress-item{margin-bottom:1rem;}
+
+/* Timer pause styling */
+.btn[disabled] {
+    opacity: 0.5 !important;
+    cursor: not-allowed !important;
+    pointer-events: auto !important;
+}
+
+.btn[disabled]:hover {
+    transform: none !important;
+    box-shadow: none !important;
+}
+
+/* Pause indicator animation */
+@keyframes pulseGlow {
+    0% { 
+        transform: scale(1); 
+        box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3); 
+    }
+    50% { 
+        transform: scale(1.05); 
+        box-shadow: 0 6px 20px rgba(255, 107, 107, 0.5); 
+    }
+    100% { 
+        transform: scale(1); 
+        box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3); 
+    }
+}
+
+/* Block completion modal styling */
+.proficiency-rating {
+    flex-wrap: wrap;
+}
+
+.proficiency-rating .btn {
+    min-width: 70px;
+    height: 70px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    transition: all 0.3s ease;
+}
+
+.proficiency-rating .rating-number {
+    font-size: 18px;
+    font-weight: bold;
+    line-height: 1;
+}
+
+.proficiency-rating small {
+    font-size: 10px;
+    margin-top: 2px;
+}
+
+.proficiency-rating .btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.proficiency-rating .btn-check:checked + .btn {
+    transform: scale(1.1);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.2);
+}
+
+#blockCompletionModal .modal-dialog {
+    max-width: 500px;
+}
+
+#blockCompletionModal .card {
+    border: none;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
 </style>
 {% endblock %}

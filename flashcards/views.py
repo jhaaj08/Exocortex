@@ -4,6 +4,8 @@ from django.http import JsonResponse
 from django.core.paginator import Paginator
 from django.views.decorators.http import require_http_methods
 from django.db import models  # Add this import
+from django.db.models import F
+from django.utils import timezone
 from .models import Folder, Flashcard, StudySession, PDFDocument, TextChunk, ChunkLabel, ConceptUnit, FocusBlock, FocusBlockRelationship
 from .forms import FolderInputForm, PDFUploadForm
 from .services import process_folder_content
@@ -18,62 +20,58 @@ from openai import OpenAI
 from django.conf import settings
 import hashlib
 from difflib import SequenceMatcher
-from django.utils import timezone
 import uuid
 from .models import FocusSession
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 import json
-from datetime import timedelta
+from datetime import timedelta, datetime
 from collections import defaultdict
 from collections import deque
+from .tasks import extract_pdf_text_task
+from .tasks import complete_pdf_processing_with_knowledge_graph
 
 logger = logging.getLogger(__name__)
 
-def home(request):
-    """Home page with PDF upload functionality and ALL processed PDFs"""
+def upload(request):
+    """Upload page with PDF upload functionality and ALL processed PDFs"""
     pdf_form = PDFUploadForm()
     extracted_text = None
     pdf_document = None
     processing_error = None
     processing_stats = None
     
-    print(f"🏠 Home view called - Method: {request.method}")  # Debug
+    print(f"📤 Upload view called - Method: {request.method}")  # Debug
     
     # Handle PDF upload
-    if request.method == 'POST' and 'pdf_upload' in request.POST:
-        print("📤 PDF upload detected")  # Debug
-        
+    if request.method == 'POST' and 'pdf_file' in request.FILES:
         pdf_form = PDFUploadForm(request.POST, request.FILES)
-        print(f"📋 Form valid: {pdf_form.is_valid()}")  # Debug
         
         if pdf_form.is_valid():
             try:
-                print("💾 Creating PDF document...")  # Debug
                 pdf_document = pdf_form.save(commit=False)
                 pdf_document.save()
-                print(f"✅ PDF saved with ID: {pdf_document.id}")  # Debug
+                print(f"✅ PDF saved with ID: {pdf_document.id}")
                 
-                # Use the simplified processing
-                success, result_message, stats = process_pdf_complete(pdf_document)
+                # 🚀 ONLY call the comprehensive pipeline from tasks.py
+                from .tasks import complete_pdf_processing_with_knowledge_graph
                 
-                if success:
-                    messages.success(request, f'✅ {pdf_document.name}: {result_message}')
-                    print("✅ Processing completed successfully")
-                    # Redirect to progress page to show what happened
+                result = complete_pdf_processing_with_knowledge_graph(
+                    pdf_document.id,
+                    similarity_threshold=0.60,
+                    dedup_threshold=0.85,
+                    kg_threshold=0.75
+                )
+                
+                if result['success']:
+                    messages.success(request, f'✅ {pdf_document.name}: {result["message"]}')
                     return redirect('flashcards:pdf_progress', pdf_id=pdf_document.id)
                 else:
-                    messages.error(request, f'❌ {pdf_document.name}: {result_message}')
-                    print(f"❌ Processing failed: {result_message}")
+                    messages.error(request, f'❌ {pdf_document.name}: {result["message"]}')
                     
             except Exception as e:
-                error_msg = f"Upload error: {str(e)}"
-                print(f"💥 Exception in upload: {error_msg}")
-                messages.error(request, error_msg)
-        else:
-            print(f"❌ Form errors: {pdf_form.errors}")  # Debug
-            messages.error(request, 'Please check the form and try again.')
+                messages.error(request, f'❌ Pipeline error: {str(e)}')
     
     # Get ALL processed PDFs with calculated fields
     recent_pdfs = PDFDocument.objects.all().order_by('-created_at')
@@ -103,7 +101,222 @@ def home(request):
     }
     
     print(f"📄 Returning context with {recent_pdfs.count()} PDFs")  # Debug
+    return render(request, 'flashcards/upload.html', context)
+
+def home(request):
+    """Home page with study planner interface"""
+    from django.contrib.auth.models import User
+    from flashcards.models import UserBlockState
+    from django.db import models
+    
+    # Get current user (for now, use admin user)
+    user = User.objects.filter(is_superuser=True).first()
+    
+    # Get all available focus blocks
+    focus_blocks = FocusBlock.objects.filter(
+        compact7_data__has_key='segments'
+    ).exclude(title__startswith='[MIGRATED→')
+    
+    if focus_blocks.count() < 2:
+        messages.error(request, "Need at least 2 focus blocks to generate study plan")
+        return redirect('flashcards:upload')
+    
+    # 🎯 INTELLIGENT ANALYTICS
+    analytics = {}
+    
+    if user:
+        # Get user's learning state
+        due_states = UserBlockState.get_due_blocks_for_user(user)
+        struggling_states = UserBlockState.get_struggling_blocks_for_user(user)
+        new_blocks = UserBlockState.get_new_blocks_for_user(user)
+        
+        analytics = {
+            'due_blocks': list(due_states[:10]),
+            'struggling_blocks': list(struggling_states[:5]),  
+            'new_blocks': list(new_blocks[:10]),
+            'total_studied': UserBlockState.objects.filter(user=user).count(),
+            'avg_rating': UserBlockState.objects.filter(user=user, avg_rating__isnull=False).aggregate(
+                avg_rating=models.Avg('avg_rating')
+            )['avg_rating'] or 0,
+            'mastery_distribution': {
+                'excellent': UserBlockState.objects.filter(user=user, avg_rating__gte=4.5).count(),
+                'good': UserBlockState.objects.filter(user=user, avg_rating__gte=3.5, avg_rating__lt=4.5).count(),
+                'needs_work': UserBlockState.objects.filter(user=user, avg_rating__lt=3.5).count(),
+            }
+        }
+    else:
+        analytics = {
+            'due_blocks': [],
+            'struggling_blocks': [],
+            'new_blocks': list(focus_blocks[:10]),
+            'total_studied': 0,
+            'avg_rating': 0,
+            'mastery_distribution': {'excellent': 0, 'good': 0, 'needs_work': 0}
+        }
+    
+    # 🔄 CHECK FOR INCOMPLETE SESSIONS TO RESUME
+    incomplete_sessions = []
+    
+    # Check for incomplete study path sessions in Django session
+    for session_key in list(request.session.keys()):
+        if session_key.startswith('intelligent_plan_'):
+            session_data = request.session[session_key]
+            block_order = session_data.get('block_order', [])
+            completed_blocks = session_data.get('completed_blocks', [])
+            
+            if len(completed_blocks) < len(block_order):
+                # This is an incomplete session
+                current_index = len(completed_blocks)
+                next_block_id = block_order[current_index] if current_index < len(block_order) else None
+                
+                if next_block_id:
+                    try:
+                        next_block = FocusBlock.objects.get(id=next_block_id)
+                        incomplete_sessions.append({
+                            'session_key': session_key,
+                            'path_name': session_data.get('path_name', 'Study Plan'),
+                            'path_description': session_data.get('path_description', ''),
+                            'progress': f"{len(completed_blocks)}/{len(block_order)}",
+                            'progress_percentage': int((len(completed_blocks) / len(block_order)) * 100),
+                            'next_block': next_block,
+                            'total_blocks': len(block_order),
+                            'completed_blocks': len(completed_blocks),
+                            'started_at': session_data.get('started_at', ''),
+                            'ratings': session_data.get('ratings', {})
+                        })
+                    except FocusBlock.DoesNotExist:
+                        continue
+
+    # 📊 GENERATE INTELLIGENT STUDY PLANS
+    study_plans = {}
+    
+    # Quick Session (15-30 min)
+    quick_plan = StudySession.create_intelligent_plan(
+        user=user, 
+        target_duration_min=20, 
+        review_ratio=0.8  # Focus on review for quick sessions
+    )
+    study_plans['quick_review'] = {
+        'name': '⚡ Quick Review',
+        'description': 'Perfect for review breaks - focus on due blocks',
+        'duration_min': 20,
+        'block_ids': quick_plan,
+        'composition': 'Heavy review focus',
+        'best_for': 'Review breaks, commute study'
+    }
+    
+    # Balanced Session (45-60 min)
+    balanced_plan = StudySession.create_intelligent_plan(
+        user=user,
+        target_duration_min=45,
+        review_ratio=0.4
+    )
+    study_plans['balanced'] = {
+        'name': '⚖️ Balanced Learning',
+        'description': 'Optimal mix of new content and review',
+        'duration_min': 45,
+        'block_ids': balanced_plan,
+        'composition': '60% new + 40% review',
+        'best_for': 'Regular study sessions'
+    }
+    
+    # Deep Dive Session (90+ min)
+    deep_plan = StudySession.create_intelligent_plan(
+        user=user,
+        target_duration_min=90,
+        review_ratio=0.2
+    )
+    study_plans['deep_dive'] = {
+        'name': '🎯 Deep Learning',
+        'description': 'Extended session for mastering new concepts',
+        'duration_min': 90,
+        'block_ids': deep_plan,
+        'composition': '80% new + 20% review',
+        'best_for': 'Weekend deep study'
+    }
+    
+    # 📈 RECOMMENDATIONS
+    recommendations = []
+    
+    if user:
+        struggling_count = len(analytics['struggling_blocks'])
+        due_count = len(analytics['due_blocks'])
+        
+        if struggling_count > 0:
+            recommendations.append({
+                'type': 'warning',
+                'title': f'⚠️ {struggling_count} blocks need attention',
+                'message': 'Consider a review-focused session to reinforce weak areas',
+                'action': 'Start Quick Review session'
+            })
+        
+        if due_count > 5:
+            recommendations.append({
+                'type': 'info', 
+                'title': f'📅 {due_count} blocks due for review',
+                'message': 'Regular review prevents forgetting - consider increasing review ratio',
+                'action': 'Start Balanced session'
+            })
+        
+        if analytics['avg_rating'] > 4.0:
+            recommendations.append({
+                'type': 'success',
+                'title': '🎉 Excellent progress!',
+                'message': 'Your mastery is strong - ready for new challenges',
+                'action': 'Start Deep Dive session'
+            })
+    
+    if not recommendations:
+        recommendations.append({
+            'type': 'info',
+            'title': '🚀 Ready to start learning!',
+            'message': 'Choose a study plan that fits your available time',
+            'action': 'Pick any session type'
+        })
+    
+    context = {
+        'user': user,
+        'analytics': analytics,
+        'study_plans': study_plans,
+        'incomplete_sessions': incomplete_sessions,
+        'recommendations': recommendations,
+        'total_blocks': focus_blocks.count(),
+        'user_has_data': user and UserBlockState.objects.filter(user=user).exists(),
+        'total_relationships': FocusBlockRelationship.objects.filter(
+            from_block__in=focus_blocks, to_block__in=focus_blocks
+        ).count()
+    }
+    
     return render(request, 'flashcards/home.html', context)
+
+def resume_study_session(request, session_key):
+    """Resume an incomplete study session"""
+    if session_key not in request.session:
+        messages.error(request, "Study session not found or expired")
+        return redirect('flashcards:home')
+    
+    session_data = request.session[session_key]
+    block_order = session_data.get('block_order', [])
+    completed_blocks = session_data.get('completed_blocks', [])
+    
+    if len(completed_blocks) >= len(block_order):
+        messages.info(request, "This study session is already completed")
+        return redirect('flashcards:home')
+    
+    # Get next block to study
+    current_index = len(completed_blocks)
+    next_block_id = block_order[current_index]
+    
+    try:
+        next_block = FocusBlock.objects.get(id=next_block_id)
+        messages.success(request, f"Resuming {session_data.get('path_name', 'Study Session')}: {next_block.title}")
+        
+        return redirect('flashcards:focus_block_study_with_path', 
+                       block_id=next_block.id, 
+                       session_key=session_key)
+    except FocusBlock.DoesNotExist:
+        messages.error(request, "Next block not found")
+        return redirect('flashcards:home')
 
 def add_folder(request):
     """View to add a new folder containing markdown files"""
@@ -245,58 +458,70 @@ def process_pdf_complete(pdf_document):
     try:
         print(f"🚀 Processing: {pdf_document.name}")
         
-        # ✅ STEP 1: LIGHTWEIGHT text extraction (no concept analysis!)
-        print("📄 Step 1: Extracting text for duplicate check...")
+        # ✅ STEP 1: Use Celery task for text extraction
+        print("📄 Step 1: Using Celery task for text extraction...")
         
-        from .pdf_service import PDFTextExtractor
-        extractor = PDFTextExtractor()
+        from .tasks import extract_pdf_text_task
         
-        # ✅ JUST extract text, no processing
-        pdf_path = pdf_document.pdf_file.path
-        text, page_count = extractor.extract_text_pdfplumber(pdf_path)
-        
-        # if not text, try again with pypdf2
-        if not text:
-            text, page_count = extractor.extract_text_pypdf2(pdf_path)
-        
-        if not text:
-            return False, "Could not extract text from PDF", {}
-        
-        # ✅ STEP 2: Immediate hash check
-        content_hash = hashlib.sha256(text.encode('utf-8')).hexdigest()
-        print(f"🔍 Hash: {content_hash[:12]}...")
-        
-        # ✅ STEP 3: Check for duplicates BEFORE any processing
-        existing_pdf = PDFDocument.objects.filter(
-            content_hash=content_hash,
-            processed=True,
-            focus_blocks__isnull=False
-        ).exclude(id=pdf_document.id).first()
-        
-        if existing_pdf:
-            print(f"🛑 DUPLICATE FOUND: {existing_pdf.name} - STOPPING ALL PROCESSING")
+        try:
+            # Call the Celery task (synchronous execution)
+            print(f"🔄 Starting extraction task for PDF ID: {pdf_document.id}")
+            extraction_result = extract_pdf_text_task(pdf_document.id)
             
-            # Mark as duplicate and exit immediately
-            pdf_document.content_hash = content_hash
-            pdf_document.page_count = page_count
-            pdf_document.word_count = len(text.split())
-            pdf_document.is_duplicate = True
-            pdf_document.duplicate_of = existing_pdf
-            pdf_document.processed = True
-            pdf_document.save()
+            if not extraction_result['success']:
+                error_msg = f"Text extraction failed: {extraction_result['message']}"
+                print(f"❌ {error_msg}")
+                return False, error_msg, {}
             
-            focus_count = existing_pdf.focus_blocks.count()
-            return True, f"📚 Content already exists as '{existing_pdf.name}' with {focus_count} focus blocks!", {}
+            # Get the results from the task
+            extraction_data = extraction_result['data']
+            duplicate_info = extraction_result['duplicate_info']
+            
+            print(f"✅ Extraction completed successfully:")
+            print(f"   📊 {extraction_data['word_count']:,} words from {extraction_data['page_count']} pages")
+            print(f"   🔍 Hash: {extraction_data['content_hash'][:12]}...")
+            print(f"   ⏱️ Duration: {extraction_data['processing_duration']}s")
+            
+            # ✅ STEP 2: Handle duplicate detection from the task
+            if duplicate_info['is_duplicate']:
+                print(f"🛑 DUPLICATE FOUND: {duplicate_info['existing_name']} - STOPPING ALL PROCESSING")
+                
+                # Ensure the PDF is marked as processed (task should have done this already)
+                pdf_document.refresh_from_db()
+                if not pdf_document.processed:
+                    pdf_document.processed = True
+                    pdf_document.save()
+            
+                return True, f"📚 Content already exists as '{duplicate_info['existing_name']}'!", {}
+            
+            # ✅ STEP 3: No duplicates - continue with focus block generation
+            print("🆕 Unique content confirmed - continuing with focus block generation...")
+            
+            # Refresh the PDF document to get updated data from the task
+            pdf_document.refresh_from_db()
+            
+            # Verify the task updated the database correctly
+            if not pdf_document.extracted_text:
+                error_msg = "Task completed but no extracted text found in database"
+                print(f"❌ {error_msg}")
+                return False, error_msg, {}
+            
+            if not pdf_document.content_hash:
+                error_msg = "Task completed but no content hash found in database"
+                print(f"❌ {error_msg}")
+                return False, error_msg, {}
+            
+            print(f"📋 Verified database update: {len(pdf_document.extracted_text)} characters stored")
+            
+        except Exception as task_error:
+            error_msg = f"Celery task execution failed: {str(task_error)}"
+            print(f"❌ {error_msg}")
+            return False, error_msg, {}
         
         # ✅ STEP 4: No duplicates - NOW do the heavy processing
         print("🆕 Unique content - starting heavy processing...")
         
-        # Store basic info
-        pdf_document.extracted_text = text
-        pdf_document.content_hash = content_hash
-        pdf_document.page_count = page_count
-        pdf_document.word_count = len(text.split())
-        pdf_document.save()
+        
         
         # ✅ STEP 5: NEW - Generate new format focus blocks directly
         blocks_success, blocks_message, focus_blocks = generate_new_format_focus_blocks(pdf_document)
@@ -1767,10 +1992,10 @@ def all_focus_blocks(request):
     all_blocks = FocusBlock.objects.select_related('pdf_document').order_by(
         'pdf_document__created_at', 'block_order'
     )
-
+    
     if not all_blocks.exists():
         return render(request, 'flashcards/all_focus_blocks.html', {'no_blocks': True})
-
+    
     # ✅ FIXED: Find ANY active session, not just for first block
     # Find or create continuous study session
     # Instead of filtering by PDF:
@@ -1808,7 +2033,7 @@ def all_focus_blocks(request):
         else:
             # All blocks completed
             print("🎉 All blocks completed!")
-            return render(request, 'flashcards/all_focus_blocks.html', {
+        return render(request, 'flashcards/all_focus_blocks.html', {
                 'all_completed': True,
                 'message': 'All focus blocks completed!'
             })
@@ -1858,11 +2083,19 @@ def all_focus_blocks(request):
     
     total_time = sum(block.target_duration or 420 for block in all_blocks) / 60
     
+    # Calculate correct block counts and position
+    total_all_blocks = all_blocks.count()  # Total blocks that exist
+    completed_count = len(completed_block_ids)  # How many completed
+    current_block_position = completed_count + 1  # Absolute position of current block
+    
     context = {
         'focus_blocks': formatted_blocks,
         'study_session': study_session,
         'current_block': current_block,
-        'total_blocks': len(formatted_blocks),
+        'total_blocks': len(formatted_blocks),  # Remaining blocks (for other uses)
+        'total_all_blocks': total_all_blocks,   # ✅ NEW: All blocks ever
+        'current_block_position': current_block_position,  # ✅ NEW: Absolute position
+        'completed_blocks_count': completed_count,  # ✅ NEW: How many completed
         'total_study_time': total_time,
         'unique_pdfs': len(set(block.pdf_document.name for block in all_blocks)),
     }
@@ -1901,14 +2134,14 @@ def mark_segment_complete(request):
                 return JsonResponse({'success': False, 'error': 'No current block set'})
             
             # Check if we have a current block after completion
-            if study_session.current_focus_block:
+            if study_session.current_focus_block:  # ✅ Fixed the condition
                 # Calculate progress data
                 current_block_progress = study_session.get_current_block_progress()
                 current_block = study_session.current_focus_block
                 
                 print(f"📊 Progress: {current_block_progress}%")
                 
-                return JsonResponse({
+                response_data = {
                     'success': True,
                     'progress': current_block_progress,
                     'advanced_to_next': advanced_to_next,
@@ -1916,7 +2149,22 @@ def mark_segment_complete(request):
                     'completed_segments': len(study_session.segment_progress.get(str(current_block.id), [])),
                     'total_segments': len(current_block.get_segments()),
                     'current_block': current_block.title,
-                })
+                }
+                
+                # If advanced to next block, include completed block data for the modal
+                if advanced_to_next:
+                    # The completed block is the previous one (from the completed_focus_blocks)
+                    completed_blocks = study_session.completed_focus_blocks.all().order_by('-id')
+                    if completed_blocks.exists():
+                        completed_block = completed_blocks.first()
+                        response_data.update({
+                            'completed_block_id': str(completed_block.id),
+                            'completed_block_title': completed_block.title,
+                            'completed_block_segments': len(completed_block.get_segments()),
+                        })
+                        print(f"🎉 Block completed: {completed_block.title}")
+                
+                return JsonResponse(response_data)
             else:
                 # All blocks completed
                 print("🎉 All blocks completed!")
@@ -1971,18 +2219,40 @@ def bulk_upload(request):
                 
                 # Start processing in background
                 try:
-                    success, message, stats = process_pdf_complete(pdf_doc)
-                    if success:
+                    print(f"🚀 Processing {file.name} with comprehensive pipeline...")
+                    from .tasks import complete_pdf_processing_with_knowledge_graph
+                    
+                    result = complete_pdf_processing_with_knowledge_graph(
+                        pdf_doc.id,
+                        similarity_threshold=0.60,
+                        dedup_threshold=0.85,
+                        kg_threshold=0.75
+                    )
+                    
+                    if result['success']:
                         uploaded_count += 1
+                        
+                        # Extract summary info
+                        pipeline_results = result.get('results', {})
+                        focus_blocks_data = pipeline_results.get('pipeline', {}).get('results', {}).get('focus_blocks', {}).get('data', {})
+                        blocks_created = focus_blocks_data.get('focus_blocks_created', 0)
+                        
+                        print(f"✅ {file.name}: {blocks_created} focus blocks created")
                     else:
-                        if 'duplicate' in message.lower():
+                        message = result.get('message', 'Unknown error')
+                        if 'duplicate' in message.lower() or 'already exists' in message.lower():
                             duplicate_count += 1
+                            print(f"🔄 {file.name}: Duplicate detected")
                         else:
                             error_count += 1
                             messages.warning(request, f'{file.name}: {message}')
+                            print(f"❌ {file.name}: {message}")
+                            
                 except Exception as e:
                     error_count += 1
-                    messages.error(request, f'{file.name}: Processing error - {str(e)}')
+                    error_msg = f'Comprehensive processing error - {str(e)}'
+                    messages.error(request, f'{file.name}: {error_msg}')
+                    print(f"💥 {file.name}: {error_msg}")
                     
             except Exception as e:
                 error_count += 1
@@ -2540,69 +2810,6 @@ def generate_knowledge_graph(focus_blocks, pdf_name):
             'level': i  # For hierarchical layout
         }
         nodes.append(node)
-
-def new_format_knowledge_graph(request):
-    """
-    Knowledge graph view using persistent FocusBlockRelationship data
-    """
-    # Get only new format blocks (with segments)
-    new_format_blocks = FocusBlock.objects.filter(
-        compact7_data__has_key='segments'
-    ).exclude(
-        title__startswith='[MIGRATED→'  # Exclude migrated blocks
-    ).order_by('pdf_document__name', 'block_order')
-    
-    # Get all persistent relationships
-    relationships = FocusBlockRelationship.objects.filter(
-        from_block__in=new_format_blocks,
-        to_block__in=new_format_blocks
-    ).select_related('from_block', 'to_block').order_by('-edge_strength')
-    
-    context = {
-        'focus_blocks': new_format_blocks,
-        'relationships': relationships,
-        'knowledge_graph': None,
-        'total_blocks': new_format_blocks.count(),
-        'total_relationships': relationships.count(),
-        'message': None
-    }
-    
-    # 🆕 ADD: Handle manual relationship generation for existing blocks
-    if request.method == 'POST' and request.POST.get('action') == 'generate_relationships':
-        try:
-            # Generate relationships for ALL existing blocks
-            success_count = generate_relationships_for_existing_blocks(new_format_blocks)
-            context['message'] = f"✅ Generated {success_count} new relationships for existing blocks"
-            
-            # Refresh relationships after generation
-            relationships = FocusBlockRelationship.objects.filter(
-                from_block__in=new_format_blocks,
-                to_block__in=new_format_blocks
-            ).select_related('from_block', 'to_block').order_by('-edge_strength')
-            context['relationships'] = relationships
-            context['total_relationships'] = relationships.count()
-            
-        except Exception as e:
-            context['message'] = f"❌ Relationship generation failed: {str(e)}"
-    
-    if request.method == 'POST' and request.POST.get('action') == 'generate_graph':
-        try:
-            # Generate knowledge graph using persistent relationships
-            knowledge_graph = generate_knowledge_graph_from_relationships(new_format_blocks, relationships)
-            
-            # Process graph data for template
-            if knowledge_graph and 'edges' in knowledge_graph:
-                for edge in knowledge_graph['edges']:
-                    # Add calculated values for template
-                    edge['strength_percent'] = int(float(edge.get('strength', 0)) * 100)
-                    edge['width_value'] = float(edge.get('strength', 0)) * 5
-            
-            context['knowledge_graph'] = knowledge_graph
-            context['message'] = f"✅ Generated knowledge graph with {len(knowledge_graph['nodes'])} nodes and {len(knowledge_graph['edges'])} relationships"
-        except Exception as e:
-            context['message'] = f"❌ Graph generation failed: {str(e)}"
-    
-    return render(request, 'flashcards/new_format_knowledge_graph.html', context)
 
     
 def generate_relationships_for_existing_blocks(focus_blocks):
@@ -4326,42 +4533,171 @@ def generate_optimal_study_order(focus_blocks=None, user_knowledge=None):
 
 def generate_study_schedule_view(request):
     """
-    View to generate and display intelligent study schedules
+    🧠 Enhanced Intelligent Study Planner with UserBlockState integration
     """
-    study_orders = {}
+    from django.contrib.auth.models import User
+    from flashcards.models import UserBlockState
+    from django.db import models
+    
+    # Get current user (for now, use admin user)
+    user = User.objects.filter(is_superuser=True).first()
+    
+    # Get all available focus blocks
     focus_blocks = FocusBlock.objects.filter(
         compact7_data__has_key='segments'
     ).exclude(title__startswith='[MIGRATED→')
     
     if focus_blocks.count() < 2:
-        messages.error(request, "Need at least 2 focus blocks to generate study order")
+        messages.error(request, "Need at least 2 focus blocks to generate study plan")
         return redirect('flashcards:all_focus_blocks')
     
-    # Generate different study orders
-    study_orders['prerequisite_based'] = generate_optimal_study_order(focus_blocks)
-    study_orders['difficulty_progression'] = generate_difficulty_based_order(focus_blocks)
-    study_orders['clustered_concepts'] = generate_concept_clustered_order(focus_blocks)
+    # 🎯 INTELLIGENT ANALYTICS
+    analytics = {}
     
-    # Calculate estimated study times
-    for order_type, blocks in study_orders.items():
-        total_time = sum(block.target_duration or 420 for block in blocks)
-        study_orders[order_type] = {
-            'blocks': blocks,
-            'total_time_minutes': total_time / 60,
-            'estimated_days': max(1, int(total_time / 60 / 120))  # Assuming 2 hours/day
+    if user:
+        # Get user's learning state
+        due_states = UserBlockState.get_due_blocks_for_user(user)
+        struggling_states = UserBlockState.get_struggling_blocks_for_user(user)
+        new_blocks = UserBlockState.get_new_blocks_for_user(user)
+        
+        analytics = {
+            'due_blocks': list(due_states[:10]),
+            'struggling_blocks': list(struggling_states[:5]),  
+            'new_blocks': list(new_blocks[:10]),
+            'total_studied': UserBlockState.objects.filter(user=user).count(),
+            'avg_rating': UserBlockState.objects.filter(user=user, avg_rating__isnull=False).aggregate(
+                avg_rating=models.Avg('avg_rating')
+            )['avg_rating'] or 0,
+            'mastery_distribution': {
+                'excellent': UserBlockState.objects.filter(user=user, avg_rating__gte=4.5).count(),
+                'good': UserBlockState.objects.filter(user=user, avg_rating__gte=3.5, avg_rating__lt=4.5).count(),
+                'needs_work': UserBlockState.objects.filter(user=user, avg_rating__lt=3.5).count(),
+            }
+        }
+    else:
+        analytics = {
+            'due_blocks': [],
+            'struggling_blocks': [],
+            'new_blocks': list(focus_blocks[:10]),
+            'total_studied': 0,
+            'avg_rating': 0,
+            'mastery_distribution': {'excellent': 0, 'good': 0, 'needs_work': 0}
         }
     
-    # Get relationships for context
-    relationships = FocusBlockRelationship.objects.filter(
-        from_block__in=focus_blocks,
-        to_block__in=focus_blocks
-    ).select_related('from_block', 'to_block')
+    # 📊 GENERATE INTELLIGENT STUDY PLANS
+    study_plans = {}
+    
+    # Quick Session (15-30 min)
+    quick_plan = StudySession.create_intelligent_plan(
+        user=user, 
+        target_duration_min=20, 
+        review_ratio=0.8  # Focus on review for quick sessions
+    )
+    study_plans['quick_review'] = {
+        'name': '⚡ Quick Review',
+        'description': 'Perfect for review breaks - focus on due blocks',
+        'duration_min': 20,
+        'block_ids': quick_plan,
+        'composition': 'Heavy review focus',
+        'best_for': 'Review breaks, commute study'
+    }
+    
+    # Balanced Session (45-60 min)
+    balanced_plan = StudySession.create_intelligent_plan(
+        user=user,
+        target_duration_min=45,
+        review_ratio=0.4
+    )
+    study_plans['balanced'] = {
+        'name': '⚖️ Balanced Learning',
+        'description': 'Optimal mix of new content and review',
+        'duration_min': 45,
+        'block_ids': balanced_plan,
+        'composition': '60% new + 40% review',
+        'best_for': 'Regular study sessions'
+    }
+    
+    # Deep Dive Session (90+ min)
+    deep_plan = StudySession.create_intelligent_plan(
+        user=user,
+        target_duration_min=90,
+        review_ratio=0.2
+    )
+    study_plans['deep_dive'] = {
+        'name': '🎯 Deep Learning',
+        'description': 'Extended session for mastering new concepts',
+        'duration_min': 90,
+        'block_ids': deep_plan,
+        'composition': '80% new + 20% review',
+        'best_for': 'Weekend deep study'
+    }
+    
+    # 🎨 LEGACY STUDY ORDERS (for comparison)
+    legacy_orders = {}
+    legacy_orders['prerequisite_based'] = generate_optimal_study_order(focus_blocks)
+    legacy_orders['difficulty_progression'] = generate_difficulty_based_order(focus_blocks)
+    legacy_orders['clustered_concepts'] = generate_concept_clustered_order(focus_blocks)
+    
+    # Calculate legacy times
+    for order_type, blocks in legacy_orders.items():
+        total_time = sum(block.target_duration or 420 for block in blocks)
+        legacy_orders[order_type] = {
+            'blocks': blocks,
+            'total_time_minutes': total_time / 60,
+            'estimated_days': max(1, int(total_time / 60 / 120))
+        }
+    
+    # 📈 RECOMMENDATIONS
+    recommendations = []
+    
+    if user:
+        struggling_count = len(analytics['struggling_blocks'])
+        due_count = len(analytics['due_blocks'])
+        
+        if struggling_count > 0:
+            recommendations.append({
+                'type': 'warning',
+                'title': f'⚠️ {struggling_count} blocks need attention',
+                'message': 'Consider a review-focused session to reinforce weak areas',
+                'action': 'Start Quick Review session'
+            })
+        
+        if due_count > 5:
+            recommendations.append({
+                'type': 'info', 
+                'title': f'📅 {due_count} blocks due for review',
+                'message': 'Regular review prevents forgetting - consider increasing review ratio',
+                'action': 'Start Balanced session'
+            })
+        
+        if analytics['avg_rating'] > 4.0:
+            recommendations.append({
+                'type': 'success',
+                'title': '🎉 Excellent progress!',
+                'message': 'Your mastery is strong - ready for new challenges',
+                'action': 'Start Deep Dive session'
+            })
+    
+    if not recommendations:
+        recommendations.append({
+            'type': 'info',
+            'title': '🚀 Ready to start learning!',
+            'message': 'Choose a study plan that fits your available time',
+            'action': 'Pick any session type'
+        })
     
     context = {
-        'study_orders': study_orders,
+        'user': user,
+        'analytics': analytics,
+        'study_plans': study_plans,
+        'legacy_orders': legacy_orders,  # Keep for comparison
+        'recommendations': recommendations,
         'total_blocks': focus_blocks.count(),
-        'total_relationships': relationships.count(),
-        'focus_blocks': focus_blocks
+        'user_has_data': user and UserBlockState.objects.filter(user=user).exists(),
+        'study_orders': legacy_orders,   # ← ADD: backward compatibility for template
+        'total_relationships': FocusBlockRelationship.objects.filter(
+            from_block__in=focus_blocks, to_block__in=focus_blocks
+        ).count()  # ← ADD: fix missing variable
     }
     
     return render(request, 'flashcards/study_schedule.html', context)
@@ -4614,6 +4950,9 @@ def focus_block_study_with_path(request, block_id, session_key):
         models.Q(from_block=focus_block) | models.Q(to_block=focus_block)
     ).select_related('from_block', 'to_block')
     
+    # Extract segments for interactive learning
+    segments = focus_block.compact7_data.get('segments', []) if focus_block.compact7_data else []
+    
     context = {
         'focus_block': focus_block,
         'study_path': study_path,
@@ -4625,9 +4964,13 @@ def focus_block_study_with_path(request, block_id, session_key):
         'prev_block': prev_block,
         'related_relationships': related_relationships,
         'compact7_data': focus_block.compact7_data,
+        'segments': segments,
+        'title': focus_block.title,
+        'learning_objectives': focus_block.learning_objectives,
+        'total_duration': focus_block.target_duration,
     }
     
-    return render(request, 'flashcards/focus_block_study_with_path.html', context)
+    return render(request, 'flashcards/focus_block_study.html', context)
 
 
 def complete_study_path_block(request, block_id, session_key):
@@ -4932,3 +5275,1000 @@ def get_session_progress(request):
         
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)})
+
+@csrf_exempt
+def save_block_rating(request):
+    """API endpoint to save block completion rating and time spent"""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST method required'})
+    
+    try:
+        data = json.loads(request.body)
+        block_id = data.get('block_id')
+        proficiency_rating = data.get('proficiency_rating')
+        time_spent_minutes = data.get('time_spent_minutes', 0)
+        session_key = data.get('session_key', '')
+        
+        print(f"📝 Saving block rating: Block {block_id}, Rating {proficiency_rating}, Time {time_spent_minutes}min")
+        
+        if not block_id or not proficiency_rating:
+            return JsonResponse({
+                'success': False, 
+                'error': 'block_id and proficiency_rating are required'
+            })
+        
+        # Validate rating range
+        if not (1 <= proficiency_rating <= 5):
+            return JsonResponse({
+                'success': False, 
+                'error': 'proficiency_rating must be between 1 and 5'
+            })
+        
+        # Get the focus block
+        focus_block = FocusBlock.objects.get(id=block_id)
+        
+        # Get current user (for now, use admin user)
+        from django.contrib.auth.models import User
+        user = User.objects.filter(is_superuser=True).first()
+        
+        if not user:
+            return JsonResponse({'success': False, 'error': 'No user found'})
+        
+        # Update or create UserBlockState for this block
+        from flashcards.models import UserBlockState
+        user_block_state, created = UserBlockState.objects.get_or_create(
+            user=user,
+            block=focus_block,
+            defaults={
+                'status': 'completed',
+                'last_reviewed_at': timezone.now(),
+                'review_count': 1,
+                'ease_factor': 2.5,
+                'stability': 1.0,
+                'avg_rating': proficiency_rating,
+                'total_time_spent': time_spent_minutes
+            }
+        )
+        
+        if not created:
+            # Update existing state
+            user_block_state.update_from_rating(proficiency_rating)
+            user_block_state.total_time_spent = (user_block_state.total_time_spent or 0) + time_spent_minutes
+            user_block_state.save()
+        
+        # Also update session-based study path if we're in one
+        if session_key and session_key in request.session:
+            session_data = request.session[session_key]
+            if block_id not in session_data.get('completed_blocks', []):
+                session_data['completed_blocks'].append(block_id)
+                session_data['ratings'] = session_data.get('ratings', {})
+                session_data['ratings'][block_id] = {
+                    'proficiency_rating': proficiency_rating,
+                    'time_spent_minutes': time_spent_minutes,
+                    'completed_at': timezone.now().isoformat()
+                }
+                request.session[session_key] = session_data
+                request.session.modified = True
+        
+        print(f"✅ Saved rating for {focus_block.title}: {proficiency_rating}⭐ in {time_spent_minutes}min")
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Block rating saved successfully',
+            'block_id': block_id,
+            'rating': proficiency_rating,
+            'time_spent_minutes': time_spent_minutes,
+            'user_block_state_created': created
+        })
+            
+    except FocusBlock.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Focus block not found'})
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'error': 'Invalid JSON data'})
+    except Exception as e:
+        print(f"❌ Error saving block rating: {e}")
+        return JsonResponse({'success': False, 'error': str(e)})
+
+def extract_pdf_text_task(pdf_document_id):
+    """
+    Heavy text extraction task - designed for Celery background processing
+    
+    Args:
+        pdf_document_id: Primary key of PDFDocument to process
+        
+    Returns:
+        dict: {
+            'success': bool,
+            'message': str,
+            'data': {
+                'text': str,
+                'content_hash': str,
+                'page_count': int,
+                'word_count': int,
+                'file_size': int
+            } or None,
+            'duplicate_info': {
+                'is_duplicate': bool,
+                'duplicate_of_id': int or None,
+                'existing_name': str or None
+            } or None
+        }
+    """
+    import hashlib
+    import time
+    from .pdf_service import PDFTextExtractor
+    from .models import PDFDocument
+    
+    start_time = time.time()
+    
+    try:
+        # Get PDF document
+        try:
+            pdf_document = PDFDocument.objects.get(id=pdf_document_id)
+        except PDFDocument.DoesNotExist:
+            return {
+                'success': False,
+                'message': 'PDF document not found',
+                'data': None,
+                'duplicate_info': None
+            }
+        
+        print(f"📄 Starting text extraction for: {pdf_document.name}")
+        
+        # ✅ STEP 1: Extract text from PDF file
+        extractor = PDFTextExtractor()
+        pdf_path = pdf_document.pdf_file.path
+        
+        # Try pdfplumber first
+        text, page_count = extractor.extract_text_pdfplumber(pdf_path)
+        extraction_method = "pdfplumber"
+        
+        # Fallback to PyPDF2 if needed
+        if not text or len(text.strip()) < 50:
+            print("📄 pdfplumber failed, trying PyPDF2 fallback...")
+            text, page_count = extractor.extract_text_pypdf2(pdf_path)
+            extraction_method = "pypdf2"
+        
+        # Validate extraction success
+        if not text or len(text.strip()) < 50:
+            return {
+                'success': False,
+                'message': 'Could not extract meaningful text from PDF. File might be image-based or corrupted.',
+                'data': None,
+                'duplicate_info': None
+            }
+        
+        # ✅ STEP 2: Calculate content metrics
+        content_hash = hashlib.sha256(text.encode('utf-8')).hexdigest()
+        word_count = len(text.split())
+        file_size = pdf_document.pdf_file.size if pdf_document.pdf_file else 0
+        
+        print(f"📊 Extraction complete:")
+        print(f"   Method: {extraction_method}")
+        print(f"   Pages: {page_count}")
+        print(f"   Words: {word_count:,}")
+        print(f"   Hash: {content_hash[:12]}...")
+        
+        # ✅ STEP 3: Check for duplicates
+        duplicate_info = None
+        existing_pdf = PDFDocument.objects.filter(
+            content_hash=content_hash,
+            processed=True,
+            focus_blocks__isnull=False
+        ).exclude(id=pdf_document.id).first()
+        
+        if existing_pdf:
+            focus_count = existing_pdf.focus_blocks.count()
+            duplicate_info = {
+                'is_duplicate': True,
+                'duplicate_of_id': existing_pdf.id,
+                'existing_name': existing_pdf.name,
+                'existing_focus_count': focus_count
+            }
+            print(f"🛑 DUPLICATE DETECTED: {existing_pdf.name} (ID: {existing_pdf.id})")
+        else:
+            duplicate_info = {
+                'is_duplicate': False,
+                'duplicate_of_id': None,
+                'existing_name': None,
+                'existing_focus_count': 0
+            }
+            print(f"✅ UNIQUE CONTENT: No duplicates found")
+        
+        # ✅ STEP 4: Prepare return data
+        extraction_data = {
+            'text': text,
+            'content_hash': content_hash,
+            'page_count': page_count,
+            'word_count': word_count,
+            'file_size': file_size,
+            'extraction_method': extraction_method,
+            'extraction_duration': round(time.time() - start_time, 2)
+        }
+        
+        success_message = f"Text extracted successfully: {word_count:,} words from {page_count} pages"
+        if duplicate_info['is_duplicate']:
+            success_message += f" (duplicate of '{duplicate_info['existing_name']}')"
+        
+        return {
+            'success': True,
+            'message': success_message,
+            'data': extraction_data,
+            'duplicate_info': duplicate_info
+        }
+        
+    except Exception as e:
+        error_duration = round(time.time() - start_time, 2)
+        print(f"❌ Text extraction failed after {error_duration}s: {str(e)}")
+        
+        return {
+            'success': False,
+            'message': f'Text extraction error: {str(e)}',
+            'data': None,
+            'duplicate_info': None
+        }
+
+
+# Optional: Celery task wrapper (add this if you're using Celery)
+try:
+    from celery import shared_task
+    
+    @shared_task(bind=True, max_retries=3)
+    def extract_pdf_text_celery_task(self, pdf_document_id):
+        """
+        Celery task wrapper for PDF text extraction
+        """
+        try:
+            result = extract_pdf_text_task(pdf_document_id)
+            
+            if not result['success']:
+                # Retry on failure (up to max_retries)
+                if self.request.retries < self.max_retries:
+                    print(f"🔄 Retrying text extraction (attempt {self.request.retries + 1}/{self.max_retries})")
+                    raise self.retry(countdown=60 * (self.request.retries + 1))  # Exponential backoff
+            
+            return result
+            
+        except Exception as e:
+            print(f"❌ Celery task failed: {str(e)}")
+            return {
+                'success': False,
+                'message': f'Celery task error: {str(e)}',
+                'data': None,
+                'duplicate_info': None
+            }
+    
+except ImportError:
+    # Celery not installed, skip task decorator
+    print("📝 Note: Celery not available, using synchronous function only")
+
+# Add this new view to views.py
+def pdf_progress_enhanced(request, pdf_id):
+    """
+    Enhanced progress page showing comprehensive processing results
+    """
+    try:
+        pdf_document = PDFDocument.objects.get(id=pdf_id)
+        
+        # Get focus blocks
+        focus_blocks = FocusBlock.objects.filter(pdf_document=pdf_document)
+        
+        # Get relationships
+        from .models import FocusBlockRelationship
+        relationships = FocusBlockRelationship.objects.filter(
+            from_block__pdf_document=pdf_document
+        )
+        
+        # Get study paths (you might want to store these)
+        from .tasks import generate_optimal_study_paths_task
+        paths_result = generate_optimal_study_paths_task(pdf_id, 'prerequisite_first')
+        study_paths = paths_result.get('data', {}).get('paths', [])
+        
+        # Calculate statistics
+        stats = {
+            'focus_blocks_count': focus_blocks.count(),
+            'total_segments': sum(len(fb.compact7_data.get('segments', [])) for fb in focus_blocks),
+            'relationships_count': relationships.count(),
+            'study_paths_count': len(study_paths),
+            'total_duration_hours': sum(fb.target_duration for fb in focus_blocks) / 3600,
+            'prerequisite_relationships': relationships.filter(relationship_type='prerequisite').count(),
+            'semantic_relationships': relationships.filter(relationship_type='related').count(),
+        }
+        
+        context = {
+            'pdf_document': pdf_document,
+            'focus_blocks': focus_blocks,
+            'relationships': relationships[:10],  # Show first 10
+            'study_paths': study_paths,
+            'stats': stats,
+        }
+        
+        return render(request, 'flashcards/pdf_progress_enhanced.html', context)
+        
+    except PDFDocument.DoesNotExist:
+        messages.error(request, 'PDF document not found')
+        return redirect('flashcards:home')
+
+def knowledge_graph(request, pdf_id=None):
+    """
+    Display interactive knowledge graph visualization
+    """
+    from .models import FocusBlock, FocusBlockRelationship
+    import json
+    
+    # Get focus blocks and relationships
+    if pdf_id:
+        pdf_document = get_object_or_404(PDFDocument, id=pdf_id)
+        focus_blocks = FocusBlock.objects.filter(pdf_document=pdf_document)
+        relationships = FocusBlockRelationship.objects.filter(
+            from_block__pdf_document=pdf_document
+        )
+        title = f"Knowledge Graph - {pdf_document.name}"
+    else:
+        focus_blocks = FocusBlock.objects.all()
+        relationships = FocusBlockRelationship.objects.all()
+        title = "Complete Knowledge Graph"
+    
+    # Prepare graph data for visualization
+    nodes = []
+    edges = []
+    
+    # Create nodes
+    for block in focus_blocks:
+        nodes.append({
+            'id': str(block.id),
+            'label': block.title,
+            'title': block.title,  # Tooltip
+            'difficulty': block.difficulty_level,
+            'duration': block.target_duration,
+            'segments_count': len(block.compact7_data.get('segments', [])),
+            'color': get_difficulty_color(block.difficulty_level),
+            'size': max(20, min(50, block.target_duration / 10))  # Size based on duration
+        })
+    
+    # Create edges
+    for rel in relationships:
+        edges.append({
+            'from': str(rel.from_block.id),
+            'to': str(rel.to_block.id),
+            'label': rel.relationship_type,
+            'title': f"{rel.relationship_type} (confidence: {rel.confidence:.2f})",
+            'color': get_relationship_color(rel.relationship_type),
+            'width': max(1, rel.edge_strength * 5),
+            'arrows': 'to' if rel.relationship_type in ['prerequisite', 'builds_on'] else None
+        })
+    
+    # Calculate statistics
+    stats = {
+        'total_blocks': focus_blocks.count(),
+        'total_relationships': relationships.count(),
+        'prerequisite_count': relationships.filter(relationship_type='prerequisite').count(),
+        'related_count': relationships.filter(relationship_type='related').count(),
+        'builds_on_count': relationships.filter(relationship_type='builds_on').count(),
+    }
+    
+    context = {
+        'title': title,
+        'graph_data': {
+            'nodes': nodes,
+            'edges': edges
+        },
+        'graph_data_json': json.dumps({  # ✅ ADD: Pre-serialized JSON
+            'nodes': nodes,
+            'edges': edges
+        }),
+        'stats': stats,
+        'pdf_id': pdf_id,
+        'focus_blocks': focus_blocks,
+        'relationships': relationships
+    }
+    
+    return render(request, 'flashcards/knowledge_graph.html', context)
+
+
+def get_difficulty_color(difficulty):
+    """Return color based on difficulty level"""
+    colors = {
+        'beginner': '#4CAF50',    # Green
+        'intermediate': '#FF9800', # Orange  
+        'advanced': '#F44336'      # Red
+    }
+    return colors.get(difficulty, '#2196F3')  # Default blue
+
+
+def get_relationship_color(relationship_type):
+    """Return color based on relationship type"""
+    colors = {
+        'prerequisite': '#E91E63',     # Pink (strong dependency)
+        'builds_on': '#9C27B0',       # Purple (medium dependency)
+        'related': '#2196F3',         # Blue (related)
+        'applies_to': '#00BCD4',      # Cyan (application)
+        'specializes': '#795548'      # Brown (specialization)
+    }
+    return colors.get(relationship_type, '#607D8B')  # Default gray
+
+
+def graph_data_api(request, pdf_id):
+    """
+    API endpoint to get graph data as JSON
+    """
+    from .models import FocusBlock, FocusBlockRelationship
+    
+    try:
+        pdf_document = get_object_or_404(PDFDocument, id=pdf_id)
+        focus_blocks = FocusBlock.objects.filter(pdf_document=pdf_document)
+        relationships = FocusBlockRelationship.objects.filter(
+            from_block__pdf_document=pdf_document
+        )
+        
+        # Prepare nodes
+        nodes = []
+        for block in focus_blocks:
+            nodes.append({
+                'id': str(block.id),
+                'title': block.title,
+                'difficulty': block.difficulty_level,
+                'duration': block.target_duration,
+                'segments_count': len(block.compact7_data.get('segments', [])),
+                'learning_objectives': block.learning_objectives
+            })
+        
+        # Prepare edges
+        edges = []
+        for rel in relationships:
+            edges.append({
+                'from': str(rel.from_block.id),
+                'to': str(rel.to_block.id),
+                'relationship_type': rel.relationship_type,
+                'confidence': float(rel.confidence),
+                'similarity_score': float(rel.similarity_score),
+                'edge_strength': float(rel.edge_strength),
+                'description': rel.description
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'data': {
+                'nodes': nodes,
+                'edges': edges,
+                'pdf_name': pdf_document.name
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=400)
+
+
+def study_paths_api(request, pdf_id):
+    """
+    API endpoint to get optimal study paths
+    """
+    from .tasks import generate_optimal_study_paths_task
+    
+    try:
+        result = generate_optimal_study_paths_task(pdf_id, 'prerequisite_first')
+        return JsonResponse({
+            'success': result['success'],
+            'data': result.get('data', {}),
+            'message': result.get('message', '')
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=400)
+
+def set_plan(self, block_ids):
+    # store as strings to be JSON-safe
+    self.planned_blocks = [str(bid) for bid in block_ids]
+    self.plan_position = 0
+    # set current block to first planned that's not completed
+    for bid in self.planned_blocks:
+        try:
+            fb = FocusBlock.objects.get(id=bid)
+            if fb not in self.completed_focus_blocks.all():
+                self.current_focus_block = fb
+                break
+        except FocusBlock.DoesNotExist:
+            continue
+    self.status = 'active'
+    self.save()
+
+def advance_by_plan(self):
+    if not self.planned_blocks:
+        return self.advance_to_next_block()
+
+    # Move position forward until we find an uncompleted block or exhaust plan
+    n = len(self.planned_blocks)
+    pos = self.plan_position + 1
+    while pos < n:
+        try:
+            fb = FocusBlock.objects.get(id=self.planned_blocks[pos])
+        except FocusBlock.DoesNotExist:
+            pos += 1
+            continue
+        if fb not in self.completed_focus_blocks.all():
+            self.plan_position = pos
+            self.current_focus_block = fb
+            self.current_segment = 0
+            self.save()
+            print(f"🔄 Advanced by plan to: {fb.title}")
+            return True
+        pos += 1
+
+    # Plan exhausted
+    self.current_focus_block = None
+    self.status = 'completed'
+    self.ended_at = timezone.now()
+    self.save()
+    print("🎉 Planned playlist completed!")
+    return False
+
+def advance_to_next_block(self):
+    if self.planned_blocks:
+        return self.advance_by_plan()
+
+    all_blocks = FocusBlock.objects.all().order_by('created_at', 'block_order')
+    completed_ids = self.completed_focus_blocks.values_list('id', flat=True)
+    uncompleted_blocks = all_blocks.exclude(id__in=completed_ids)
+
+    if uncompleted_blocks.exists():
+        next_block = uncompleted_blocks.first()
+        self.current_focus_block = next_block
+        self.current_segment = 0
+        self.save()
+        print(f"🔄 Advanced to next block: {next_block.title}")
+        return True
+    else:
+        self.current_focus_block = None
+        self.status = 'completed'
+        self.ended_at = timezone.now()
+        self.save()
+        print("🎉 All blocks completed!")
+        return False
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def start_study_session(request):
+    """
+    Start an intelligent study session mixing new and review blocks.
+    POST params:
+      - target_duration_min (int, default: 60)
+      - mix_ratio_review (float, default: 0.3 = 30% review)
+      - intelligent (bool, default: true) - use intelligent vs simple planning
+    """
+    try:
+        # Parse parameters
+        target_duration_min = int(request.POST.get('target_duration_min', 60))
+        mix_ratio_review = float(request.POST.get('mix_ratio_review', 0.3))
+        use_intelligent = request.POST.get('intelligent', 'true').lower() != 'false'
+        
+        print(f"🚀 Starting study session: {target_duration_min}min, {mix_ratio_review:.0%} review, intelligent={use_intelligent}")
+
+        # Find or create session
+        study_session = StudySession.objects.filter(
+            status='active',
+            session_type='focus_blocks'
+        ).order_by('-last_accessed').first()
+        
+        if not study_session:
+            study_session = StudySession.objects.create(session_type='focus_blocks')
+            print(f"📝 Created new study session: {study_session.session_id}")
+        else:
+            print(f"📖 Reusing active session: {study_session.session_id}")
+
+        # Store session preferences
+        study_session.target_duration_min = target_duration_min
+        study_session.mix_ratio_review = mix_ratio_review
+        
+        # Create intelligent or simple plan
+        if use_intelligent:
+            from django.contrib.auth.models import User
+            admin_user = User.objects.filter(is_superuser=True).first()
+            
+            if admin_user:
+                print(f"🧠 Using intelligent planning for user: {admin_user.username}")
+                plan_ids = StudySession.create_intelligent_plan(
+                    user=admin_user,
+                    target_duration_min=target_duration_min,
+                    review_ratio=mix_ratio_review
+                )
+            else:
+                print("⚠️ No admin user found, falling back to simple plan")
+                plan_ids = StudySession._create_simple_plan(target_duration_min)
+        else:
+            print("📝 Using simple planning (all uncompleted blocks)")
+            plan_ids = StudySession._create_simple_plan(target_duration_min)
+
+        # Set the plan
+        study_session.set_plan(plan_ids)
+        
+        # Get plan details for response
+        plan_details = {
+            'new_blocks': 0,
+            'review_blocks': 0,
+            'struggling_blocks': 0
+        }
+        
+        if use_intelligent and admin_user:
+            # Calculate breakdown for response
+            try:
+                from flashcards.models import UserBlockState
+                total_blocks = len(plan_ids)
+                estimated_review = int(total_blocks * mix_ratio_review)
+                plan_details = {
+                    'new_blocks': total_blocks - estimated_review,
+                    'review_blocks': estimated_review,
+                    'struggling_blocks': len(UserBlockState.get_struggling_blocks_for_user(admin_user)[:5])
+                }
+            except:
+                pass
+
+        return JsonResponse({
+            'success': True,
+            'session_id': str(study_session.session_id),
+            'planned_count': len(plan_ids),
+            'target_duration_min': target_duration_min,
+            'mix_ratio_review': mix_ratio_review,
+            'intelligent_planning': use_intelligent,
+            'plan_breakdown': plan_details,
+            'message': f"📚 Created {('intelligent' if use_intelligent else 'simple')} study plan with {len(plan_ids)} blocks"
+        })
+        
+    except Exception as e:
+        print(f"❌ Error starting study session: {e}")
+        return JsonResponse({'success': False, 'error': str(e)})
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def end_study_session(request, session_id):
+    """
+    End a study session (complete/abandon).
+    Optional POST param: status in {'completed','abandoned'} (default 'completed').
+    """
+    try:
+        status = request.POST.get('status') or 'completed'
+        study_session = StudySession.objects.get(session_id=session_id)
+
+        study_session.status = 'completed' if status not in ('completed','abandoned') else status
+        study_session.ended_at = timezone.now()
+        study_session.save()
+
+        return JsonResponse({'success': True, 'session_id': str(study_session.session_id), 'status': study_session.status})
+    except StudySession.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Study session not found'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+def preview_intelligent_plan(request, plan_type):
+    """
+    Preview an intelligent study plan showing the sequence of blocks
+    """
+    from django.contrib.auth.models import User
+    from flashcards.models import UserBlockState
+    
+    # Get current user (for now, use admin user)
+    user = User.objects.filter(is_superuser=True).first()
+    
+    # Get all available focus blocks
+    focus_blocks = FocusBlock.objects.filter(
+        compact7_data__has_key='segments'
+    ).exclude(title__startswith='[MIGRATED→')
+    
+    if focus_blocks.count() < 2:
+        messages.error(request, "Need at least 2 focus blocks to generate study plan")
+        return redirect('flashcards:home')
+    
+    # Generate plan based on type
+    if plan_type == 'quick_review':
+        plan_ids = StudySession.create_intelligent_plan(
+            user=user, 
+            target_duration_min=20, 
+            review_ratio=0.8
+        )
+        plan_info = {
+            'name': '⚡ Quick Review',
+            'description': 'Perfect for review breaks - focus on due blocks',
+            'duration_min': 20,
+            'composition': 'Heavy review focus',
+            'best_for': 'Review breaks, commute study'
+        }
+    elif plan_type == 'balanced':
+        plan_ids = StudySession.create_intelligent_plan(
+            user=user,
+            target_duration_min=45,
+            review_ratio=0.4
+        )
+        plan_info = {
+            'name': '⚖️ Balanced Learning',
+            'description': 'Optimal mix of new content and review',
+            'duration_min': 45,
+            'composition': '60% new + 40% review',
+            'best_for': 'Regular study sessions'
+        }
+    elif plan_type == 'deep_dive':
+        plan_ids = StudySession.create_intelligent_plan(
+            user=user,
+            target_duration_min=90,
+            review_ratio=0.2
+        )
+        plan_info = {
+            'name': '🎯 Deep Learning',
+            'description': 'Extended session for mastering new concepts',
+            'duration_min': 90,
+            'composition': '80% new + 20% review',
+            'best_for': 'Weekend deep study'
+        }
+    else:
+        messages.error(request, f"Unknown plan type: {plan_type}")
+        return redirect('flashcards:home')
+    
+    # Get the actual focus block objects
+    planned_blocks = []
+    for block_id in plan_ids:
+        try:
+            block = FocusBlock.objects.get(id=block_id)
+            planned_blocks.append(block)
+        except FocusBlock.DoesNotExist:
+            continue
+    
+    if not planned_blocks:
+        messages.error(request, "Could not generate study plan")
+        return redirect('flashcards:home')
+    
+    # Calculate plan statistics
+    total_duration = sum(block.target_duration or 420 for block in planned_blocks) / 60
+    
+    context = {
+        'plan_type': plan_type,
+        'plan_info': plan_info,
+        'planned_blocks': planned_blocks,
+        'total_blocks': len(planned_blocks),
+        'total_duration': total_duration,
+        'user': user,
+    }
+    
+    return render(request, 'flashcards/plan_preview.html', context)
+
+def start_intelligent_plan(request, plan_type):
+    """
+    Start studying an intelligent plan by creating a study path session
+    """
+    from django.contrib.auth.models import User
+    
+    # Get current user (for now, use admin user)
+    user = User.objects.filter(is_superuser=True).first()
+    
+    # Generate the same plan as preview
+    if plan_type == 'quick_review':
+        plan_ids = StudySession.create_intelligent_plan(
+            user=user, 
+            target_duration_min=20, 
+            review_ratio=0.8
+        )
+        plan_name = "⚡ Quick Review Plan"
+        plan_description = "Perfect for review breaks - focus on due blocks"
+    elif plan_type == 'balanced':
+        plan_ids = StudySession.create_intelligent_plan(
+            user=user,
+            target_duration_min=45,
+            review_ratio=0.4
+        )
+        plan_name = "⚖️ Balanced Learning Plan"
+        plan_description = "Optimal mix of new content and review"
+    elif plan_type == 'deep_dive':
+        plan_ids = StudySession.create_intelligent_plan(
+            user=user,
+            target_duration_min=90,
+            review_ratio=0.2
+        )
+        plan_name = "🎯 Deep Learning Plan"
+        plan_description = "Extended session for mastering new concepts"
+    else:
+        messages.error(request, f"Unknown plan type: {plan_type}")
+        return redirect('flashcards:home')
+    
+    if not plan_ids:
+        messages.error(request, "Could not generate study plan")
+        return redirect('flashcards:home')
+    
+    # Create study path session (similar to start_study_path)
+    import uuid
+    session_key = f'intelligent_plan_{uuid.uuid4().hex[:8]}'
+    request.session[session_key] = {
+        'path_type': f'intelligent_{plan_type}',
+        'path_name': plan_name,
+        'path_description': plan_description,
+        'block_order': [str(block_id) for block_id in plan_ids],
+        'current_index': 0,
+        'completed_blocks': [],
+        'started_at': str(timezone.now()),
+    }
+    
+    # Get first block
+    try:
+        first_block = FocusBlock.objects.get(id=plan_ids[0])
+        messages.success(request, f"Starting {plan_name}: {first_block.title}")
+        
+        # Redirect to the focus block study page with session context
+        return redirect('flashcards:focus_block_study_with_path', 
+                       block_id=first_block.id, 
+                       session_key=session_key)
+    except FocusBlock.DoesNotExist:
+        messages.error(request, "Could not start study plan")
+        return redirect('flashcards:home')
+
+def generate_study_schedule_view(request):
+    """
+    🧠 Enhanced Intelligent Study Planner with UserBlockState integration
+    """
+    from django.contrib.auth.models import User
+    from flashcards.models import UserBlockState
+    from django.db import models
+    
+    # Get current user (for now, use admin user)
+    user = User.objects.filter(is_superuser=True).first()
+    
+    # Get all available focus blocks
+    focus_blocks = FocusBlock.objects.filter(
+        compact7_data__has_key='segments'
+    ).exclude(title__startswith='[MIGRATED→')
+    
+    if focus_blocks.count() < 2:
+        messages.error(request, "Need at least 2 focus blocks to generate study plan")
+        return redirect('flashcards:all_focus_blocks')
+    
+    # 🎯 INTELLIGENT ANALYTICS
+    analytics = {}
+    
+    if user:
+        # Get user's learning state
+        due_states = UserBlockState.get_due_blocks_for_user(user)
+        struggling_states = UserBlockState.get_struggling_blocks_for_user(user)
+        new_blocks = UserBlockState.get_new_blocks_for_user(user)
+        
+        analytics = {
+            'due_blocks': list(due_states[:10]),
+            'struggling_blocks': list(struggling_states[:5]),  
+            'new_blocks': list(new_blocks[:10]),
+            'total_studied': UserBlockState.objects.filter(user=user).count(),
+            'avg_rating': UserBlockState.objects.filter(user=user, avg_rating__isnull=False).aggregate(
+                avg_rating=models.Avg('avg_rating')
+            )['avg_rating'] or 0,
+            'mastery_distribution': {
+                'excellent': UserBlockState.objects.filter(user=user, avg_rating__gte=4.5).count(),
+                'good': UserBlockState.objects.filter(user=user, avg_rating__gte=3.5, avg_rating__lt=4.5).count(),
+                'needs_work': UserBlockState.objects.filter(user=user, avg_rating__lt=3.5).count(),
+            }
+        }
+    else:
+        analytics = {
+            'due_blocks': [],
+            'struggling_blocks': [],
+            'new_blocks': list(focus_blocks[:10]),
+            'total_studied': 0,
+            'avg_rating': 0,
+            'mastery_distribution': {'excellent': 0, 'good': 0, 'needs_work': 0}
+        }
+    
+    # 📊 GENERATE INTELLIGENT STUDY PLANS
+    study_plans = {}
+    
+    # Quick Session (15-30 min)
+    quick_plan = StudySession.create_intelligent_plan(
+        user=user, 
+        target_duration_min=20, 
+        review_ratio=0.8  # Focus on review for quick sessions
+    )
+    study_plans['quick_review'] = {
+        'name': '⚡ Quick Review',
+        'description': 'Perfect for review breaks - focus on due blocks',
+        'duration_min': 20,
+        'block_ids': quick_plan,
+        'composition': 'Heavy review focus',
+        'best_for': 'Review breaks, commute study'
+    }
+    
+    # Balanced Session (45-60 min)
+    balanced_plan = StudySession.create_intelligent_plan(
+        user=user,
+        target_duration_min=45,
+        review_ratio=0.4
+    )
+    study_plans['balanced'] = {
+        'name': '⚖️ Balanced Learning',
+        'description': 'Optimal mix of new content and review',
+        'duration_min': 45,
+        'block_ids': balanced_plan,
+        'composition': '60% new + 40% review',
+        'best_for': 'Regular study sessions'
+    }
+    
+    # Deep Dive Session (90+ min)
+    deep_plan = StudySession.create_intelligent_plan(
+        user=user,
+        target_duration_min=90,
+        review_ratio=0.2
+    )
+    study_plans['deep_dive'] = {
+        'name': '🎯 Deep Learning',
+        'description': 'Extended session for mastering new concepts',
+        'duration_min': 90,
+        'block_ids': deep_plan,
+        'composition': '80% new + 20% review',
+        'best_for': 'Weekend deep study'
+    }
+    
+    # 🎨 LEGACY STUDY ORDERS (for comparison)
+    legacy_orders = {}
+    legacy_orders['prerequisite_based'] = generate_optimal_study_order(focus_blocks)
+    legacy_orders['difficulty_progression'] = generate_difficulty_based_order(focus_blocks)
+    legacy_orders['clustered_concepts'] = generate_concept_clustered_order(focus_blocks)
+    
+    # Calculate legacy times
+    for order_type, blocks in legacy_orders.items():
+        total_time = sum(block.target_duration or 420 for block in blocks)
+        legacy_orders[order_type] = {
+            'blocks': blocks,
+            'total_time_minutes': total_time / 60,
+            'estimated_days': max(1, int(total_time / 60 / 120))
+        }
+    
+    # 📈 RECOMMENDATIONS
+    recommendations = []
+    
+    if user:
+        struggling_count = len(analytics['struggling_blocks'])
+        due_count = len(analytics['due_blocks'])
+        
+        if struggling_count > 0:
+            recommendations.append({
+                'type': 'warning',
+                'title': f'⚠️ {struggling_count} blocks need attention',
+                'message': 'Consider a review-focused session to reinforce weak areas',
+                'action': 'Start Quick Review session'
+            })
+        
+        if due_count > 5:
+            recommendations.append({
+                'type': 'info', 
+                'title': f'📅 {due_count} blocks due for review',
+                'message': 'Regular review prevents forgetting - consider increasing review ratio',
+                'action': 'Start Balanced session'
+            })
+        
+        if analytics['avg_rating'] > 4.0:
+            recommendations.append({
+                'type': 'success',
+                'title': '🎉 Excellent progress!',
+                'message': 'Your mastery is strong - ready for new challenges',
+                'action': 'Start Deep Dive session'
+            })
+    
+    if not recommendations:
+        recommendations.append({
+            'type': 'info',
+            'title': '🚀 Ready to start learning!',
+            'message': 'Choose a study plan that fits your available time',
+            'action': 'Pick any session type'
+        })
+    
+    context = {
+        'user': user,
+        'analytics': analytics,
+        'study_plans': study_plans,
+        'legacy_orders': legacy_orders,  # Keep for comparison
+        'recommendations': recommendations,
+        'total_blocks': focus_blocks.count(),
+        'user_has_data': user and UserBlockState.objects.filter(user=user).exists(),
+        'study_orders': legacy_orders,   # ← ADD: backward compatibility for template
+        'total_relationships': FocusBlockRelationship.objects.filter(
+            from_block__in=focus_blocks, to_block__in=focus_blocks
+        ).count()  # ← ADD: fix missing variable
+    }
+    
+    return render(request, 'flashcards/study_schedule.html', context)

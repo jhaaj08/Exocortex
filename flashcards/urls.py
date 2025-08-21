@@ -5,6 +5,7 @@ app_name = 'flashcards'
 
 urlpatterns = [
     path('', views.home, name='home'),
+    path('upload/', views.upload, name='upload'),
     path('add/', views.add_folder, name='add_folder'),
     path('folders/', views.folder_list, name='folder_list'),
     path('folder/<int:folder_id>/', views.folder_detail, name='folder_detail'),
@@ -55,13 +56,12 @@ urlpatterns = [
     path('api/focus-completions/', views.get_focus_completions_api, name='get_focus_completions_api'),
     path('mark-segment-complete/', views.mark_segment_complete, name='mark_segment_complete'),
     path('api/session-progress/', views.get_session_progress, name='get_session_progress'),
+    path('save-block-rating/', views.save_block_rating, name='save_block_rating'),
     
     # Focus Block Study URLs
     path('study/focus-blocks/', views.start_focus_study_session, name='start_focus_study_session'),
     path('study/focus-blocks/<uuid:block_id>/', views.focus_block_study, name='focus_block_study'),
     
-    # New Format Knowledge Graph
-    path('knowledge-graph/', views.new_format_knowledge_graph, name='new_format_knowledge_graph'),
     
     # Progress/Report URLs
     path('pdf/<int:pdf_id>/progress/', views.pdf_progress, name='pdf_progress'),
@@ -78,4 +78,22 @@ urlpatterns = [
     path('session/<uuid:session_id>/complete/', views.complete_advanced_session, name='complete_advanced_session'),
     path('session/<uuid:session_id>/update/', views.update_session_progress, name='update_session_progress'),
     path('api/session/<uuid:session_id>/analytics/', views.session_analytics_api, name='session_analytics_api'),
+    
+    # Knowledge Graph URLs
+    path('knowledge-graph/', views.knowledge_graph, name='knowledge_graph'),
+    path('knowledge-graph/<uuid:pdf_id>/', views.knowledge_graph, name='knowledge_graph_pdf'),
+    
+    # For backward compatibility with old template references
+    path('new-format-knowledge-graph/', views.knowledge_graph, name='new_format_knowledge_graph'),
+    
+    # API endpoints for graph data
+    path('api/graph-data/<uuid:pdf_id>/', views.graph_data_api, name='graph_data_api'),
+    path('api/study-paths/<uuid:pdf_id>/', views.study_paths_api, name='study_paths_api'),
+    path('study/session/start/', views.start_study_session, name='start_study_session_api'),
+    path('study/session/end/<uuid:session_id>/', views.end_study_session, name='end_study_session_api'),
+    
+    # Intelligent Plan URLs
+    path('plan/preview/<str:plan_type>/', views.preview_intelligent_plan, name='preview_intelligent_plan'),
+    path('plan/start/<str:plan_type>/', views.start_intelligent_plan, name='start_intelligent_plan'),
+    path('resume/<str:session_key>/', views.resume_study_session, name='resume_study_session'),
 ] 

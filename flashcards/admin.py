@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Folder, Flashcard, StudySession, PDFDocument, FocusBlock, FocusSession
+from .models import Folder, Flashcard, StudySession, PDFDocument, FocusBlock, FocusSession, FocusBlockRelationship, UserBlockState
 
 @admin.register(Folder)
 class FolderAdmin(admin.ModelAdmin):
@@ -92,3 +92,59 @@ class FocusSessionAdmin(admin.ModelAdmin):
             return f"{obj.total_study_time / 60:.1f} min"
         return "N/A"
     study_time_minutes.short_description = 'Study Time'
+
+@admin.register(FocusBlockRelationship)
+class FocusBlockRelationshipAdmin(admin.ModelAdmin):
+    list_display = ['from_block_title', 'relationship_type', 'to_block_title', 'confidence', 'edge_strength']
+    list_filter = ['relationship_type', 'confidence', 'created_at']
+    search_fields = ['from_block__title', 'to_block__title', 'description']
+    ordering = ['-edge_strength', '-confidence']
+    
+    def from_block_title(self, obj):
+        return obj.from_block.title
+    from_block_title.short_description = 'From Block'
+    
+    def to_block_title(self, obj):
+        return obj.to_block.title
+    to_block_title.short_description = 'To Block'
+
+@admin.register(UserBlockState)
+class UserBlockStateAdmin(admin.ModelAdmin):
+    list_display = ['user', 'block_title', 'status', 'avg_rating', 'review_count', 'next_due_display', 'days_until_due']
+    list_filter = ['status', 'user', 'created_at', 'next_due_at']
+    search_fields = ['user__username', 'block__title', 'block__pdf_document__name']
+    readonly_fields = ['created_at', 'updated_at']
+    ordering = ['next_due_at', '-updated_at']
+    
+    def block_title(self, obj):
+        return obj.block.title
+    block_title.short_description = 'Block'
+    
+    def next_due_display(self, obj):
+        if obj.next_due_at:
+            return obj.next_due_at.strftime('%Y-%m-%d %H:%M')
+        return 'Not scheduled'
+    next_due_display.short_description = 'Next Due'
+    
+    def days_until_due(self, obj):
+        days = obj.days_until_due()
+        if days > 0:
+            return f"In {days} days"
+        elif days < 0:
+            return f"Overdue by {abs(days)} days"
+        else:
+            return "Due today"
+    days_until_due.short_description = 'Due Status'
+    
+    # Bulk actions for scheduling
+    def mark_as_suspended(self, request, queryset):
+        queryset.update(status='suspended')
+        self.message_user(request, f"Marked {queryset.count()} blocks as suspended.")
+    mark_as_suspended.short_description = "Mark selected blocks as suspended"
+    
+    def reset_to_new(self, request, queryset):
+        queryset.update(status='new', review_count=0, lapses=0, ease_factor=2.5, next_due_at=None)
+        self.message_user(request, f"Reset {queryset.count()} blocks to new status.")
+    reset_to_new.short_description = "Reset selected blocks to new"
+    
+    actions = [mark_as_suspended, reset_to_new]

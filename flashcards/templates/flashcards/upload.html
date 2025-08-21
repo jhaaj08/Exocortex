@@ -1,0 +1,201 @@
+{% extends 'flashcards/base.html' %}
+
+{% block title %}Upload PDFs - Exocortex{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12 text-center">
+            <h1 class="display-4 mb-3">
+                <i class="fas fa-upload text-primary me-3"></i>Upload Documents
+            </h1>
+            <p class="lead text-muted">Transform PDFs into AI-powered learning experiences</p>
+        </div>
+    </div>
+
+    <!-- PDF Upload Section -->
+    <div class="row justify-content-center mb-5">
+        <div class="col-md-8 col-lg-6">
+            <div class="card">
+                <div class="card-header bg-primary text-white text-center">
+                    <h5 class="mb-0"><i class="fas fa-upload me-2"></i>Upload New PDF</h5>
+                </div>
+                <div class="card-body">
+                    <form method="post" enctype="multipart/form-data" id="uploadForm">
+                        {% csrf_token %}
+                        <input type="hidden" name="pdf_upload" value="1">
+                        
+                        <div class="mb-3">
+                            <label for="id_pdf_file" class="form-label">Select PDF File</label>
+                            <input type="file" class="form-control" name="pdf_file" accept=".pdf" required>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="id_name" class="form-label">Document Name (optional)</label>
+                            <input type="text" class="form-control" name="name" placeholder="Auto-detected from filename">
+                        </div>
+                        
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary btn-lg" id="uploadBtn">
+                                <i class="fas fa-magic me-2"></i>Upload & Generate Focus Blocks
+                            </button>
+                        </div>
+                    </form>
+                    
+                    <!-- Bulk Upload Option -->
+                    <div class="text-center mt-3">
+                        <p class="text-muted mb-2">Need to upload multiple PDFs?</p>
+                        <a href="{% url 'flashcards:bulk_upload' %}" class="btn btn-outline-primary">
+                            <i class="fas fa-layer-group me-1"></i>Bulk Upload PDFs
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="row justify-content-center mb-5">
+        <div class="col-md-10">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-bolt me-2"></i>Quick Actions</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <a href="{% url 'flashcards:all_focus_blocks' %}" class="btn btn-outline-success w-100">
+                                <i class="fas fa-cubes me-2"></i>Study Focus Blocks
+                            </a>
+                        </div>
+                        <div class="col-md-4">
+                            <a href="{% url 'flashcards:study_planner' %}" class="btn btn-outline-info w-100">
+                                <i class="fas fa-route me-2"></i>Study Planner
+                            </a>
+                        </div>
+                        <div class="col-md-4">
+                            <a href="{% url 'flashcards:knowledge_graph' %}" class="btn btn-outline-warning w-100">
+                                <i class="fas fa-project-diagram me-2"></i>Knowledge Graph
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Uploads -->
+    {% if recent_pdfs %}
+    <div class="row justify-content-center">
+        <div class="col-md-10">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-history me-2"></i>Recent Uploads</h5>
+                    <small class="text-muted">{{ recent_pdfs|length }} of {{ total_pdfs }} documents</small>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Document</th>
+                                    <th>Upload Date</th>
+                                    <th>Focus Blocks</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for pdf in recent_pdfs %}
+                                <tr>
+                                    <td>
+                                        <div class="d-flex align-items-center">
+                                            <i class="fas fa-file-pdf text-danger me-2"></i>
+                                            <div>
+                                                <strong>{{ pdf.name }}</strong>
+                                                {% if pdf.word_count %}
+                                                <br><small class="text-muted">{{ pdf.word_count|floatformat:0 }} words</small>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>{{ pdf.uploaded_at|date:"M d, Y" }}</td>
+                                    <td>
+                                        <span class="badge bg-primary">{{ pdf.focus_blocks.count }}</span>
+                                    </td>
+                                    <td>
+                                        {% if pdf.processed %}
+                                            <span class="badge bg-success">Ready</span>
+                                        {% else %}
+                                            <span class="badge bg-warning">Processing</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <div class="btn-group btn-group-sm">
+                                            {% if pdf.processed and pdf.focus_blocks.exists %}
+                                                <a href="{% url 'flashcards:pdf_focus_blocks' pdf.id %}" class="btn btn-outline-primary">
+                                                    <i class="fas fa-cubes"></i>
+                                                </a>
+                                            {% endif %}
+                                            <a href="{% url 'flashcards:pdf_processing_details' pdf.id %}" class="btn btn-outline-info">
+                                                <i class="fas fa-info-circle"></i>
+                                            </a>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% if total_pdfs > recent_pdfs|length %}
+                    <div class="text-center mt-3">
+                        <a href="{% url 'flashcards:bulk_manage' %}" class="btn btn-outline-secondary">
+                            <i class="fas fa-list me-1"></i>View All Documents
+                        </a>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Upload Progress Modal -->
+<div class="modal fade" id="uploadModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Processing PDF</h5>
+            </div>
+            <div class="modal-body text-center">
+                <div class="spinner-border text-primary mb-3" role="status"></div>
+                <p>Uploading and processing your PDF...</p>
+                <div class="progress">
+                    <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('uploadForm').addEventListener('submit', function(e) {
+    // Show upload modal
+    const modal = new bootstrap.Modal(document.getElementById('uploadModal'));
+    modal.show();
+    
+    // Simulate progress (you can implement real progress tracking)
+    let progress = 0;
+    const progressBar = document.querySelector('.progress-bar');
+    const interval = setInterval(() => {
+        progress += 10;
+        progressBar.style.width = progress + '%';
+        if (progress >= 90) {
+            clearInterval(interval);
+        }
+    }, 500);
+});
+</script>
+{% endblock %}

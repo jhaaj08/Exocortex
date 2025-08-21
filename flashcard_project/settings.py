@@ -187,3 +187,23 @@ if not DEBUG:
 
 # OpenAI API Configuration
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+
+# Celery Configuration
+CELERY_BROKER_URL = 'redis://localhost:6379/0'  # or 'memory://' for testing
+CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'  # or 'cache+memcached://127.0.0.1:11211/'
+
+# Celery Task Configuration
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'UTC'
+
+# Task routing
+CELERY_TASK_ROUTES = {
+    'flashcards.tasks.extract_pdf_text_task': {'queue': 'pdf_processing'},
+    'flashcards.tasks.cleanup_failed_extractions': {'queue': 'cleanup'},
+}
+
+# Task time limits
+CELERY_TASK_TIME_LIMIT = 600  # 10 minutes
+CELERY_TASK_SOFT_TIME_LIMIT = 540  # 9 minutes

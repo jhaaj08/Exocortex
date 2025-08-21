@@ -1,0 +1,591 @@
+{% extends 'flashcards/base.html' %}
+{% load static %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block extra_head %}
+<style>
+    #knowledge-graph {
+        width: 100%;
+        height: 600px;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+        background-color: #fafafa;
+        position: relative;
+        overflow: hidden;
+    }
+    .graph-controls {
+        margin-bottom: 15px;
+    }
+    .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 15px;
+        margin-top: 15px;
+    }
+    .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+    }
+    .legend-color {
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+    }
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 15px;
+        margin-bottom: 20px;
+    }
+    .stat-card {
+        background: #f8f9fa;
+        padding: 15px;
+        border-radius: 8px;
+        border-left: 4px solid #007bff;
+    }
+    .node {
+        position: absolute;
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 12px;
+        font-weight: bold;
+        cursor: pointer;
+        border: 2px solid #fff;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        z-index: 10;
+    }
+    .node-label {
+        position: absolute;
+        top: -25px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0,0,0,0.8);
+        color: white;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 10px;
+        white-space: nowrap;
+        max-width: 100px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .edge {
+        position: absolute;
+        height: 2px;
+        background: #999;
+        transform-origin: left center;
+        z-index: 1;
+    }
+    .edge-label {
+        position: absolute;
+        top: -10px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: white;
+        padding: 1px 3px;
+        border-radius: 2px;
+        font-size: 9px;
+        color: #666;
+        border: 1px solid #ddd;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2>{{ title }}</h2>
+                <div class="btn-group">
+                    <a href="{% url 'flashcards:knowledge_graph' %}" class="btn btn-outline-primary">All PDFs</a>
+                    {% if pdf_id %}
+                        <a href="{% url 'flashcards:pdf_progress' pdf_id=pdf_id %}" class="btn btn-outline-secondary">Back to PDF</a>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Statistics -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h5>📚 Focus Blocks</h5>
+                    <h3>{{ stats.total_blocks }}</h3>
+                </div>
+                <div class="stat-card">
+                    <h5>🔗 Relationships</h5>
+                    <h3>{{ stats.total_relationships }}</h3>
+                </div>
+                <div class="stat-card">
+                    <h5>📋 Prerequisites</h5>
+                    <h3>{{ stats.prerequisite_count }}</h3>
+                </div>
+                <div class="stat-card">
+                    <h5>🌐 Related</h5>
+                    <h3>{{ stats.related_count }}</h3>
+                </div>
+            </div>
+
+            <!-- Graph Controls -->
+            <div class="graph-controls">
+                <div class="btn-group" role="group">
+                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="reorganizeNodes()">
+                        <i class="fas fa-sync"></i> Reorganize
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="showOptimalPath()">
+                        <i class="fas fa-route"></i> Show Optimal Path
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-info" onclick="showNodeDetails()">
+                        <i class="fas fa-info"></i> Show Details
+                    </button>
+                </div>
+            </div>
+
+            <!-- Knowledge Graph Visualization -->
+            <div id="knowledge-graph"></div>
+
+            <!-- Legend -->
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: #4CAF50;"></div>
+                    <span>Beginner</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: #FF9800;"></div>
+                    <span>Intermediate</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: #F44336;"></div>
+                    <span>Advanced</span>
+                </div>
+                <div class="legend-item">
+                    <div style="width: 20px; height: 2px; background-color: #E91E63;"></div>
+                    <span>Prerequisite</span>
+                </div>
+                <div class="legend-item">
+                    <div style="width: 20px; height: 2px; background-color: #2196F3;"></div>
+                    <span>Related</span>
+                </div>
+            </div>
+
+            <!-- Detailed Relationships Table -->
+            <div class="mt-4">
+                <h4>Relationship Details</h4>
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>From Block</th>
+                                <th>Relationship</th>
+                                <th>To Block</th>
+                                <th>Confidence</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for rel in relationships %}
+                            <tr>
+                                <td>{{ rel.from_block.title }}</td>
+                                <td>
+                                    <span class="badge bg-primary">{{ rel.relationship_type|title }}</span>
+                                </td>
+                                <td>{{ rel.to_block.title }}</td>
+                                <td>{{ rel.confidence|floatformat:2 }}</td>
+                                <td>{{ rel.description|truncatechars:100 }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('🚀 Initializing clean hover graph...');
+    
+    const graphData = {{ graph_data_json|safe }};
+    console.log("📊 Graph data:", graphData);
+    
+    const container = document.getElementById('knowledge-graph');
+    
+    if (!graphData.nodes || graphData.nodes.length === 0) {
+        container.innerHTML = '<div style="text-align: center; padding: 50px; color: #666;">No nodes to display.</div>';
+        return;
+    }
+    
+    // Clear container
+    container.innerHTML = '';
+    container.style.position = 'relative';
+    
+    // Grid layout parameters
+    const nodeSize = 40;
+    const spacing = 80;
+    const startX = 60;
+    const startY = 60;
+    const nodesPerRow = Math.floor((container.offsetWidth - 100) / spacing);
+    
+    // Position nodes in grid
+    const nodes = graphData.nodes.map((node, index) => {
+        const row = Math.floor(index / nodesPerRow);
+        const col = index % nodesPerRow;
+        
+        return {
+            ...node,
+            x: startX + (col * spacing),
+            y: startY + (row * spacing),
+            index: index
+        };
+    });
+    
+    // Create edges first (behind nodes)
+    graphData.edges.slice(0, 25).forEach(edge => {
+        const fromNode = nodes.find(n => n.id === edge.from);
+        const toNode = nodes.find(n => n.id === edge.to);
+        
+        if (fromNode && toNode) {
+            createHoverEdge(container, fromNode, toNode, edge);
+        }
+    });
+    
+    // Create clean nodes
+    nodes.forEach((node, index) => {
+        createCleanNode(container, node, index);
+    });
+    
+    console.log('✅ Clean graph created');
+});
+
+function createCleanNode(container, node, index) {
+    // Main circular node
+    const nodeEl = document.createElement('div');
+    nodeEl.style.position = 'absolute';
+    nodeEl.style.left = (node.x - 20) + 'px';
+    nodeEl.style.top = (node.y - 20) + 'px';
+    nodeEl.style.width = '40px';
+    nodeEl.style.height = '40px';
+    nodeEl.style.backgroundColor = getDifficultyColor(node.difficulty);
+    nodeEl.style.border = '2px solid white';
+    nodeEl.style.borderRadius = '50%';
+    nodeEl.style.display = 'flex';
+    nodeEl.style.alignItems = 'center';
+    nodeEl.style.justifyContent = 'center';
+    nodeEl.style.color = 'white';
+    nodeEl.style.fontWeight = 'bold';
+    nodeEl.style.fontSize = '12px';
+    nodeEl.style.cursor = 'pointer';
+    nodeEl.style.boxShadow = '0 2px 6px rgba(0,0,0,0.15)';
+    nodeEl.style.zIndex = '10';
+    nodeEl.style.transition = 'all 0.3s ease';
+    
+    // Just show the number
+    nodeEl.textContent = (index + 1).toString();
+    
+    // Hover tooltip (hidden by default)
+    const tooltip = document.createElement('div');
+    tooltip.style.position = 'absolute';
+    tooltip.style.bottom = '50px';
+    tooltip.style.left = '50%';
+    tooltip.style.transform = 'translateX(-50%)';
+    tooltip.style.background = 'rgba(0,0,0,0.9)';
+    tooltip.style.color = 'white';
+    tooltip.style.padding = '8px 12px';
+    tooltip.style.borderRadius = '6px';
+    tooltip.style.fontSize = '12px';
+    tooltip.style.whiteSpace = 'nowrap';
+    tooltip.style.opacity = '0';
+    tooltip.style.pointerEvents = 'none';
+    tooltip.style.zIndex = '20';
+    tooltip.style.transition = 'opacity 0.2s ease';
+    tooltip.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+    
+    tooltip.innerHTML = `
+        <div style="font-weight: bold; margin-bottom: 4px;">${node.label}</div>
+        <div style="font-size: 11px; opacity: 0.9;">
+            ${node.difficulty} • ${node.duration}s • ${node.segments_count || 0} segments
+        </div>
+    `;
+    
+    // Hover effects
+    nodeEl.addEventListener('mouseenter', function() {
+        nodeEl.style.transform = 'scale(1.2)';
+        nodeEl.style.zIndex = '30';
+        nodeEl.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+        tooltip.style.opacity = '1';
+    });
+    
+    nodeEl.addEventListener('mouseleave', function() {
+        nodeEl.style.transform = 'scale(1)';
+        nodeEl.style.zIndex = '10';
+        nodeEl.style.boxShadow = '0 2px 6px rgba(0,0,0,0.15)';
+        tooltip.style.opacity = '0';
+    });
+    
+    // Click for detailed modal
+    nodeEl.addEventListener('click', function() {
+        showDetailedModal(node, index);
+    });
+    
+    nodeEl.appendChild(tooltip);
+    container.appendChild(nodeEl);
+}
+
+function createHoverEdge(container, fromNode, toNode, edge) {
+    // Skip very long edges to avoid clutter
+    const distance = Math.sqrt(
+        Math.pow(toNode.x - fromNode.x, 2) + 
+        Math.pow(toNode.y - fromNode.y, 2)
+    );
+    
+    if (distance > 180) return;
+    
+    const edgeEl = document.createElement('div');
+    edgeEl.style.position = 'absolute';
+    
+    // Calculate line
+    const dx = toNode.x - fromNode.x;
+    const dy = toNode.y - fromNode.y;
+    const length = Math.sqrt(dx * dx + dy * dy);
+    const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+    
+    // Position from center of fromNode
+    edgeEl.style.left = fromNode.x + 'px';
+    edgeEl.style.top = fromNode.y + 'px';
+    edgeEl.style.width = length + 'px';
+    edgeEl.style.height = '2px';
+    edgeEl.style.backgroundColor = getRelationshipColor(edge.label);
+    edgeEl.style.transform = `rotate(${angle}deg)`;
+    edgeEl.style.transformOrigin = 'left center';
+    edgeEl.style.zIndex = '1';
+    edgeEl.style.opacity = '0.4';
+    edgeEl.style.cursor = 'pointer';
+    edgeEl.style.transition = 'all 0.2s ease';
+    
+    // Edge hover tooltip
+    const edgeTooltip = document.createElement('div');
+    edgeTooltip.style.position = 'absolute';
+    edgeTooltip.style.top = '-30px';
+    edgeTooltip.style.left = '50%';
+    edgeTooltip.style.transform = 'translateX(-50%) rotate(' + (-angle) + 'deg)';
+    edgeTooltip.style.background = 'rgba(0,0,0,0.9)';
+    edgeTooltip.style.color = 'white';
+    edgeTooltip.style.padding = '4px 8px';
+    edgeTooltip.style.borderRadius = '4px';
+    edgeTooltip.style.fontSize = '11px';
+    edgeTooltip.style.fontWeight = 'bold';
+    edgeTooltip.style.opacity = '0';
+    edgeTooltip.style.pointerEvents = 'none';
+    edgeTooltip.style.zIndex = '15';
+    edgeTooltip.style.transition = 'opacity 0.2s ease';
+    edgeTooltip.style.whiteSpace = 'nowrap';
+    
+    edgeTooltip.textContent = edge.label.toUpperCase();
+    
+    // Add arrow for directional relationships
+    if (edge.label === 'prerequisite' || edge.label === 'builds_on') {
+        const arrowEl = document.createElement('div');
+        arrowEl.style.position = 'absolute';
+        arrowEl.style.right = '-6px';
+        arrowEl.style.top = '50%';
+        arrowEl.style.transform = 'translateY(-50%)';
+        arrowEl.style.width = '0';
+        arrowEl.style.height = '0';
+        arrowEl.style.borderLeft = `6px solid ${getRelationshipColor(edge.label)}`;
+        arrowEl.style.borderTop = '3px solid transparent';
+        arrowEl.style.borderBottom = '3px solid transparent';
+        edgeEl.appendChild(arrowEl);
+    }
+    
+    // Edge hover effects
+    edgeEl.addEventListener('mouseenter', function() {
+        edgeEl.style.opacity = '0.8';
+        edgeEl.style.height = '3px';
+        edgeEl.style.zIndex = '5';
+        edgeTooltip.style.opacity = '1';
+    });
+    
+    edgeEl.addEventListener('mouseleave', function() {
+        edgeEl.style.opacity = '0.4';
+        edgeEl.style.height = '2px';
+        edgeEl.style.zIndex = '1';
+        edgeTooltip.style.opacity = '0';
+    });
+    
+    edgeEl.appendChild(edgeTooltip);
+    container.appendChild(edgeEl);
+}
+
+function showDetailedModal(node, index) {
+    // Remove existing modal
+    const existingModal = document.getElementById('node-modal');
+    if (existingModal) existingModal.remove();
+    
+    const modal = document.createElement('div');
+    modal.id = 'node-modal';
+    modal.style.position = 'fixed';
+    modal.style.top = '50%';
+    modal.style.left = '50%';
+    modal.style.transform = 'translate(-50%, -50%)';
+    modal.style.background = 'white';
+    modal.style.border = 'none';
+    modal.style.borderRadius = '16px';
+    modal.style.padding = '24px';
+    modal.style.boxShadow = '0 20px 60px rgba(0,0,0,0.3)';
+    modal.style.zIndex = '1000';
+    modal.style.maxWidth = '420px';
+    modal.style.width = '90%';
+    modal.style.animation = 'modalFadeIn 0.3s ease';
+    
+    // Add CSS animation
+    if (!document.getElementById('modal-styles')) {
+        const style = document.createElement('style');
+        style.id = 'modal-styles';
+        style.textContent = `
+            @keyframes modalFadeIn {
+                from { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
+                to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+    
+    modal.innerHTML = `
+        <div style="text-align: center; margin-bottom: 20px;">
+            <div style="
+                width: 60px; 
+                height: 60px; 
+                background: ${getDifficultyColor(node.difficulty)}; 
+                border-radius: 50%; 
+                display: flex; 
+                align-items: center; 
+                justify-content: center; 
+                color: white; 
+                font-weight: bold; 
+                font-size: 20px; 
+                margin: 0 auto 12px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            ">
+                ${index + 1}
+            </div>
+            <h3 style="margin: 0; color: #333; font-size: 18px;">
+                ${node.label}
+            </h3>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;">
+            <div style="text-align: center; padding: 12px; background: #f8f9fa; border-radius: 8px;">
+                <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Difficulty</div>
+                <div style="
+                    background: ${getDifficultyColor(node.difficulty)}; 
+                    color: white; 
+                    padding: 4px 12px; 
+                    border-radius: 20px; 
+                    font-size: 12px;
+                    font-weight: bold;
+                    display: inline-block;
+                ">${node.difficulty?.toUpperCase()}</div>
+            </div>
+            
+            <div style="text-align: center; padding: 12px; background: #f8f9fa; border-radius: 8px;">
+                <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Duration</div>
+                <div style="font-weight: bold; color: #333;">${Math.round(node.duration/60)} min</div>
+            </div>
+        </div>
+        
+        <div style="text-align: center; padding: 12px; background: #f8f9fa; border-radius: 8px; margin-bottom: 20px;">
+            <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Segments</div>
+            <div style="font-weight: bold; color: #333; font-size: 18px;">${node.segments_count || 0}</div>
+        </div>
+        
+        <div style="text-align: center;">
+            <button onclick="document.getElementById('node-modal').remove()" style="
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                color: white; 
+                border: none; 
+                padding: 12px 24px; 
+                border-radius: 25px; 
+                cursor: pointer;
+                font-size: 14px;
+                font-weight: bold;
+                box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+                transition: transform 0.2s ease;
+            " onmouseenter="this.style.transform='translateY(-2px)'" 
+               onmouseleave="this.style.transform='translateY(0)'">✨ Close</button>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Close handlers
+    modal.addEventListener('click', function(e) {
+        if (e.target === modal) modal.remove();
+    });
+    
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') modal.remove();
+    });
+}
+
+function getDifficultyColor(difficulty) {
+    const colors = {
+        'beginner': '#4CAF50',    // Green
+        'intermediate': '#FF9800', // Orange
+        'advanced': '#F44336'      // Red
+    };
+    return colors[difficulty] || '#2196F3';
+}
+
+function getRelationshipColor(type) {
+    const colors = {
+        'prerequisite': '#E91E63',     // Pink
+        'builds_on': '#9C27B0',       // Purple
+        'related': '#2196F3',         // Blue
+        'applies_to': '#00BCD4',      // Cyan
+        'specializes': '#795548'      // Brown
+    };
+    return colors[type] || '#607D8B';
+}
+
+// Control functions
+function reorganizeNodes() {
+    location.reload();
+}
+
+function showOptimalPath() {
+    // Highlight prerequisite paths
+    const edges = container.querySelectorAll('div[style*="background-color: rgb(233, 30, 99)"]');
+    const allEdges = container.querySelectorAll('div[style*="background-color"]');
+    
+    allEdges.forEach(edge => {
+        if (edge.style.backgroundColor === 'rgb(233, 30, 99)') {
+            edge.style.opacity = '1';
+            edge.style.height = '4px';
+        } else {
+            edge.style.opacity = '0.1';
+        }
+    });
+    
+    setTimeout(() => {
+        allEdges.forEach(edge => edge.style.opacity = '0.4');
+    }, 3000);
+}
+
+function showNodeDetails() {
+    alert(`🎯 Knowledge Graph
+
+📊 Hover over any node to see details
+🔗 Hover over any edge to see relationship type
+🖱️ Click nodes for detailed information
+
+Clean, minimal design for easy exploration!`);
+}
+</script>
+{% endblock %}

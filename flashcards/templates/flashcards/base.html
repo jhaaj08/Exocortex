@@ -106,26 +106,18 @@
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link {% if request.resolver_match.url_name == 'upload' %}active{% endif %}" 
+                           href="{% url 'flashcards:upload' %}">
+                            <i class="fas fa-upload me-1"></i>Upload
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link {% if 'focus' in request.resolver_match.url_name %}active{% endif %}" 
                            href="{% url 'flashcards:all_focus_blocks' %}">
                             <i class="fas fa-target me-1"></i>Focus Blocks
                         </a>
                     </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{% url 'flashcards:focus_schedule' %}">
-                            <i class="fas fa-calendar-alt me-1"></i>Study Schedule
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{% url 'flashcards:start_focus_study_session' %}">
-                            <i class="fas fa-graduation-cap me-1"></i>Interactive Study
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{% url 'flashcards:debug_focus_chunks' %}">
-                            <i class="fas fa-bug me-1"></i>Debug Focus Blocks
-                        </a>
-                    </li>
+
                     <li class="nav-item">
                         <a class="nav-link" href="{% url 'flashcards:new_format_knowledge_graph' %}">
                             <i class="fas fa-project-diagram me-1"></i>Knowledge Graph

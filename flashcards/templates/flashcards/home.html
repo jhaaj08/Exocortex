@@ -1,290 +1,300 @@
 {% extends 'flashcards/base.html' %}
 
-{% block title %}Home - Navvar{% endblock %}
+{% block title %}Exocortex - Intelligent Learning Platform{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
-    <!-- Header -->
+    <!-- Welcome Header -->
     <div class="row mb-4">
         <div class="col-12 text-center">
             <h1 class="display-4 mb-3">
-                <i class="fas fa-brain text-primary me-3"></i>Exocortex
+                <i class="fas fa-brain text-primary me-3"></i>Welcome to Exocortex
             </h1>
-            <p class="lead text-muted">Transform PDFs into AI-powered learning experiences</p>
+            <p class="lead text-muted">AI-powered learning with intelligent study planning</p>
         </div>
     </div>
 
-    <!-- PDF Upload Section -->
-    <div class="row justify-content-center mb-5">
-        <div class="col-md-8 col-lg-6">
-            <div class="card">
-                <div class="card-header bg-primary text-white text-center">
-                    <h5 class="mb-0"><i class="fas fa-upload me-2"></i>Upload New PDF</h5>
+    <!-- Quick Stats Card -->
+    {% if user_has_data %}
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card bg-light">
+                <div class="card-body">
+                    <div class="row text-center">
+                        <div class="col-md-3">
+                            <h3 class="text-primary">{{ analytics.total_studied }}</h3>
+                            <small class="text-muted">Blocks Studied</small>
+                        </div>
+                        <div class="col-md-3">
+                            <h3 class="text-success">{{ analytics.avg_rating|floatformat:1 }}/5</h3>
+                            <small class="text-muted">Average Rating</small>
+                        </div>
+                        <div class="col-md-3">
+                            <h3 class="text-warning">{{ analytics.due_blocks|length }}</h3>
+                            <small class="text-muted">Due for Review</small>
+                        </div>
+                        <div class="col-md-3">
+                            <h3 class="text-info">{{ total_blocks }}</h3>
+                            <small class="text-muted">Total Blocks</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Recommendations -->
+    {% if recommendations %}
+    <div class="row mb-4">
+        <div class="col-12">
+            <h4 class="mb-3"><i class="fas fa-lightbulb me-2"></i>Personalized Recommendations</h4>
+            {% for rec in recommendations %}
+            <div class="alert alert-{{ rec.type }} alert-dismissible fade show" role="alert">
+                <strong>{{ rec.title }}</strong> {{ rec.message }}
+                <br><small class="text-muted"><i class="fas fa-arrow-right me-1"></i>{{ rec.action }}</small>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Resume Incomplete Sessions -->
+    {% if incomplete_sessions %}
+    <div class="row mb-4">
+        <div class="col-12">
+            <h4 class="mb-3"><i class="fas fa-play-circle me-2 text-warning"></i>Resume Your Learning</h4>
+            <p class="text-muted mb-3">You have {{ incomplete_sessions|length }} incomplete study session{{ incomplete_sessions|length|pluralize }} to continue.</p>
+        </div>
+    </div>
+
+    <div class="row mb-5">
+        {% for session in incomplete_sessions %}
+        <div class="col-lg-6 mb-3">
+            <div class="card border-warning">
+                <div class="card-header bg-warning text-dark">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h6 class="mb-0">
+                            <i class="fas fa-pause-circle me-2"></i>{{ session.path_name }}
+                        </h6>
+                        <span class="badge bg-dark">{{ session.progress }}</span>
+                    </div>
                 </div>
                 <div class="card-body">
-                    <form method="post" enctype="multipart/form-data" id="uploadForm">
-                        {% csrf_token %}
-                        <input type="hidden" name="pdf_upload" value="1">
-                        
-                        <div class="mb-3">
-                            <label for="id_pdf_file" class="form-label">Select PDF File</label>
-                            <input type="file" class="form-control" name="pdf_file" accept=".pdf" required>
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label for="id_name" class="form-label">Document Name (optional)</label>
-                            <input type="text" class="form-control" name="name" placeholder="Auto-detected from filename">
-                        </div>
-                        
-                        <div class="d-grid">
-                            <button type="submit" class="btn btn-primary btn-lg" id="uploadBtn">
-                                <i class="fas fa-magic me-2"></i>Upload & Generate Focus Blocks
-                            </button>
-                        </div>
-                    </form>
+                    <p class="card-text">{{ session.path_description }}</p>
                     
-                    <!-- Bulk Upload Option -->
-                    <div class="text-center mt-3">
-                        <p class="text-muted mb-2">Need to upload multiple PDFs?</p>
-                        <a href="{% url 'flashcards:bulk_upload' %}" class="btn btn-outline-primary">
-                            <i class="fas fa-layer-group me-1"></i>Bulk Upload PDFs
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <small class="text-muted">Progress</small>
+                            <small class="text-muted">{{ session.progress_percentage }}% complete</small>
+                        </div>
+                        <div class="progress" style="height: 8px;">
+                            <div class="progress-bar bg-warning" role="progressbar" 
+                                 style="width: {{ session.progress_percentage }}%"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <strong>Next:</strong> 
+                        <span class="text-primary">{{ session.next_block.title }}</span>
+                        <br>
+                        <small class="text-muted">
+                            <i class="fas fa-clock me-1"></i>{% widthratio session.next_block.target_duration|default:420 60 1 %} min
+                        </small>
+                    </div>
+                    
+                    <div class="d-grid">
+                        <a href="{% url 'flashcards:resume_study_session' session.session_key %}" 
+                           class="btn btn-warning">
+                            <i class="fas fa-play me-2"></i>Continue Learning
                         </a>
                     </div>
                 </div>
             </div>
-            
-            <!-- Processing Pipeline Info -->
-            <div class="alert alert-info mt-3">
-                <h6><i class="fas fa-info-circle me-2"></i>What happens next:</h6>
-                <ol class="mb-0 small">
-                    <li>Extract and clean text from PDF</li>
-                    <li>Check for duplicate content (80% similarity)</li>
-                    <li>Create text chunks (~350 words each)</li>
-                    <li>Analyze concepts with AI labeling</li>
-                    <li>Generate optimized focus blocks (6-7 min study sessions)</li>
-                </ol>
-            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Study Plans -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <h4 class="mb-3">
+                <i class="fas fa-rocket me-2"></i>
+                {% if incomplete_sessions %}Start New Learning Journey{% else %}Start Your Learning Journey{% endif %}
+            </h4>
         </div>
     </div>
 
-    <!-- All Processed PDFs -->
-    {% if recent_pdfs %}
     <div class="row">
-        <div class="col-12">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <h3><i class="fas fa-library me-2"></i>Your PDF Library</h3>
-                <div class="btn-group" role="group">
-                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="filterPDFs('all')">
-                        All ({{ recent_pdfs|length }})
-                    </button>
-                    <button type="button" class="btn btn-outline-success btn-sm" onclick="filterPDFs('ready')">
-                        Ready to Study
-                    </button>
-                    <button type="button" class="btn btn-outline-info btn-sm" onclick="filterPDFs('duplicates')">
-                        Duplicates
-                    </button>
-                </div>
-            </div>
-            
-            <div class="row" id="pdfGrid">
-                {% for pdf_document in recent_pdfs %}
-                <div class="col-lg-4 col-md-6 mb-4 pdf-card" 
-                     data-status="{% if pdf_document.is_duplicate %}duplicate{% elif pdf_document.focus_blocks.exists %}ready{% else %}processing{% endif %}">
-                    <div class="card h-100">
-                        <div class="card-header d-flex justify-content-between align-items-center">
-                            <h6 class="mb-0 text-truncate">
-                                <i class="fas fa-file-pdf text-danger me-2"></i>
-                                {{ pdf_document.name|truncatechars:30 }}
-                            </h6>
-                            
-                            <!-- Status Badge -->
-                            {% if pdf_document.is_duplicate %}
-                                <span class="badge bg-info">
-                                    <i class="fas fa-copy me-1"></i>Duplicate
-                                </span>
-                            {% elif pdf_document.focus_blocks.exists %}
-                                <span class="badge bg-success">
-                                    <i class="fas fa-check me-1"></i>Ready
-                                </span>
-                            {% elif pdf_document.processing_error %}
-                                <span class="badge bg-danger">
-                                    <i class="fas fa-exclamation-triangle me-1"></i>Error
-                                </span>
-                            {% else %}
-                                <span class="badge bg-warning">
-                                    <i class="fas fa-clock me-1"></i>Processing
-                                </span>
-                            {% endif %}
-                        </div>
+        {% for plan_key, plan in study_plans.items %}
+        <div class="col-lg-4 mb-4">
+            <a href="{% url 'flashcards:preview_intelligent_plan' plan_key %}" class="text-decoration-none">
+                <div class="card h-100 study-plan-card">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0 text-white">{{ plan.name }}</h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="card-text text-dark">{{ plan.description }}</p>
                         
-                        <div class="card-body">
-                            <!-- PDF Stats -->
-                            <div class="row text-center mb-3">
-                                <div class="col-4">
-                                    <div class="border-end">
-                                        <h5 class="text-primary mb-0">{{ pdf_document.chunks_count }}</h5>
-                                        <small class="text-muted">Chunks</small>
-                                    </div>
-                                </div>
-                                <div class="col-4">
-                                    <div class="border-end">
-                                        <h5 class="text-success mb-0">{{ pdf_document.concepts_count }}</h5>
-                                        <small class="text-muted">Concepts</small>
-                                    </div>
-                                </div>
-                                <div class="col-4">
-                                    <h5 class="text-warning mb-0">{{ pdf_document.focus_blocks_count }}</h5>
-                                    <small class="text-muted">Focus Blocks</small>
-                                </div>
-                            </div>
-                            
-                            <!-- Document Info -->
-                            <div class="small text-muted mb-3">
-                                <div><i class="fas fa-calendar me-1"></i>{{ pdf_document.created_at|date:"M d, Y" }}</div>
-                                <div><i class="fas fa-file-alt me-1"></i>{{ pdf_document.page_count }} pages</div>
-                                <div><i class="fas fa-font me-1"></i>{{ pdf_document.word_count }} words</div>
-                                {% if pdf_document.has_focus_blocks %}
-                                <div><i class="fas fa-clock me-1"></i>~{{ pdf_document.total_study_time }} min study time</div>
-                                {% endif %}
-                            </div>
-                            
-                            <!-- Duplicate Info -->
-                            {% if pdf_document.is_duplicate %}
-                            <div class="alert alert-info py-2">
-                                <small>
-                                    <strong>{{ pdf_document.similarity_score|floatformat:1 }}% similar</strong> to 
-                                    {{ pdf_document.duplicate_of.name|truncatechars:25 }}
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <small class="text-muted">
+                                    <i class="fas fa-clock me-1"></i>{{ plan.duration_min }} minutes
+                                </small>
+                                <small class="text-muted">
+                                    <i class="fas fa-cubes me-1"></i>{{ plan.block_ids|length }} blocks
                                 </small>
                             </div>
-                            {% endif %}
-                            
-                            <!-- Error Info -->
-                            {% if pdf_document.processing_error %}
-                            <div class="alert alert-danger py-2">
-                                <small>{{ pdf_document.processing_error|truncatechars:60 }}</small>
+                            <div class="progress" style="height: 6px;">
+                                <div class="progress-bar" role="progressbar" style="width: 100%"></div>
                             </div>
-                            {% endif %}
                         </div>
                         
-                        <div class="card-footer bg-transparent">
-                            {% if pdf_document.focus_blocks.exists %}
-                                <a href="{% url 'flashcards:pdf_focus_blocks' pdf_document.id %}" class="btn btn-primary w-100">
-                                    <i class="fas fa-play me-2"></i>Study Focus Blocks
-                                </a>
-                            {% elif pdf_document.processing_error %}
-                                <button class="btn btn-outline-warning w-100" onclick="reprocessPDF({{ pdf_document.id }})">
-                                    <i class="fas fa-redo me-2"></i>Retry Processing
-                                </button>
-                            {% else %}
-                                <button class="btn btn-outline-secondary w-100" disabled>
-                                    <i class="fas fa-spinner fa-spin me-2"></i>Processing...
-                                </button>
-                            {% endif %}
+                        <div class="text-center">
+                            <small class="text-muted">{{ plan.composition }}</small>
+                            <br><small class="badge bg-light text-dark">{{ plan.best_for }}</small>
+                        </div>
+                    </div>
+                    <div class="card-footer text-center">
+                        <div class="btn btn-primary">
+                            <i class="fas fa-eye me-2"></i>Preview Plan
                         </div>
                     </div>
                 </div>
-                {% endfor %}
-            </div>
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <h4 class="mb-3"><i class="fas fa-tools me-2"></i>Quick Actions</h4>
         </div>
     </div>
-    {% else %}
-    <!-- Empty State -->
+
     <div class="row">
-        <div class="col-12 text-center py-5">
-            <i class="fas fa-inbox fa-4x text-muted mb-4"></i>
-            <h4 class="text-muted">No PDFs uploaded yet</h4>
-            <p class="text-muted">Upload your first PDF to get started with AI-powered focus blocks</p>
+        <div class="col-md-3 mb-3">
+            <a href="{% url 'flashcards:upload' %}" class="btn btn-outline-primary w-100 py-3">
+                <i class="fas fa-upload d-block mb-2 fs-4"></i>
+                <strong>Upload PDFs</strong>
+                <br><small>Add new documents</small>
+            </a>
+        </div>
+        <div class="col-md-3 mb-3">
+            <a href="{% url 'flashcards:all_focus_blocks' %}" class="btn btn-outline-success w-100 py-3">
+                <i class="fas fa-cubes d-block mb-2 fs-4"></i>
+                <strong>All Focus Blocks</strong>
+                <br><small>Browse & study</small>
+            </a>
+        </div>
+        <div class="col-md-3 mb-3">
+            <a href="{% url 'flashcards:knowledge_graph' %}" class="btn btn-outline-warning w-100 py-3">
+                <i class="fas fa-project-diagram d-block mb-2 fs-4"></i>
+                <strong>Knowledge Graph</strong>
+                <br><small>Visualize connections</small>
+            </a>
+        </div>
+        <div class="col-md-3 mb-3">
+            <a href="{% url 'flashcards:bulk_manage' %}" class="btn btn-outline-info w-100 py-3">
+                <i class="fas fa-cogs d-block mb-2 fs-4"></i>
+                <strong>Manage Content</strong>
+                <br><small>Organize documents</small>
+            </a>
+        </div>
+    </div>
+
+    <!-- Mastery Distribution -->
+    {% if user_has_data %}
+    <div class="row mt-5">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-chart-pie me-2"></i>Learning Progress</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row text-center">
+                        <div class="col-4">
+                            <div class="text-success">
+                                <h4>{{ analytics.mastery_distribution.excellent }}</h4>
+                                <small>Excellent</small>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="text-warning">
+                                <h4>{{ analytics.mastery_distribution.good }}</h4>
+                                <small>Good</small>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="text-danger">
+                                <h4>{{ analytics.mastery_distribution.needs_work }}</h4>
+                                <small>Needs Work</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-calendar-check me-2"></i>Study Schedule</h5>
+                </div>
+                <div class="card-body">
+                    {% if analytics.struggling_blocks|length > 0 %}
+                    <div class="alert alert-warning alert-sm mb-2">
+                        <strong>{{ analytics.struggling_blocks|length }}</strong> blocks need attention
+                    </div>
+                    {% endif %}
+                    {% if analytics.due_blocks|length > 0 %}
+                    <div class="alert alert-info alert-sm mb-2">
+                        <strong>{{ analytics.due_blocks|length }}</strong> blocks due for review
+                    </div>
+                    {% endif %}
+                    {% if analytics.new_blocks|length > 0 %}
+                    <div class="alert alert-success alert-sm">
+                        <strong>{{ analytics.new_blocks|length }}</strong> new blocks available
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
         </div>
     </div>
     {% endif %}
 </div>
 
-<script>
-function filterPDFs(filter) {
-    const cards = document.querySelectorAll('.pdf-card');
-    const buttons = document.querySelectorAll('.btn-group .btn');
-    
-    // Reset button states
-    buttons.forEach(btn => {
-        btn.classList.remove('btn-success', 'btn-info', 'btn-secondary');
-        btn.classList.add('btn-outline-secondary');
-    });
-    
-    // Show/hide cards based on filter
-    cards.forEach(card => {
-        const status = card.dataset.status;
-        let show = false;
-        
-        switch(filter) {
-            case 'all':
-                show = true;
-                event.target.classList.remove('btn-outline-secondary');
-                event.target.classList.add('btn-secondary');
-                break;
-            case 'ready':
-                show = status === 'ready';
-                event.target.classList.remove('btn-outline-secondary');
-                event.target.classList.add('btn-success');
-                break;
-            case 'duplicates':
-                show = status === 'duplicate';
-                event.target.classList.remove('btn-outline-secondary');
-                event.target.classList.add('btn-info');
-                break;
-        }
-        
-        card.style.display = show ? 'block' : 'none';
-    });
-}
-
-// ✅ FIXED: Proper form submission with UI feedback
-document.getElementById('uploadForm').addEventListener('submit', function(e) {
-    const button = document.getElementById('uploadBtn');
-    const fileInput = document.querySelector('input[name="pdf_file"]');
-    
-    // Check if file is selected
-    if (!fileInput.files.length) {
-        e.preventDefault();
-        alert('Please select a PDF file first.');
-        return false;
-    }
-    
-    // Show uploading state (but let form submit naturally)
-    button.disabled = true;
-    button.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Uploading & Processing...';
-    
-    // The form will submit normally after this
-});
-
-function reprocessPDF(pdfId) {
-    if (confirm('Reprocess this PDF? This will regenerate all content.')) {
-        // Redirect to reprocess or show processing indicator
-        window.location.reload();
-    }
-}
-</script>
+<!-- Study plans now use preview pages instead of modals -->
 
 <style>
-.card {
-    transition: transform 0.2s, box-shadow 0.2s;
+.study-plan-card {
+    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
 }
 
-.card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+.study-plan-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
 }
 
-.border-end {
-    border-right: 1px solid #dee2e6;
+.alert-sm {
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.5rem;
 }
 
-@media (max-width: 768px) {
-    .border-end {
-        border-right: none;
-        border-bottom: 1px solid #dee2e6;
-        padding-bottom: 0.5rem;
-        margin-bottom: 0.5rem;
-    }
+.alert-sm:last-child {
+    margin-bottom: 0;
+}
+
+.fs-4 {
+    font-size: 1.5rem !important;
 }
 </style>
-{% endblock %} 
+
+<script>
+// Study plan cards now use direct links to preview pages
+// No JavaScript needed for navigation
+</script>
+{% endblock %}

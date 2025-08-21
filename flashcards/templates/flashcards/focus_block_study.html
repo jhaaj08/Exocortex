@@ -3,6 +3,7 @@
 {% block title %}{{ focus_block.title }} - Focus Block Study{% endblock %}
 
 {% block content %}
+{% csrf_token %}
 <div class="container-fluid">
     <!-- Study Header -->
     <div class="row mb-4">
@@ -110,14 +111,14 @@
                                         <div class="segment-content">
                                             {% if segment.content %}
                                             <div class="content-section mb-3">
-                                                {{ segment.content|linebreaks }}
+                                                {{ segment.content|safe|linebreaks }}
                                             </div>
                                             {% endif %}
                                             
                                             {% if segment.explanation %}
                                             <div class="explanation-section mb-3">
                                                 <div class="alert alert-info">
-                                                    <strong>Key Insight:</strong> {{ segment.explanation|linebreaks }}
+                                                    <strong>Key Insight:</strong> {{ segment.explanation|safe|linebreaks }}
                                                 </div>
                                             </div>
                                             {% endif %}
@@ -128,7 +129,7 @@
                                                 <ul class="list-group list-group-flush">
                                                     {% for example in segment.examples %}
                                                     <li class="list-group-item">
-                                                        <i class="fas fa-lightbulb text-warning me-2"></i>{{ example }}
+                                                        <i class="fas fa-lightbulb text-warning me-2"></i>{{ example|safe }}
                                                     </li>
                                                     {% endfor %}
                                                 </ul>
@@ -172,7 +173,7 @@
                                     <div class="qa-card mb-4">
                                         <div class="question mb-3">
                                             <h6 class="text-primary">Question {{ forloop.counter }}:</h6>
-                                            <p class="fs-5">{{ qa_item.question }}</p>
+                                            <p class="fs-5">{{ qa_item.question|safe }}</p>
                                         </div>
                                         <div class="text-center mb-3">
                                             <button class="btn btn-outline-success" onclick="revealAnswer('qa{{ forloop.counter }}')">
@@ -181,7 +182,7 @@
                                         </div>
                                         <div class="answer-reveal" id="answer-qa{{ forloop.counter }}" style="display: none;">
                                             <div class="alert alert-success">
-                                                <strong>Answer:</strong> {{ qa_item.answer|linebreaks }}
+                                                <strong>Answer:</strong> {{ qa_item.answer|safe|linebreaks }}
                                             </div>
                                         </div>
                                     </div>
@@ -408,31 +409,285 @@ function revealAnswer(qaId) {
     document.getElementById(`answer-${qaId}`).style.display = 'block';
 }
 
-function completeBlock() {
-    updateProgress('qa', 'success');
+    function completeBlock() {
+        updateProgress('qa', 'success');
+        
+        // Calculate completion time
+        const completionTime = Math.floor(studyTimer / 60);
+        
+        // Show block completion modal for rating
+        showBlockCompletionModal(completionTime);
+    }
     
-    // Show completion message
-    const completionTime = Math.floor(studyTimer / 60);
-    alert(`🎉 Focus block completed in ${completionTime} minutes!\n\nGreat job learning: {{ focus_block.title }}`);
+    function showBlockCompletionModal(completionTimeMinutes) {
+        // Set the completion time in the modal
+        document.getElementById('completionTime').textContent = completionTimeMinutes;
+        document.getElementById('blockTitle').textContent = '{{ focus_block.title }}';
+        
+        // Show the modal
+        const modal = new bootstrap.Modal(document.getElementById('blockCompletionModal'));
+        modal.show();
+    }
     
-    // Here you would typically save progress to the backend
-    // For now, redirect to all focus blocks
-    window.location.href = '{% url "flashcards:all_focus_blocks" %}';
-}
+    function saveBlockRating() {
+        // Get rating and time values
+        const proficiencyRating = document.querySelector('input[name="proficiencyRating"]:checked');
+        const timeSpent = document.getElementById('completionTime').textContent;
+        
+        if (!proficiencyRating) {
+            alert('Please rate your understanding before continuing');
+            return;
+        }
+        
+        const rating = parseInt(proficiencyRating.value);
+        
+        // Save to database
+        fetch('{% url "flashcards:save_block_rating" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+            },
+            body: JSON.stringify({
+                block_id: '{{ focus_block.id }}',
+                proficiency_rating: rating,
+                time_spent_minutes: parseInt(timeSpent),
+                session_key: '{{ session_key|default:"" }}'
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Hide modal
+                bootstrap.Modal.getInstance(document.getElementById('blockCompletionModal')).hide();
+                
+                // Continue with study path logic
+                proceedToNextBlock();
+            } else {
+                alert('Error saving rating: ' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error saving rating:', error);
+            alert('Error saving rating');
+        });
+    }
+    
+    function skipRating() {
+        // Continue without rating
+        bootstrap.Modal.getInstance(document.getElementById('blockCompletionModal')).hide();
+        proceedToNextBlock();
+    }
+    
+    function proceedToNextBlock() {
+        // Check if we're in a study path (from study planner)
+        {% if session_key and study_path %}
+            // We're in a study path - use the study path completion logic
+            fetch('{% url "flashcards:complete_study_path_block" block_id=focus_block.id session_key=session_key %}', {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+                    'Content-Type': 'application/json'
+                }
+            }).then(response => {
+                if (response.redirected) {
+                    window.location.href = response.url;
+                } else {
+                    // Fallback redirect
+                    window.location.href = '{% url "flashcards:home" %}';
+                }
+            }).catch(error => {
+                console.error('Error completing study path block:', error);
+                window.location.href = '{% url "flashcards:home" %}';
+            });
+        {% else %}
+            // Regular focus block completion - redirect to all focus blocks
+            window.location.href = '{% url "flashcards:all_focus_blocks" %}';
+        {% endif %}
+    }
 
 function pauseStudy() {
     toggleTimer();
     alert('⏸️ Study session paused. Your progress is saved!');
 }
 
-// Initialize the study session
+// Initialize timers and calculate stats when page loads
 document.addEventListener('DOMContentLoaded', function() {
     startTimer();
-    updateProgress('objectives', 'active');
+    debugBlockStructure();  // Debug first
+    calculateAndUpdateStats();
 });
+
+// Debug function to understand the block structure
+function debugBlockStructure() {
+    console.log('🔍 === FOCUS BLOCKS DEBUG ===');
+    
+    // 1. Count total blocks from template data
+    const templateBlockCount = {{ focus_blocks|length }};
+    console.log(`📊 Template says total blocks: ${templateBlockCount}`);
+    
+    // 2. Find all block containers in DOM
+    const blockContainers = document.querySelectorAll('[id^="segments-"]');
+    console.log(`🏗️ DOM has ${blockContainers.length} block containers:`);
+    
+    blockContainers.forEach((container, index) => {
+        const blockId = container.id;
+        const isVisible = container.style.display !== 'none';
+        console.log(`   Block ${index}: ID=${blockId}, Visible=${isVisible}`);
+    });
+    
+    // 3. Check current block info from backend
+    {% if current_block %}
+    const currentBlockFromBackend = {
+        id: "{{ current_block.id }}",
+        title: "{{ current_block.title }}",
+        order: {{ current_block.block_order|default:0 }}
+    };
+    console.log(`🎯 Backend says current block:`, currentBlockFromBackend);
+    {% else %}
+    console.log(`🎯 Backend current block: None`);
+    {% endif %}
+    
+    // 4. Check study session info
+    {% if study_session %}
+    const studySessionInfo = {
+        id: "{{ study_session.id }}",
+        session_type: "{{ study_session.session_type }}",
+        current_block_id: "{{ study_session.current_focus_block.id|default:'' }}"
+    };
+    console.log(`📝 Study session:`, studySessionInfo);
+    {% else %}
+    console.log(`📝 Study session: None`);
+    {% endif %}
+    
+    // 5. Check which block is currently visible
+    const visibleBlock = document.querySelector('[id^="segments-"]:not([style*="display: none"])');
+    if (visibleBlock) {
+        console.log(`👁️ Currently visible block: ${visibleBlock.id}`);
+    } else {
+        console.log(`👁️ No visible block found`);
+    }
+    
+    // 6. Check currentBlockIndex variable
+    console.log(`🔢 JavaScript currentBlockIndex: ${currentBlockIndex}`);
+    
+    console.log('🔍 === END DEBUG ===');
+}
 </script>
 
-{% endblock %} 
-</script>
+<!-- Block Completion Modal -->
+<div class="modal fade" id="blockCompletionModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title">
+                    <i class="fas fa-trophy me-2"></i>Block Completed!
+                </h5>
+            </div>
+            <div class="modal-body">
+                <div class="text-center mb-4">
+                    <div class="alert alert-success">
+                        <h6 class="mb-2">🎉 Great job completing:</h6>
+                        <strong id="blockTitle">{{ focus_block.title }}</strong>
+                    </div>
+                    <p class="text-muted">
+                        <i class="fas fa-clock me-1"></i>
+                        Completed in <strong id="completionTime">0</strong> minutes
+                    </p>
+                </div>
+                
+                <div class="mb-4">
+                    <label class="form-label fw-bold">
+                        <i class="fas fa-star me-1"></i>Rate your understanding (1-5):
+                    </label>
+                    <div class="rating-options">
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="radio" name="proficiencyRating" id="rating1" value="1">
+                            <label class="form-check-label" for="rating1">
+                                1⭐ <small class="text-muted d-block">Need to review</small>
+                            </label>
+                        </div>
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="radio" name="proficiencyRating" id="rating2" value="2">
+                            <label class="form-check-label" for="rating2">
+                                2⭐ <small class="text-muted d-block">Partially understood</small>
+                            </label>
+                        </div>
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="radio" name="proficiencyRating" id="rating3" value="3">
+                            <label class="form-check-label" for="rating3">
+                                3⭐ <small class="text-muted d-block">Good understanding</small>
+                            </label>
+                        </div>
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="radio" name="proficiencyRating" id="rating4" value="4">
+                            <label class="form-check-label" for="rating4">
+                                4⭐ <small class="text-muted d-block">Very good</small>
+                            </label>
+                        </div>
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="radio" name="proficiencyRating" id="rating5" value="5">
+                            <label class="form-check-label" for="rating5">
+                                5⭐ <small class="text-muted d-block">Mastered</small>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" onclick="skipRating()">
+                    Skip Rating
+                </button>
+                <button type="button" class="btn btn-success" onclick="saveBlockRating()">
+                    <i class="fas fa-arrow-right me-1"></i>Continue to Next Block
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.rating-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    justify-content: center;
+}
+
+.rating-options .form-check {
+    margin: 0;
+    text-align: center;
+    padding: 0.5rem;
+    border: 1px solid #dee2e6;
+    border-radius: 0.375rem;
+    transition: all 0.2s;
+}
+
+.rating-options .form-check:hover {
+    background-color: #f8f9fa;
+    border-color: #007bff;
+}
+
+.rating-options .form-check-input:checked + .form-check-label {
+    color: #007bff;
+    font-weight: bold;
+}
+
+.rating-options .form-check-input:checked {
+    background-color: #007bff;
+    border-color: #007bff;
+}
+
+@media (max-width: 768px) {
+    .rating-options {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    .rating-options .form-check {
+        padding: 0.75rem;
+    }
+}
+</style>
 
 {% endblock %} 
