@@ -6857,3 +6857,23 @@ def force_sw_update(request):
                 <li>Test offline mode</li>
             </ol>
         """, content_type='text/html')
+
+
+def debug_sw(request):
+    """Serve the service worker debug page"""
+    import os
+    from django.conf import settings
+    from django.http import HttpResponse
+    
+    # Read the HTML file
+    html_path = os.path.join(settings.BASE_DIR, 'debug_sw.html')
+    
+    try:
+        with open(html_path, 'r') as f:
+            content = f.read()
+        return HttpResponse(content, content_type='text/html')
+    except FileNotFoundError:
+        return HttpResponse("""
+            <h1>Debug Tool Not Found</h1>
+            <p>Service worker debug tool is not available.</p>
+        """, content_type='text/html')

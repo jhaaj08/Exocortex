@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Service Worker Debug - Exocortex</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .success { background: #d4edda; border: 1px solid #c3e6cb; }
+        .error { background: #f8d7da; border: 1px solid #f5c6cb; }
+        .info { background: #d1ecf1; border: 1px solid #bee5eb; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+        #log { background: #f8f9fa; padding: 15px; border: 1px solid #dee2e6; margin: 10px 0; max-height: 300px; overflow-y: auto; }
+    </style>
+</head>
+<body>
+    <h1>🔧 Service Worker Debug Tool</h1>
+    
+    <div id="current-status" class="status info">Checking...</div>
+    
+    <div>
+        <button onclick="checkStatus()">Check Status</button>
+        <button onclick="unregisterSW()">Unregister SW</button>
+        <button onclick="registerSW()">Register SW</button>
+        <button onclick="clearCaches()">Clear Caches</button>
+        <button onclick="clearLog()">Clear Log</button>
+    </div>
+    
+    <div id="log"></div>
+
+    <script>
+        function log(message) {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `<div>[${timestamp}] ${message}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(message);
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        async function checkStatus() {
+            log('🔍 Checking service worker status...');
+            
+            if (!('serviceWorker' in navigator)) {
+                log('❌ Service Worker not supported in this browser');
+                return;
+            }
+            
+            try {
+                const registration = await navigator.serviceWorker.getRegistration();
+                if (registration) {
+                    log(`✅ Service Worker registered`);
+                    log(`📍 Scope: ${registration.scope}`);
+                    log(`🔄 Installing: ${registration.installing ? 'Yes' : 'No'}`);
+                    log(`⏳ Waiting: ${registration.waiting ? 'Yes' : 'No'}`);
+                    log(`🟢 Active: ${registration.active ? 'Yes' : 'No'}`);
+                    
+                    if (registration.active) {
+                        log(`📊 State: ${registration.active.state}`);
+                        log(`📄 Script URL: ${registration.active.scriptURL}`);
+                    }
+                    
+                    document.getElementById('current-status').innerHTML = 
+                        `✅ Service Worker Active (${registration.active ? registration.active.state : 'none'})`;
+                } else {
+                    log('❌ No service worker registered');
+                    document.getElementById('current-status').innerHTML = '❌ No service worker registered';
+                }
+            } catch (error) {
+                log(`❌ Error checking status: ${error.message}`);
+            }
+        }
+
+        async function unregisterSW() {
+            log('🗑️ Unregistering service worker...');
+            
+            try {
+                const registration = await navigator.serviceWorker.getRegistration();
+                if (registration) {
+                    await registration.unregister();
+                    log('✅ Service worker unregistered successfully');
+                } else {
+                    log('⚠️ No service worker was registered');
+                }
+            } catch (error) {
+                log(`❌ Error unregistering: ${error.message}`);
+            }
+        }
+
+        async function registerSW() {
+            log('📝 Registering new service worker...');
+            
+            try {
+                // First check if file exists
+                const swResponse = await fetch('/static/sw.js');
+                if (!swResponse.ok) {
+                    log(`❌ Service worker file not found: ${swResponse.status}`);
+                    return;
+                }
+                log(`✅ Service worker file accessible (${swResponse.status})`);
+                
+                // Register the service worker
+                const registration = await navigator.serviceWorker.register('/static/sw.js');
+                log(`📝 Registration initiated`);
+                log(`📍 Scope: ${registration.scope}`);
+                
+                // Wait for installation
+                if (registration.installing) {
+                    log('⏳ Installing service worker...');
+                    await new Promise((resolve) => {
+                        registration.installing.addEventListener('statechange', () => {
+                            log(`🔄 State changed to: ${registration.installing.state}`);
+                            if (registration.installing.state === 'installed') {
+                                resolve();
+                            }
+                        });
+                    });
+                }
+                
+                // Wait for activation
+                await navigator.serviceWorker.ready;
+                log('✅ Service worker registered and active!');
+                
+                // Check final status
+                await checkStatus();
+                
+            } catch (error) {
+                log(`❌ Registration error: ${error.message}`);
+                log(`Stack: ${error.stack}`);
+            }
+        }
+
+        async function clearCaches() {
+            log('🧹 Clearing all caches...');
+            
+            try {
+                const cacheNames = await caches.keys();
+                log(`Found ${cacheNames.length} caches: ${cacheNames.join(', ')}`);
+                
+                await Promise.all(cacheNames.map(name => caches.delete(name)));
+                log('✅ All caches cleared');
+            } catch (error) {
+                log(`❌ Error clearing caches: ${error.message}`);
+            }
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            log('🚀 Debug tool loaded');
+            checkStatus();
+        });
+    </script>
+</body>
+</html>
