@@ -10,6 +10,7 @@ const CORE_ASSETS = [
   "/static/icons/icon-192.png",
   "/static/icons/icon-512.png",
   "/focus-blocks/",
+  "/offline-plan/",
   // Add your critical CSS/JS files here when you have them
 ];
 
@@ -64,6 +65,9 @@ self.addEventListener("fetch", (event) => {
   } else if (request.url.includes("/api/") || request.url.includes("/admin/")) {
     // API/Admin - network first strategy
     event.respondWith(networkFirstStrategy(request));
+  } else if (request.url.includes("/offline-plan/") || request.url.includes("/export/study-pack/")) {
+    // Offline study features - cache first strategy
+    event.respondWith(cacheFirstStrategy(request));
   } else {
     // HTML pages - stale while revalidate strategy
     event.respondWith(staleWhileRevalidateStrategy(request));
@@ -129,9 +133,34 @@ async function staleWhileRevalidateStrategy(request) {
     return await networkResponsePromise;
   } catch (error) {
     console.log("[SW] Stale while revalidate failed:", error);
+    
+    // Smart fallback routing
+    if (request.url.includes("/focus-blocks/")) {
+      // Redirect focus-blocks to offline-plan when offline
+      const offlinePlan = await caches.match("/offline-plan/");
+      if (offlinePlan) {
+        return offlinePlan;
+      }
+    }
+    
     // Try to return a fallback page
     const fallback = await caches.match("/");
-    return fallback || new Response("Offline", { status: 503 });
+    return fallback || new Response(`
+      <!DOCTYPE html>
+      <html>
+      <head><title>Offline - Exocortex</title></head>
+      <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+        <h2>📵 You're Offline</h2>
+        <p>Some features are available offline:</p>
+        <a href="/offline-plan/" style="background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Go to Offline Study Plan</a>
+        <br><br>
+        <a href="/">Return to Home</a>
+      </body>
+      </html>
+    `, { 
+      status: 200, 
+      headers: { 'Content-Type': 'text/html' }
+    });
   }
 }
 

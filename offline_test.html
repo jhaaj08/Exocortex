@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Offline Study Plan Test</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container mt-4">
+        <h1>🧪 Offline Study Plan Test</h1>
+        
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5>🌐 Online Testing</h5>
+                    </div>
+                    <div class="card-body">
+                        <p>Test these URLs while <strong>online</strong>:</p>
+                        <ul>
+                            <li><a href="http://localhost:8000/" target="_blank">Home Page</a></li>
+                            <li><a href="http://localhost:8000/focus-blocks/" target="_blank">Study Plan (Online)</a></li>
+                            <li><a href="http://localhost:8000/offline-plan/" target="_blank">Study Plan (Offline)</a></li>
+                            <li><a href="http://localhost:8000/offline/" target="_blank">Offline Options</a></li>
+                        </ul>
+                        
+                        <div class="alert alert-success">
+                            <strong>Expected:</strong> All links should work normally
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5>📱 Offline Testing</h5>
+                    </div>
+                    <div class="card-body">
+                        <p>Steps to test offline functionality:</p>
+                        <ol>
+                            <li><strong>Go offline:</strong> Disconnect internet or use Dev Tools → Network → Offline</li>
+                            <li><strong>Navigate to:</strong> <a href="http://localhost:8000/" target="_blank">Home Page</a></li>
+                            <li><strong>Click "Study Plan"</strong> - should auto-redirect to offline version</li>
+                            <li><strong>Verify:</strong> No red blocking bar appears</li>
+                            <li><strong>Test:</strong> Navigation works smoothly</li>
+                        </ol>
+                        
+                        <div class="alert alert-info">
+                            <strong>Expected:</strong> 
+                            <ul class="mb-0">
+                                <li>✅ Small corner indicator (not blocking bar)</li>
+                                <li>✅ Study Plan works offline</li>
+                                <li>✅ Navigation remains clickable</li>
+                                <li>✅ Progress tracking works</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5>🔄 Connectivity Status Test</h5>
+                    </div>
+                    <div class="card-body">
+                        <p>Current Status: <span id="status" class="badge">Checking...</span></p>
+                        <p>Navigation Links: <span id="links">Checking...</span></p>
+                        
+                        <button class="btn btn-primary" onclick="checkStatus()">Refresh Status</button>
+                        <button class="btn btn-secondary" onclick="toggleOffline()">Simulate Offline</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function checkStatus() {
+            const status = document.getElementById('status');
+            const links = document.getElementById('links');
+            
+            if (navigator.onLine) {
+                status.className = 'badge bg-success';
+                status.textContent = '🌐 Online';
+            } else {
+                status.className = 'badge bg-warning';
+                status.textContent = '📱 Offline';
+            }
+            
+            // Check if Study Plan links redirect properly
+            const hasOfflineLinks = document.querySelectorAll('a[href="/offline-plan/"]').length > 0;
+            const hasOnlineLinks = document.querySelectorAll('a[href="/focus-blocks/"]').length > 0;
+            
+            if (!navigator.onLine && hasOfflineLinks) {
+                links.className = 'badge bg-success';
+                links.textContent = '✅ Links redirected to offline';
+            } else if (navigator.onLine && hasOnlineLinks) {
+                links.className = 'badge bg-success';
+                links.textContent = '✅ Links pointing to online';
+            } else {
+                links.className = 'badge bg-danger';
+                links.textContent = '❌ Link routing issue';
+            }
+        }
+        
+        function toggleOffline() {
+            // This just simulates - real testing needs browser dev tools
+            alert('To test offline mode:\n\n1. Open Browser Dev Tools (F12)\n2. Go to Network tab\n3. Check "Offline" checkbox\n4. Refresh the page\n\nOr disconnect your internet connection.');
+        }
+        
+        // Listen for connectivity changes
+        window.addEventListener('online', checkStatus);
+        window.addEventListener('offline', checkStatus);
+        
+        // Initial check
+        document.addEventListener('DOMContentLoaded', checkStatus);
+    </script>
+</body>
+</html>

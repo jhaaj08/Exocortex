@@ -55,26 +55,53 @@
             50% { transform: scale(1.05); }
         }
         
-        /* Offline indicator */
+        /* Improved offline indicator - non-blocking */
         .offline-indicator {
             position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            background: #dc3545;
+            top: 80px;
+            right: 20px;
+            background: linear-gradient(135deg, #fd7e14, #dc3545);
             color: white;
             text-align: center;
-            padding: 10px;
-            z-index: 9999;
+            padding: 8px 16px;
+            border-radius: 25px;
+            z-index: 1000;
             display: none;
+            font-size: 0.875rem;
+            box-shadow: 0 4px 15px rgba(220, 53, 69, 0.3);
+            transition: all 0.3s ease;
+            max-width: 200px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .offline-indicator.minimized {
+            padding: 6px 12px;
+            font-size: 0.75rem;
+            background: rgba(220, 53, 69, 0.8);
+            opacity: 0.8;
+        }
+        
+        .offline-indicator .close-btn {
+            margin-left: 10px;
+            background: none;
+            border: none;
+            color: white;
+            font-size: 0.9rem;
+            cursor: pointer;
+            opacity: 0.7;
+        }
+        
+        .offline-indicator .close-btn:hover {
+            opacity: 1;
         }
     </style>
 </head>
 <body>
-    <!-- Offline Indicator -->
+    <!-- Improved Offline Indicator -->
     <div id="offline-indicator" class="offline-indicator">
         <i class="fas fa-wifi-slash me-2"></i>
-        You're offline. Some features may not be available.
+        <span class="offline-text">Offline Mode</span>
+        <button class="close-btn" onclick="minimizeOfflineIndicator()" title="Minimize">×</button>
     </div>
 
     <!-- PWA Install Banner -->
@@ -361,12 +388,52 @@
             }
         }
         
+        // Improved offline indicator management
+        let offlineIndicatorMinimized = localStorage.getItem('offline_indicator_minimized') === 'true';
+        
+        function updateOfflineIndicator() {
+            const indicator = document.getElementById('offline-indicator');
+            const text = document.querySelector('.offline-text');
+            
+            if (!navigator.onLine) {
+                indicator.style.display = 'block';
+                
+                if (offlineIndicatorMinimized) {
+                    indicator.classList.add('minimized');
+                    text.textContent = '📱';
+                } else {
+                    indicator.classList.remove('minimized');
+                    text.textContent = 'Offline Mode';
+                }
+            } else {
+                indicator.style.display = 'none';
+            }
+        }
+        
+        function minimizeOfflineIndicator() {
+            const indicator = document.getElementById('offline-indicator');
+            offlineIndicatorMinimized = !offlineIndicatorMinimized;
+            
+            localStorage.setItem('offline_indicator_minimized', offlineIndicatorMinimized);
+            updateOfflineIndicator();
+        }
+        
         // Listen for connectivity changes
-        window.addEventListener('online', updateOfflineNavigation);
-        window.addEventListener('offline', updateOfflineNavigation);
+        window.addEventListener('online', function() {
+            updateOfflineIndicator();
+            updateOfflineNavigation();
+        });
+        
+        window.addEventListener('offline', function() {
+            updateOfflineIndicator();
+            updateOfflineNavigation();
+        });
         
         // Initialize on page load
-        document.addEventListener('DOMContentLoaded', updateOfflineNavigation);
+        document.addEventListener('DOMContentLoaded', function() {
+            updateOfflineIndicator();
+            updateOfflineNavigation();
+        });
     </script>
 
     {% block extra_js %}{% endblock %}
