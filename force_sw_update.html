@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Force Service Worker Update - Exocortex</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .step {
+            background: #e3f2fd;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border-left: 4px solid #2196f3;
+        }
+        .button {
+            background: #2196f3;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 5px;
+            font-size: 16px;
+        }
+        .button:hover {
+            background: #1976d2;
+        }
+        .success {
+            background: #c8e6c9;
+            border-left-color: #4caf50;
+        }
+        .warning {
+            background: #fff3e0;
+            border-left-color: #ff9800;
+        }
+        .error {
+            background: #ffebee;
+            border-left-color: #f44336;
+        }
+        .status {
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Force Service Worker Update</h1>
+        <p>This page will help you update to the new service worker that fixes the offline home page issue.</p>
+        
+        <div class="step">
+            <h3>Current Status</h3>
+            <div id="current-status">Checking...</div>
+        </div>
+
+        <div class="step">
+            <h3>Step 1: Unregister Old Service Worker</h3>
+            <p>This will remove the old service worker that shows the pumpkin "You're offline" screen.</p>
+            <button class="button" onclick="unregisterServiceWorker()">Unregister Service Worker</button>
+            <div id="unregister-status"></div>
+        </div>
+
+        <div class="step">
+            <h3>Step 2: Clear All Storage</h3>
+            <p>This will clear all cached data so the new service worker can start fresh.</p>
+            <button class="button" onclick="clearAllStorage()">Clear All Storage</button>
+            <div id="clear-status"></div>
+        </div>
+
+        <div class="step">
+            <h3>Step 3: Register New Service Worker</h3>
+            <p>This will install the new service worker with proper offline home page support.</p>
+            <button class="button" onclick="registerNewServiceWorker()">Register New Service Worker</button>
+            <div id="register-status"></div>
+        </div>
+
+        <div class="step">
+            <h3>Step 4: Test Offline</h3>
+            <p>Once all steps are complete, you can test the offline functionality.</p>
+            <button class="button" onclick="testOffline()" id="test-btn" disabled>Test Offline Mode</button>
+            <div id="test-status"></div>
+        </div>
+
+        <div class="step success hidden" id="success-message">
+            <h3>✅ Success!</h3>
+            <p>Service worker has been updated successfully. You can now:</p>
+            <ul>
+                <li>Go offline and visit the home page</li>
+                <li>You should see a proper offline home page instead of the pumpkin screen</li>
+                <li>Access your study plan and all cached materials</li>
+            </ul>
+            <button class="button" onclick="window.location.href='/'">Go to Home Page</button>
+        </div>
+    </div>
+
+    <script>
+        let stepsCompleted = 0;
+        const totalSteps = 3;
+
+        async function checkCurrentStatus() {
+            const statusDiv = document.getElementById('current-status');
+            
+            if ('serviceWorker' in navigator) {
+                const registration = await navigator.serviceWorker.getRegistration();
+                if (registration) {
+                    statusDiv.innerHTML = `
+                        ✅ Service Worker is registered<br>
+                        📍 Scope: ${registration.scope}<br>
+                        🔄 State: ${registration.active ? registration.active.state : 'inactive'}
+                    `;
+                } else {
+                    statusDiv.innerHTML = '❌ No service worker registered';
+                }
+            } else {
+                statusDiv.innerHTML = '❌ Service Worker not supported';
+            }
+        }
+
+        async function unregisterServiceWorker() {
+            const statusDiv = document.getElementById('unregister-status');
+            statusDiv.innerHTML = '⏳ Unregistering...';
+            
+            try {
+                if ('serviceWorker' in navigator) {
+                    const registration = await navigator.serviceWorker.getRegistration();
+                    if (registration) {
+                        await registration.unregister();
+                        statusDiv.innerHTML = '<div class="status success">✅ Service worker unregistered successfully</div>';
+                        stepsCompleted++;
+                        checkProgress();
+                    } else {
+                        statusDiv.innerHTML = '<div class="status warning">⚠️ No service worker was registered</div>';
+                        stepsCompleted++;
+                        checkProgress();
+                    }
+                } else {
+                    statusDiv.innerHTML = '<div class="status error">❌ Service Worker not supported</div>';
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="status error">❌ Error: ${error.message}</div>`;
+            }
+        }
+
+        async function clearAllStorage() {
+            const statusDiv = document.getElementById('clear-status');
+            statusDiv.innerHTML = '⏳ Clearing storage...';
+            
+            try {
+                // Clear caches
+                if ('caches' in window) {
+                    const cacheNames = await caches.keys();
+                    await Promise.all(cacheNames.map(name => caches.delete(name)));
+                }
+                
+                // Clear localStorage
+                localStorage.clear();
+                
+                // Clear sessionStorage
+                sessionStorage.clear();
+                
+                statusDiv.innerHTML = '<div class="status success">✅ All storage cleared successfully</div>';
+                stepsCompleted++;
+                checkProgress();
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="status error">❌ Error: ${error.message}</div>`;
+            }
+        }
+
+        async function registerNewServiceWorker() {
+            const statusDiv = document.getElementById('register-status');
+            statusDiv.innerHTML = '⏳ Registering new service worker...';
+            
+            try {
+                if ('serviceWorker' in navigator) {
+                    const registration = await navigator.serviceWorker.register('/static/sw.js');
+                    
+                    // Wait for the service worker to be ready
+                    await navigator.serviceWorker.ready;
+                    
+                    statusDiv.innerHTML = '<div class="status success">✅ New service worker registered and ready!</div>';
+                    stepsCompleted++;
+                    checkProgress();
+                } else {
+                    statusDiv.innerHTML = '<div class="status error">❌ Service Worker not supported</div>';
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="status error">❌ Error: ${error.message}</div>`;
+            }
+        }
+
+        function checkProgress() {
+            if (stepsCompleted >= totalSteps) {
+                document.getElementById('test-btn').disabled = false;
+                document.getElementById('success-message').classList.remove('hidden');
+            }
+        }
+
+        function testOffline() {
+            const statusDiv = document.getElementById('test-status');
+            statusDiv.innerHTML = `
+                <div class="status warning">
+                    📱 To test offline mode:<br>
+                    1. Open DevTools (F12)<br>
+                    2. Go to Network tab<br>
+                    3. Check "Offline" checkbox<br>
+                    4. Visit the home page<br>
+                    5. You should see the proper offline home page!
+                </div>
+            `;
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            checkCurrentStatus();
+        });
+    </script>
+</body>
+</html>

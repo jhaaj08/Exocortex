@@ -111,4 +111,6 @@ urlpatterns = [
     path('api/sync-status/', views.sync_status, name='sync_status'),
     path('api/debug-completion/', views.debug_completion_status, name='debug_completion_status'),
     path('api/warm-cache/', views.warm_offline_cache, name='warm_offline_cache'),
+    path('api/check-offline/', views.check_offline_setup, name='check_offline_setup'),
+    path('force-update/', views.force_sw_update, name='force_sw_update'),
 ] 

@@ -518,8 +518,8 @@ def process_pdf_complete(pdf_document):
             # Ensure the PDF is marked as processed (task should have done this already)
             pdf_document.refresh_from_db()
             if not pdf_document.processed:
-                pdf_document.processed = True
-                pdf_document.save()
+            pdf_document.processed = True
+            pdf_document.save()
             
             return True, f"📚 Content already exists as '{duplicate_info['existing_name']}'!", {}
         
@@ -2289,7 +2289,7 @@ def bulk_upload(request):
                     # Store task ID for progress tracking
                     # Note: task ID will be generated after transaction commit
                     pdf_doc.save()
-                    uploaded_count += 1
+                        uploaded_count += 1
                     print(f"✅ {file.name}: Processing started in background")
                             
                 except Exception as e:
@@ -6762,3 +6762,98 @@ def warm_offline_cache(request):
         'message': f'Warmed cache for {len(cached_urls)} URLs',
         'instructions': 'Service worker will now cache these pages for offline use'
     })
+
+
+def check_offline_setup(request):
+    """Debug endpoint to check offline setup status"""
+    
+    import os
+    from django.conf import settings
+    
+    # Check if service worker file exists
+    sw_path = os.path.join(settings.BASE_DIR, 'static', 'sw.js')
+    sw_exists = os.path.exists(sw_path)
+    
+    # Get service worker version
+    sw_version = "unknown"
+    if sw_exists:
+        try:
+            with open(sw_path, 'r') as f:
+                content = f.read()
+                for line in content.split('\n'):
+                    if 'CACHE_VERSION' in line and '=' in line:
+                        sw_version = line.split('=')[1].strip().strip('"').strip("'").strip(';')
+                        break
+        except:
+            pass
+    
+    # Check essential URLs
+    essential_urls = ['/', '/offline-home/', '/offline-plan/', '/offline/']
+    url_status = {}
+    
+    for url in essential_urls:
+        try:
+            from django.test import Client
+            client = Client()
+            response = client.get(url)
+            url_status[url] = {
+                'status_code': response.status_code,
+                'accessible': response.status_code == 200
+            }
+        except Exception as e:
+            url_status[url] = {
+                'status_code': 'error',
+                'accessible': False,
+                'error': str(e)
+            }
+    
+    return JsonResponse({
+        'service_worker': {
+            'file_exists': sw_exists,
+            'version': sw_version,
+            'path': sw_path
+        },
+        'urls': url_status,
+        'instructions': {
+            'step_1': 'Visit /api/warm-cache/ while online',
+            'step_2': 'Clear browser cache and service worker',
+            'step_3': 'Refresh page to get new service worker',
+            'step_4': 'Go offline and test'
+        },
+        'force_update_steps': [
+            'Open DevTools (F12)',
+            'Go to Application tab → Service Workers',
+            'Click "Unregister" if service worker exists',
+            'Go to Application tab → Storage → Clear storage',
+            'Refresh the page',
+            'New service worker should install'
+        ]
+    })
+
+
+def force_sw_update(request):
+    """Serve the service worker update page"""
+    import os
+    from django.conf import settings
+    from django.http import HttpResponse
+    
+    # Read the HTML file
+    html_path = os.path.join(settings.BASE_DIR, 'force_sw_update.html')
+    
+    try:
+        with open(html_path, 'r') as f:
+            content = f.read()
+        return HttpResponse(content, content_type='text/html')
+    except FileNotFoundError:
+        return HttpResponse("""
+            <h1>Service Worker Update Tool Not Found</h1>
+            <p>Please follow these manual steps:</p>
+            <ol>
+                <li>Open DevTools (F12)</li>
+                <li>Go to Application tab → Service Workers</li>
+                <li>Click "Unregister" for any existing service workers</li>
+                <li>Go to Application tab → Storage → Clear storage</li>
+                <li>Refresh the page</li>
+                <li>Test offline mode</li>
+            </ol>
+        """, content_type='text/html')
