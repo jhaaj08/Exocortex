@@ -6,11 +6,11 @@ const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 // Core assets to cache immediately
 const CORE_ASSETS = [
   "/",
+  "/offline-home/",
+  "/offline-plan/",
   "/static/manifest.json",
   "/static/icons/icon-192.png",
   "/static/icons/icon-512.png",
-  "/focus-blocks/",
-  "/offline-plan/",
   // Add your critical CSS/JS files here when you have them
 ];
 
@@ -65,11 +65,14 @@ self.addEventListener("fetch", (event) => {
   } else if (request.url.includes("/api/") || request.url.includes("/admin/")) {
     // API/Admin - network first strategy
     event.respondWith(networkFirstStrategy(request));
-  } else if (request.url.includes("/offline-plan/") || request.url.includes("/export/study-pack/")) {
+  } else if (request.url.includes("/offline-plan/") || request.url.includes("/offline-home/") || request.url.includes("/export/study-pack/")) {
     // Offline study features - cache first strategy
     event.respondWith(cacheFirstStrategy(request));
+  } else if (request.url.endsWith("/") || request.url.includes("/focus-blocks/")) {
+    // Home page and study plan - special offline handling
+    event.respondWith(homePageStrategy(request));
   } else {
-    // HTML pages - stale while revalidate strategy
+    // Other HTML pages - stale while revalidate strategy
     event.respondWith(staleWhileRevalidateStrategy(request));
   }
 });
@@ -134,34 +137,58 @@ async function staleWhileRevalidateStrategy(request) {
   } catch (error) {
     console.log("[SW] Stale while revalidate failed:", error);
     
-    // Smart fallback routing
-    if (request.url.includes("/focus-blocks/")) {
-      // Redirect focus-blocks to offline-plan when offline
-      const offlinePlan = await caches.match("/offline-plan/");
-      if (offlinePlan) {
-        return offlinePlan;
-      }
+    // Try to return cached fallback
+    const fallback = await caches.match("/");
+    if (fallback) {
+      return fallback;
     }
     
-    // Try to return a fallback page
-    const fallback = await caches.match("/");
-    return fallback || new Response(`
-      <!DOCTYPE html>
-      <html>
-      <head><title>Offline - Exocortex</title></head>
-      <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
-        <h2>📵 You're Offline</h2>
-        <p>Some features are available offline:</p>
-        <a href="/offline-plan/" style="background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Go to Offline Study Plan</a>
-        <br><br>
-        <a href="/">Return to Home</a>
-      </body>
-      </html>
-    `, { 
-      status: 200, 
-      headers: { 'Content-Type': 'text/html' }
-    });
+    // Ultimate fallback - redirect to offline plan
+    return Response.redirect("/offline-plan/", 302);
   }
+}
+
+// Home page strategy - serves cached home page or offline home page
+async function homePageStrategy(request) {
+  try {
+    // Try network first for fresh content
+    const networkResponse = await fetch(request);
+    if (networkResponse.status === 200) {
+      const cache = await caches.open(DYNAMIC_CACHE);
+      cache.put(request, networkResponse.clone());
+      return networkResponse;
+    }
+  } catch (error) {
+    console.log("[SW] Network failed for home page, serving offline version:", error);
+  }
+  
+  // Network failed, serve appropriate offline page
+  const url = new URL(request.url);
+  
+  if (url.pathname.includes("/focus-blocks/")) {
+    // Redirect study plan to offline version
+    const offlinePlan = await caches.match("/offline-plan/");
+    if (offlinePlan) {
+      return offlinePlan;
+    }
+  }
+  
+  if (url.pathname === "/" || url.pathname === "/home/") {
+    // Serve offline home page for root requests
+    const offlineHome = await caches.match("/offline-home/");
+    if (offlineHome) {
+      return offlineHome;
+    }
+    
+    // Fallback to cached home page
+    const cachedHome = await caches.match("/");
+    if (cachedHome) {
+      return cachedHome;
+    }
+  }
+  
+  // Last resort: redirect to offline plan
+  return Response.redirect("/offline-plan/", 302);
 }
 
 // Background sync for future features
