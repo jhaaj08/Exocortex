@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ pack_name }} - Offline Study Pack</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .block-card { cursor: pointer; transition: all 0.3s ease; }
+        .block-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        .segment-content { display: none; }
+        .segment-content.active { display: block; }
+        .timer { font-family: 'Courier New', monospace; font-size: 2rem; font-weight: bold; }
+        .progress-ring { transform: rotate(-90deg); }
+        .offline-badge { 
+            position: fixed; 
+            top: 10px; 
+            right: 10px; 
+            z-index: 1000;
+            background: linear-gradient(45deg, #28a745, #20c997);
+        }
+    </style>
+</head>
+<body>
+    <!-- Offline Badge -->
+    <div class="offline-badge badge bg-success p-2">
+        <i class="fas fa-wifi-slash me-1"></i>Offline Mode
+    </div>
+
+    <div class="container mt-4">
+        <!-- Header -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <h1 class="display-6 text-center mb-3">
+                    <i class="fas fa-cube text-primary me-3"></i>{{ study_pack.metadata.title }}
+                </h1>
+                <div class="text-center text-muted mb-4">
+                    <p class="mb-1"><i class="fas fa-cubes me-2"></i>{{ study_pack.metadata.block_count }} Focus Blocks</p>
+                    <p class="mb-1"><i class="fas fa-calendar me-2"></i>Exported: {{ study_pack.metadata.exported_at|slice:":10" }}</p>
+                    <p><i class="fas fa-info-circle me-2"></i>No internet connection required!</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Study Interface (Hidden initially) -->
+        <div id="study-interface" style="display: none;">
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <button class="btn btn-outline-secondary" onclick="backToBlockList()">
+                            <i class="fas fa-arrow-left me-2"></i>Back to Blocks
+                        </button>
+                        <div class="timer text-primary" id="timer">00:00</div>
+                        <button class="btn btn-success" onclick="completeCurrentBlock()">
+                            <i class="fas fa-check me-2"></i>Complete
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Current Block Display -->
+            <div id="current-block-display">
+                <!-- Block content will be injected here -->
+            </div>
+        </div>
+
+        <!-- Block Selection (Shown initially) -->
+        <div id="block-selection">
+            <div class="row">
+                {% for block in study_pack.blocks %}
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="card block-card h-100" onclick="startBlock('{{ forloop.counter0 }}')">
+                        <div class="card-header">
+                            <h6 class="mb-0">
+                                <span class="badge bg-primary me-2">{{ block.order }}</span>
+                                {{ block.title|truncatechars:40 }}
+                            </h6>
+                        </div>
+                        <div class="card-body">
+                            <p class="text-muted mb-2">
+                                <i class="fas fa-file-pdf me-1"></i>{{ block.pdf_name|truncatechars:30 }}
+                            </p>
+                            <div class="row text-center">
+                                <div class="col-6">
+                                    <small class="text-muted">Duration</small>
+                                    <div class="fw-bold">{{ block.duration|floatformat:0 }}s</div>
+                                </div>
+                                <div class="col-6">
+                                    <small class="text-muted">Segments</small>
+                                    <div class="fw-bold">{{ block.segments|length }}</div>
+                                </div>
+                            </div>
+                            <div class="mt-3">
+                                <span class="badge bg-{{ block.difficulty }}">{{ block.difficulty|title }}</span>
+                                {% if block.qa_items %}
+                                <span class="badge bg-info">{{ block.qa_items|length }} Q&A</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        // Study pack data
+        const studyPack = {{ study_pack|safe }};
+        let currentBlockIndex = 0;
+        let currentSegmentIndex = 0;
+        let timerInterval = null;
+        let studyStartTime = 0;
+        
+        // ==========================================
+        // OFFLINE PROGRESS STORAGE
+        // ==========================================
+        
+        function saveOfflineProgress(blockId, proficiencyRating, timeSpentSeconds) {
+            const progressData = {
+                block_id: blockId,
+                proficiency_rating: proficiencyRating,
+                time_spent_seconds: timeSpentSeconds,
+                completed_at: new Date().toISOString(),
+                segments_completed: getCompletedSegments(blockId),
+                synced: false
+            };
+            
+            // Get existing offline progress
+            let offlineProgress = JSON.parse(localStorage.getItem('offline_study_progress') || '[]');
+            
+            // Add new progress
+            offlineProgress.push(progressData);
+            
+            // Save to localStorage
+            localStorage.setItem('offline_study_progress', JSON.stringify(offlineProgress));
+            
+            console.log('💾 Saved offline progress:', progressData);
+            
+            // Try to sync immediately if online
+            if (navigator.onLine) {
+                syncOfflineProgress();
+            }
+        }
+        
+        function getCompletedSegments(blockId) {
+            // For this demo, assume all segments completed when block is finished
+            const block = studyPack.blocks.find(b => b.id === blockId);
+            return block ? Array.from({length: block.segments.length}, (_, i) => i) : [];
+        }
+        
+        async function syncOfflineProgress() {
+            const offlineProgress = JSON.parse(localStorage.getItem('offline_study_progress') || '[]');
+            const unsyncedSessions = offlineProgress.filter(session => !session.synced);
+            
+            if (unsyncedSessions.length === 0) {
+                console.log('✅ No offline progress to sync');
+                return;
+            }
+            
+            console.log(`🔄 Syncing ${unsyncedSessions.length} offline sessions...`);
+            
+            try {
+                const response = await fetch('/api/sync-progress/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken()
+                    },
+                    body: JSON.stringify({
+                        sessions: unsyncedSessions
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    // Mark sessions as synced
+                    const allProgress = JSON.parse(localStorage.getItem('offline_study_progress') || '[]');
+                    const syncedProgress = allProgress.map(session => ({
+                        ...session,
+                        synced: true
+                    }));
+                    localStorage.setItem('offline_study_progress', JSON.stringify(syncedProgress));
+                    
+                    console.log(`✅ Successfully synced ${result.synced_count} sessions`);
+                    showSyncNotification(`Synced ${result.synced_count} study sessions!`, 'success');
+                    
+                    if (result.errors.length > 0) {
+                        console.warn('⚠️ Sync errors:', result.errors);
+                    }
+                } else {
+                    console.error('❌ Sync failed:', result.error);
+                    showSyncNotification('Sync failed. Will retry when online.', 'error');
+                }
+            } catch (error) {
+                console.error('❌ Sync request failed:', error);
+                showSyncNotification('Sync failed. Will retry when online.', 'error');
+            }
+        }
+        
+        function getCsrfToken() {
+            const cookies = document.cookie.split(';');
+            for (let cookie of cookies) {
+                const [name, value] = cookie.trim().split('=');
+                if (name === 'csrftoken') {
+                    return value;
+                }
+            }
+            return '';
+        }
+        
+        function showSyncNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.className = `alert alert-${type === 'success' ? 'success' : type === 'error' ? 'danger' : 'info'} 
+                                      position-fixed top-0 end-0 m-3`;
+            notification.style.zIndex = '9999';
+            notification.innerHTML = `
+                <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-triangle' : 'info-circle'} me-2"></i>
+                ${message}
+                <button type="button" class="btn-close" onclick="this.parentElement.remove()"></button>
+            `;
+            
+            document.body.appendChild(notification);
+            
+            // Auto-remove after 5 seconds
+            setTimeout(() => {
+                if (notification.parentElement) {
+                    notification.remove();
+                }
+            }, 5000);
+        }
+        
+        // ==========================================
+        // CONNECTIVITY MONITORING
+        // ==========================================
+        
+        function updateConnectivityStatus() {
+            const badge = document.querySelector('.offline-badge');
+            if (navigator.onLine) {
+                badge.className = 'offline-badge badge bg-success p-2';
+                badge.innerHTML = '<i class="fas fa-wifi me-1"></i>Online - Auto Sync';
+                syncOfflineProgress(); // Try to sync when we come online
+            } else {
+                badge.className = 'offline-badge badge bg-warning p-2';
+                badge.innerHTML = '<i class="fas fa-wifi-slash me-1"></i>Offline Mode';
+            }
+        }
+        
+        // Listen for connectivity changes
+        window.addEventListener('online', () => {
+            console.log('🌐 Back online! Attempting to sync...');
+            updateConnectivityStatus();
+        });
+        
+        window.addEventListener('offline', () => {
+            console.log('📡 Gone offline. Progress will be saved locally.');
+            updateConnectivityStatus();
+        });
+        
+        // ==========================================
+        // EXISTING STUDY FUNCTIONS (UPDATED)
+        // ==========================================
+        
+        function startBlock(blockIndex) {
+            currentBlockIndex = parseInt(blockIndex);
+            currentSegmentIndex = 0;
+            
+            document.getElementById('block-selection').style.display = 'none';
+            document.getElementById('study-interface').style.display = 'block';
+            
+            renderCurrentBlock();
+            startTimer();
+        }
+        
+        function backToBlockList() {
+            document.getElementById('study-interface').style.display = 'none';
+            document.getElementById('block-selection').style.display = 'block';
+            stopTimer();
+        }
+        
+        function renderCurrentBlock() {
+            const block = studyPack.blocks[currentBlockIndex];
+            const segment = block.segments[currentSegmentIndex];
+            
+            const html = `
+                <div class="row">
+                    <div class="col-12">
+                        <h2 class="mb-3">${block.title}</h2>
+                        <div class="mb-4">
+                            <div class="progress">
+                                <div class="progress-bar" style="width: ${((currentSegmentIndex + 1) / block.segments.length) * 100}%"></div>
+                            </div>
+                            <small class="text-muted">Segment ${currentSegmentIndex + 1} of ${block.segments.length}</small>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-lg-8">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5>${segment.title || 'Learning Segment'}</h5>
+                                <small class="text-muted">Duration: ${segment.time_sec || 60} seconds</small>
+                            </div>
+                            <div class="card-body">
+                                ${segment.content || ''}
+                                ${segment.explanation || ''}
+                                
+                                ${segment.teach ? segment.teach.map(item => `
+                                    <div class="mb-3 p-3 border-start border-primary border-3">
+                                        <strong>${item.mode}:</strong> ${item.text}
+                                    </div>
+                                `).join('') : ''}
+                                
+                                ${segment.examples ? segment.examples.map(example => `
+                                    <div class="alert alert-info">
+                                        <strong>Example:</strong> ${example}
+                                    </div>
+                                `).join('') : ''}
+                            </div>
+                            <div class="card-footer">
+                                <div class="d-flex justify-content-between">
+                                    <button class="btn btn-secondary" onclick="previousSegment()" ${currentSegmentIndex === 0 ? 'disabled' : ''}>
+                                        <i class="fas fa-chevron-left me-1"></i>Previous
+                                    </button>
+                                    <button class="btn btn-primary" onclick="nextSegment()">
+                                        ${currentSegmentIndex === block.segments.length - 1 ? 'Complete Block' : 'Next Segment'}
+                                        <i class="fas fa-chevron-right ms-1"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-lg-4">
+                        <!-- Q&A Section -->
+                        ${block.qa_items && block.qa_items.length > 0 ? `
+                        <div class="card mb-3">
+                            <div class="card-header">
+                                <h6><i class="fas fa-question-circle me-2"></i>Knowledge Check</h6>
+                            </div>
+                            <div class="card-body">
+                                ${block.qa_items.map((qa, index) => `
+                                    <div class="mb-3">
+                                        <strong>Q${index + 1}:</strong> ${qa.question}
+                                        <div class="mt-2">
+                                            <button class="btn btn-sm btn-outline-primary" onclick="toggleAnswer(${index})">
+                                                Show Answer
+                                            </button>
+                                            <div id="answer-${index}" style="display: none;" class="mt-2 p-2 bg-light rounded">
+                                                ${qa.answer}
+                                            </div>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                        ` : ''}
+                        
+                        <!-- Block Info -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h6><i class="fas fa-info-circle me-2"></i>Block Info</h6>
+                            </div>
+                            <div class="card-body">
+                                <p><strong>PDF:</strong> ${block.pdf_name}</p>
+                                <p><strong>Difficulty:</strong> ${block.difficulty}</p>
+                                <p><strong>Order:</strong> ${block.order}</p>
+                                ${block.objectives && block.objectives.length > 0 ? `
+                                <p><strong>Objectives:</strong></p>
+                                <ul class="small">
+                                    ${block.objectives.map(obj => `<li>${obj}</li>`).join('')}
+                                </ul>
+                                ` : ''}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.getElementById('current-block-display').innerHTML = html;
+        }
+        
+        function nextSegment() {
+            const block = studyPack.blocks[currentBlockIndex];
+            
+            if (currentSegmentIndex < block.segments.length - 1) {
+                currentSegmentIndex++;
+                renderCurrentBlock();
+            } else {
+                completeCurrentBlock();
+            }
+        }
+        
+        function previousSegment() {
+            if (currentSegmentIndex > 0) {
+                currentSegmentIndex--;
+                renderCurrentBlock();
+            }
+        }
+        
+        function completeCurrentBlock() {
+            const timeSpent = Math.floor((Date.now() - studyStartTime) / 1000);
+            const block = studyPack.blocks[currentBlockIndex];
+            
+            // Show rating modal
+            showRatingModal(block, timeSpent);
+        }
+        
+        function showRatingModal(block, timeSpent) {
+            const modalHtml = `
+                <div class="modal fade" id="ratingModal" tabindex="-1">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title">🎉 Block Completed!</h5>
+                            </div>
+                            <div class="modal-body">
+                                <h6>${block.title}</h6>
+                                <p class="text-muted">Time spent: ${Math.floor(timeSpent / 60)}m ${timeSpent % 60}s</p>
+                                
+                                <div class="mb-3">
+                                    <label class="form-label">How well did you understand this content?</label>
+                                    <div class="rating-buttons">
+                                        ${[1,2,3,4,5].map(rating => `
+                                            <button class="btn btn-outline-primary me-2" onclick="selectRating(${rating})">
+                                                ${'⭐'.repeat(rating)} ${rating}
+                                            </button>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" onclick="closeRatingModal()">Skip</button>
+                                <button type="button" class="btn btn-primary" id="saveRatingBtn" onclick="saveRating()" disabled>
+                                    Save & Continue
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            const modal = new bootstrap.Modal(document.getElementById('ratingModal'));
+            modal.show();
+            
+            // Store current context for rating
+            window.currentRatingContext = { block, timeSpent };
+        }
+        
+        let selectedRating = null;
+        
+        function selectRating(rating) {
+            selectedRating = rating;
+            
+            // Update UI
+            document.querySelectorAll('.rating-buttons .btn').forEach(btn => {
+                btn.classList.remove('btn-primary');
+                btn.classList.add('btn-outline-primary');
+            });
+            
+            event.target.classList.remove('btn-outline-primary');
+            event.target.classList.add('btn-primary');
+            
+            document.getElementById('saveRatingBtn').disabled = false;
+        }
+        
+        function saveRating() {
+            if (!selectedRating || !window.currentRatingContext) return;
+            
+            const { block, timeSpent } = window.currentRatingContext;
+            
+            // Save offline progress
+            saveOfflineProgress(block.id, selectedRating, timeSpent);
+            
+            closeRatingModal();
+            
+            alert(`🎉 Block completed and saved offline!
+            
+Block: ${block.title}
+Rating: ${selectedRating}/5 stars
+Time spent: ${Math.floor(timeSpent / 60)}m ${timeSpent % 60}s
+
+${navigator.onLine ? '✅ Will sync to server automatically' : '📱 Saved locally - will sync when online'}
+
+Great work! 🚀`);
+            
+            backToBlockList();
+        }
+        
+        function closeRatingModal() {
+            const modal = bootstrap.Modal.getInstance(document.getElementById('ratingModal'));
+            modal.hide();
+            document.getElementById('ratingModal').remove();
+            window.currentRatingContext = null;
+            selectedRating = null;
+        }
+        
+        function toggleAnswer(index) {
+            const answerDiv = document.getElementById(`answer-${index}`);
+            const button = event.target;
+            
+            if (answerDiv.style.display === 'none') {
+                answerDiv.style.display = 'block';
+                button.textContent = 'Hide Answer';
+                button.classList.remove('btn-outline-primary');
+                button.classList.add('btn-primary');
+            } else {
+                answerDiv.style.display = 'none';
+                button.textContent = 'Show Answer';
+                button.classList.remove('btn-primary');
+                button.classList.add('btn-outline-primary');
+            }
+        }
+        
+        function startTimer() {
+            studyStartTime = Date.now();
+            timerInterval = setInterval(updateTimer, 1000);
+        }
+        
+        function stopTimer() {
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }
+        }
+        
+        function updateTimer() {
+            const elapsed = Math.floor((Date.now() - studyStartTime) / 1000);
+            const minutes = Math.floor(elapsed / 60);
+            const seconds = elapsed % 60;
+            
+            document.getElementById('timer').textContent = 
+                `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
+        
+        // ==========================================
+        // INITIALIZATION
+        // ==========================================
+        
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(event) {
+            if (document.getElementById('study-interface').style.display !== 'none') {
+                if (event.key === 'ArrowRight' || event.key === ' ') {
+                    event.preventDefault();
+                    nextSegment();
+                } else if (event.key === 'ArrowLeft') {
+                    event.preventDefault();
+                    previousSegment();
+                } else if (event.key === 'Escape') {
+                    backToBlockList();
+                }
+            }
+        });
+        
+        // Prevent right-click context menu for cleaner offline experience
+        document.addEventListener('contextmenu', function(event) {
+            event.preventDefault();
+        });
+        
+        // Initialize connectivity status
+        document.addEventListener('DOMContentLoaded', function() {
+            updateConnectivityStatus();
+            
+            // Check for pending sync on load
+            const offlineProgress = JSON.parse(localStorage.getItem('offline_study_progress') || '[]');
+            const unsyncedSessions = offlineProgress.filter(session => !session.synced);
+            
+            if (unsyncedSessions.length > 0 && navigator.onLine) {
+                console.log(`📤 Found ${unsyncedSessions.length} unsynced sessions. Syncing...`);
+                syncOfflineProgress();
+            }
+        });
+        
+        console.log('📦 Offline Study Pack loaded successfully with sync support!');
+        console.log(`🎯 ${studyPack.blocks.length} focus blocks available for study`);
+        console.log('⌨️ Keyboard shortcuts: Arrow keys to navigate, Escape to go back');
+        console.log('💾 Progress is automatically saved offline and synced when online');
+    </script>
+</body>
+</html>

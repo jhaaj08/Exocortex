@@ -6294,3 +6294,275 @@ def generate_study_schedule_view(request):
     }
     
     return render(request, 'flashcards/study_schedule.html', context)
+
+# ==========================================
+# OFFLINE STUDY FUNCTIONALITY
+# ==========================================
+
+def export_study_pack(request, pdf_id=None):
+    """Export focus blocks as offline study pack"""
+    
+    if pdf_id:
+        # Export specific PDF's focus blocks
+        pdf_document = get_object_or_404(PDFDocument, id=pdf_id)
+        focus_blocks = list(FocusBlock.objects.filter(
+            pdf_document=pdf_document,
+            compact7_data__has_key='segments'
+        ).exclude(title__startswith='[MIGRATED→'))
+        
+        pack_name = f"{pdf_document.name}_study_pack"
+    else:
+        # Export all focus blocks
+        focus_blocks = list(FocusBlock.objects.filter(
+            compact7_data__has_key='segments'
+        ).exclude(title__startswith='[MIGRATED→'))
+        
+        pack_name = "all_focus_blocks_study_pack"
+    
+    if not focus_blocks:
+        return JsonResponse({'error': 'No focus blocks found'}, status=404)
+    
+    # Create study pack data
+    study_pack = {
+        'metadata': {
+            'title': pack_name,
+            'exported_at': str(timezone.now().isoformat()),
+            'block_count': len(focus_blocks),
+            'version': '1.0'
+        },
+        'blocks': []
+    }
+    
+    # Add focus block data
+    for block in focus_blocks:
+        block_data = {
+            'id': str(block.id),
+            'title': block.title,
+            'order': block.block_order,
+            'duration': block.target_duration,
+            'difficulty': block.difficulty_level,
+            'pdf_name': block.pdf_document.name,
+            'segments': block.get_segments(),
+            'qa_items': block.get_qa_items(),
+            'revision': block.get_revision_data(),
+            'recap': block.get_recap_data(),
+            'rescue': block.get_rescue_data(),
+            'objectives': block.learning_objectives
+        }
+        study_pack['blocks'].append(block_data)
+    
+    # Create response based on format
+    if request.GET.get('format') == 'html':
+        return export_html_study_pack(study_pack, pack_name)
+    else:
+        return export_json_study_pack(study_pack, pack_name)
+
+
+def export_json_study_pack(study_pack, pack_name):
+    """Export as JSON file"""
+    from django.http import HttpResponse
+    
+    response = HttpResponse(
+        json.dumps(study_pack, indent=2),
+        content_type='application/json'
+    )
+    response['Content-Disposition'] = f'attachment; filename="{pack_name}.json"'
+    return response
+
+
+def export_html_study_pack(study_pack, pack_name):
+    """Export as standalone HTML file"""
+    from django.template.loader import render_to_string
+    from django.http import HttpResponse
+    
+    # Render the standalone study template
+    html_content = render_to_string('flashcards/offline_study_pack.html', {
+        'study_pack': study_pack,
+        'pack_name': pack_name
+    })
+    
+    response = HttpResponse(html_content, content_type='text/html')
+    response['Content-Disposition'] = f'attachment; filename="{pack_name}.html"'
+    return response
+
+
+@require_http_methods(["GET"])
+def study_pack_api(request, block_id):
+    """API endpoint to get focus block data for PWA offline caching"""
+    block = get_object_or_404(FocusBlock, id=block_id)
+    
+    block_data = {
+        'id': str(block.id),
+        'title': block.title,
+        'order': block.block_order,
+        'duration': block.target_duration,
+        'difficulty': block.difficulty_level,
+        'pdf_name': block.pdf_document.name,
+        'segments': block.get_segments(),
+        'qa_items': block.get_qa_items(),
+        'revision': block.get_revision_data(),
+        'recap': block.get_recap_data(),
+        'rescue': block.get_rescue_data(),
+        'objectives': block.learning_objectives,
+        'estimated_duration': block.get_estimated_duration_display()
+    }
+    
+    return JsonResponse(block_data)
+
+
+def offline_study_interface(request):
+    """Show offline study options"""
+    pdf_documents = PDFDocument.objects.filter(
+        focus_blocks__isnull=False,
+        processed=True
+    ).distinct()
+    
+    total_blocks = FocusBlock.objects.filter(
+        compact7_data__has_key='segments'
+    ).exclude(title__startswith='[MIGRATED→').count()
+    
+    return render(request, 'flashcards/offline_study.html', {
+        'pdf_documents': pdf_documents,
+        'total_blocks': total_blocks
+    })
+
+
+@require_http_methods(["POST"])
+def cache_blocks_for_offline(request):
+    """Cache selected blocks for offline study via service worker"""
+    block_ids = request.POST.getlist('block_ids')
+    
+    if not block_ids:
+        return JsonResponse({'error': 'No blocks selected'}, status=400)
+    
+    # Get block data for caching
+    blocks = FocusBlock.objects.filter(id__in=block_ids)
+    cached_blocks = []
+    
+    for block in blocks:
+        block_data = {
+            'id': str(block.id),
+            'title': block.title,
+            'cache_url': f'/api/study-pack/{block.id}/',
+            'study_url': f'/focus-blocks/{block.id}/study/'
+        }
+        cached_blocks.append(block_data)
+    
+    return JsonResponse({
+        'success': True,
+        'cached_blocks': cached_blocks,
+        'message': f'Prepared {len(cached_blocks)} blocks for offline caching'
+    })
+
+
+# ==========================================
+# OFFLINE PROGRESS SYNC FUNCTIONALITY
+# ==========================================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def sync_offline_progress(request):
+    """Sync offline study progress when user comes back online"""
+    
+    try:
+        # Parse the offline progress data
+        data = json.loads(request.body)
+        offline_sessions = data.get('sessions', [])
+        
+        if not offline_sessions:
+            return JsonResponse({'error': 'No offline sessions to sync'}, status=400)
+        
+        synced_count = 0
+        errors = []
+        
+        # Process each offline session
+        for session_data in offline_sessions:
+            try:
+                block_id = session_data.get('block_id')
+                proficiency_rating = session_data.get('proficiency_rating')
+                time_spent_seconds = session_data.get('time_spent_seconds', 0)
+                completed_at = session_data.get('completed_at')
+                segments_completed = session_data.get('segments_completed', [])
+                
+                if not block_id or not proficiency_rating:
+                    errors.append(f"Missing required data for session: {session_data}")
+                    continue
+                
+                # Get the focus block
+                try:
+                    focus_block = FocusBlock.objects.get(id=block_id)
+                except FocusBlock.DoesNotExist:
+                    errors.append(f"Block not found: {block_id}")
+                    continue
+                
+                # Get or create user (use admin user for now)
+                from django.contrib.auth.models import User
+                user = User.objects.filter(is_superuser=True).first()
+                
+                if not user:
+                    errors.append("No admin user found for progress sync")
+                    continue
+                
+                # Save progress to UserBlockState
+                from flashcards.models import UserBlockState
+                user_block_state, created = UserBlockState.objects.get_or_create(
+                    user=user,
+                    block=focus_block,
+                    defaults={
+                        'status': 'completed',
+                        'last_reviewed_at': timezone.now(),
+                        'review_count': 1,
+                        'ease_factor': 2.5,
+                        'stability': 1.0,
+                        'avg_rating': proficiency_rating,
+                        'total_time_spent': time_spent_seconds
+                    }
+                )
+                
+                if not created:
+                    # Update existing state - don't overwrite, accumulate
+                    user_block_state.update_from_rating(proficiency_rating)
+                    user_block_state.total_time_spent = (user_block_state.total_time_spent or 0) + time_spent_seconds
+                    user_block_state.save()
+                
+                # Also update StudySession for compatibility
+                study_session, created = StudySession.objects.get_or_create(
+                    pdf_document=focus_block.pdf_document,
+                    session_type='focus_blocks',
+                    defaults={'session_id': uuid.uuid4()}
+                )
+                study_session.completed_focus_blocks.add(focus_block)
+                study_session.save()
+                
+                synced_count += 1
+                print(f"✅ Synced offline progress: {focus_block.title} - {proficiency_rating}⭐")
+                
+            except Exception as e:
+                errors.append(f"Error syncing session {session_data.get('block_id', 'unknown')}: {str(e)}")
+                print(f"❌ Sync error: {e}")
+        
+        # Return sync results
+        return JsonResponse({
+            'success': True,
+            'synced_count': synced_count,
+            'total_sessions': len(offline_sessions),
+            'errors': errors,
+            'message': f'Successfully synced {synced_count} offline study sessions'
+        })
+        
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON data'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': f'Sync failed: {str(e)}'}, status=500)
+
+
+@require_http_methods(["GET"])
+def sync_status(request):
+    """Check sync status and return pending offline data count"""
+    
+    return JsonResponse({
+        'online': True,
+        'sync_available': True,
+        'server_time': timezone.now().isoformat(),
+        'message': 'Ready to sync offline progress'
+    })

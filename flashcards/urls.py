@@ -96,4 +96,15 @@ urlpatterns = [
     path('plan/preview/<str:plan_type>/', views.preview_intelligent_plan, name='preview_intelligent_plan'),
     path('plan/start/<str:plan_type>/', views.start_intelligent_plan, name='start_intelligent_plan'),
     path('resume/<str:session_key>/', views.resume_study_session, name='resume_study_session'),
+    
+    # Offline Study URLs
+    path('offline/', views.offline_study_interface, name='offline_study'),
+    path('export/study-pack/', views.export_study_pack, name='export_all_study_pack'),
+    path('export/study-pack/<int:pdf_id>/', views.export_study_pack, name='export_pdf_study_pack'),
+    path('api/study-pack/<uuid:block_id>/', views.study_pack_api, name='study_pack_api'),
+    path('api/cache-blocks/', views.cache_blocks_for_offline, name='cache_blocks_offline'),
+    
+    # Offline Progress Sync URLs
+    path('api/sync-progress/', views.sync_offline_progress, name='sync_offline_progress'),
+    path('api/sync-status/', views.sync_status, name='sync_status'),
 ] 

@@ -1,0 +1,191 @@
+{% extends 'flashcards/base.html' %}
+{% block title %}Offline Study - Exocortex{% endblock %}
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <h1 class="display-6 mb-4">
+                <i class="fas fa-download text-primary me-3"></i>Offline Study Options
+            </h1>
+            <p class="lead">Study your focus blocks anywhere, even without internet connection!</p>
+        </div>
+    </div>
+
+    <!-- Export Options -->
+    <div class="row mb-5">
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5><i class="fas fa-file-export me-2"></i>Export Study Packs</h5>
+                </div>
+                <div class="card-body">
+                    <p>Download focus blocks as standalone files that work offline.</p>
+                    
+                    <div class="mb-3">
+                        <h6>📦 All Focus Blocks ({{ total_blocks }} blocks)</h6>
+                        <div class="btn-group" role="group">
+                            <a href="{% url 'flashcards:export_all_study_pack' %}?format=html" 
+                               class="btn btn-outline-primary">
+                                <i class="fas fa-code me-1"></i>HTML File
+                            </a>
+                            <a href="{% url 'flashcards:export_all_study_pack' %}?format=json" 
+                               class="btn btn-outline-secondary">
+                                <i class="fas fa-file-code me-1"></i>JSON Data
+                            </a>
+                        </div>
+                    </div>
+
+                    {% if pdf_documents %}
+                    <h6>📚 By PDF Document</h6>
+                    {% for pdf in pdf_documents %}
+                    <div class="mb-2">
+                        <strong>{{ pdf.name }}</strong>
+                        <div class="btn-group btn-group-sm ms-2">
+                            <a href="{% url 'flashcards:export_pdf_study_pack' pdf.id %}?format=html" 
+                               class="btn btn-outline-primary btn-sm">HTML</a>
+                            <a href="{% url 'flashcards:export_pdf_study_pack' pdf.id %}?format=json" 
+                               class="btn btn-outline-secondary btn-sm">JSON</a>
+                        </div>
+                    </div>
+                    {% endfor %}
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5><i class="fas fa-mobile-alt me-2"></i>PWA Offline Mode</h5>
+                </div>
+                <div class="card-body">
+                    <p>Cache blocks in your browser for instant offline access.</p>
+                    
+                    <div class="mb-3">
+                        <button class="btn btn-success" onclick="cacheAllBlocks()">
+                            <i class="fas fa-cloud-download-alt me-2"></i>Cache All Blocks
+                        </button>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <h6>🎯 Cache Status</h6>
+                        <div id="cache-status" class="text-muted">
+                            <i class="fas fa-spinner fa-spin me-1"></i>Checking cache...
+                        </div>
+                    </div>
+                    
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <strong>How it works:</strong> Cached blocks will load instantly even when you're offline!
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Instructions -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-question-circle me-2"></i>How to Study Offline</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>📱 Mobile/PWA Method:</h6>
+                            <ol>
+                                <li>Click "Cache All Blocks" above</li>
+                                <li>Go offline or lose internet</li>
+                                <li>Continue studying normally!</li>
+                                <li>Progress syncs when back online</li>
+                            </ol>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>💻 Download Method:</h6>
+                            <ol>
+                                <li>Download HTML study pack</li>
+                                <li>Open file in any browser</li>
+                                <li>Study completely offline</li>
+                                <li>No internet required!</li>
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+async function cacheAllBlocks() {
+    const button = event.target;
+    const originalText = button.innerHTML;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Caching...';
+    button.disabled = true;
+
+    try {
+        // Get all block IDs
+        const allBlockIds = [];
+        {% for pdf in pdf_documents %}
+        {% for block in pdf.focus_blocks.all %}
+        allBlockIds.push('{{ block.id }}');
+        {% endfor %}
+        {% endfor %}
+
+        // Cache each block
+        let cached = 0;
+        for (const blockId of allBlockIds) {
+            try {
+                const response = await fetch(`/api/study-pack/${blockId}/`);
+                if (response.ok) {
+                    cached++;
+                }
+            } catch (error) {
+                console.warn('Failed to cache block:', blockId, error);
+            }
+        }
+        
+        alert(`✅ Successfully cached ${cached} blocks for offline use!`);
+        updateCacheStatus();
+    } catch (error) {
+        alert('❌ Caching failed: ' + error.message);
+    } finally {
+        button.innerHTML = originalText;
+        button.disabled = false;
+    }
+}
+
+async function updateCacheStatus() {
+    // Check if service worker and caching is available
+    if ('serviceWorker' in navigator && 'caches' in window) {
+        try {
+            const cacheNames = await caches.keys();
+            let totalCached = 0;
+            
+            for (const cacheName of cacheNames) {
+                const cache = await caches.open(cacheName);
+                const keys = await cache.keys();
+                const focusBlockKeys = keys.filter(key => 
+                    key.url.includes('/focus-blocks/') || 
+                    key.url.includes('/study-pack/')
+                );
+                totalCached += focusBlockKeys.length;
+            }
+            
+            document.getElementById('cache-status').innerHTML = 
+                `<i class="fas fa-check-circle text-success me-1"></i>${totalCached} blocks cached for offline use`;
+        } catch (error) {
+            document.getElementById('cache-status').innerHTML = 
+                `<i class="fas fa-exclamation-triangle text-warning me-1"></i>Cache check failed`;
+        }
+    } else {
+        document.getElementById('cache-status').innerHTML = 
+            `<i class="fas fa-times-circle text-danger me-1"></i>Offline features not available in this browser`;
+    }
+}
+
+// Check cache status on page load
+document.addEventListener('DOMContentLoaded', updateCacheStatus);
+</script>
+{% endblock %}
