@@ -107,4 +107,5 @@ urlpatterns = [
     # Offline Progress Sync URLs
     path('api/sync-progress/', views.sync_offline_progress, name='sync_offline_progress'),
     path('api/sync-status/', views.sync_status, name='sync_status'),
+    path('api/debug-completion/', views.debug_completion_status, name='debug_completion_status'),
 ] 

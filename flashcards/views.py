@@ -550,8 +550,6 @@ def process_pdf_complete(pdf_document):
         # ✅ STEP 4: No duplicates - NOW do the heavy processing
         print("🆕 Unique content - starting heavy processing...")
         
-    
-        
         # ✅ STEP 5: NEW - Generate new format focus blocks directly
         blocks_success, blocks_message, focus_blocks = generate_new_format_focus_blocks(pdf_document)
         if not blocks_success:
@@ -2045,8 +2043,26 @@ def all_focus_blocks(request):
         study_session.last_accessed = timezone.now()
         study_session.save()
         
-    # ✅ NEW: Use StudySession's completed_focus_blocks
-    completed_block_ids = study_session.completed_focus_blocks.values_list('id', flat=True)
+    # ✅ NEW: Use StudySession's completed_focus_blocks + UserBlockState integration
+    completed_block_ids = list(study_session.completed_focus_blocks.values_list('id', flat=True))
+    
+    # ✅ CRITICAL FIX: Also include blocks completed via UserBlockState (offline sync)
+    from django.contrib.auth.models import User
+    from flashcards.models import UserBlockState
+    
+    user = User.objects.filter(is_superuser=True).first()
+    if user:
+        # Include blocks completed via offline study and sync
+        user_completed_blocks = UserBlockState.objects.filter(
+            user=user,
+            status='completed'
+        ).values_list('block_id', flat=True)
+        
+        # Merge both completion sources
+        completed_block_ids.extend(user_completed_blocks)
+        completed_block_ids = list(set(completed_block_ids))  # Remove duplicates
+        print(f"📋 Total completed (StudySession + UserBlockState): {len(completed_block_ids)}")
+    
     uncompleted_blocks = all_blocks.exclude(id__in=completed_block_ids)
 
     print(f"📋 Completed blocks: {len(completed_block_ids)}")
@@ -2083,10 +2099,8 @@ def all_focus_blocks(request):
     current_block = study_session.current_focus_block
     print(f"📖 Currently studying: {current_block.title}")
 
-    # Format blocks for advanced study
-    remaining_blocks = all_blocks.exclude(
-    id__in=study_session.completed_focus_blocks.values_list('id', flat=True)
-    )
+    # Format blocks for advanced study (use our merged completion list)
+    remaining_blocks = all_blocks.exclude(id__in=completed_block_ids)
     formatted_blocks = []
     for block in remaining_blocks:
         # Get segments using the model method (now fixed to handle new data structure)
@@ -6526,13 +6540,36 @@ def sync_offline_progress(request):
                     user_block_state.save()
                 
                 # Also update StudySession for compatibility
-                study_session, created = StudySession.objects.get_or_create(
+                # Update PDF-specific session (for old study interface)
+                pdf_study_session, created = StudySession.objects.get_or_create(
                     pdf_document=focus_block.pdf_document,
                     session_type='focus_blocks',
                     defaults={'session_id': uuid.uuid4()}
                 )
-                study_session.completed_focus_blocks.add(focus_block)
-                study_session.save()
+                pdf_study_session.completed_focus_blocks.add(focus_block)
+                pdf_study_session.save()
+                
+                # ✅ CRITICAL FIX: Also update the global study session (for all_focus_blocks view)
+                global_study_session = StudySession.objects.filter(
+                    session_type='focus_blocks',
+                    pdf_document__isnull=True  # Global session has no specific PDF
+                ).order_by('-last_accessed').first()
+                
+                if global_study_session:
+                    global_study_session.completed_focus_blocks.add(focus_block)
+                    global_study_session.last_accessed = timezone.now()
+                    global_study_session.save()
+                    print(f"✅ Updated global study session with offline progress: {focus_block.title}")
+                else:
+                    # Create global study session if it doesn't exist
+                    global_study_session = StudySession.objects.create(
+                        session_type='focus_blocks',
+                        session_id=uuid.uuid4()
+                        # No pdf_document - this is for all blocks
+                    )
+                    global_study_session.completed_focus_blocks.add(focus_block)
+                    global_study_session.save()
+                    print(f"✅ Created new global study session with offline progress: {focus_block.title}")
                 
                 synced_count += 1
                 print(f"✅ Synced offline progress: {focus_block.title} - {proficiency_rating}⭐")
@@ -6566,3 +6603,53 @@ def sync_status(request):
         'server_time': timezone.now().isoformat(),
         'message': 'Ready to sync offline progress'
     })
+
+
+def debug_completion_status(request):
+    """Debug endpoint to check block completion status across both systems"""
+    
+    from django.contrib.auth.models import User
+    from flashcards.models import UserBlockState
+    
+    # Get admin user
+    user = User.objects.filter(is_superuser=True).first()
+    
+    # Get all focus blocks
+    all_blocks = FocusBlock.objects.filter(
+        compact7_data__has_key='segments'
+    ).exclude(title__startswith='[MIGRATED→')
+    
+    # Get completion data from both systems
+    global_study_session = StudySession.objects.filter(
+        session_type='focus_blocks',
+        pdf_document__isnull=True
+    ).first()
+    
+    study_session_completed = []
+    if global_study_session:
+        study_session_completed = list(global_study_session.completed_focus_blocks.values_list('id', flat=True))
+    
+    user_block_completed = []
+    if user:
+        user_block_completed = list(UserBlockState.objects.filter(
+            user=user,
+            status='completed'
+        ).values_list('block_id', flat=True))
+    
+    # Merge and analyze
+    merged_completed = list(set(study_session_completed + user_block_completed))
+    
+    debug_info = {
+        'total_blocks': all_blocks.count(),
+        'study_session_completed': len(study_session_completed),
+        'user_block_completed': len(user_block_completed),
+        'merged_completed': len(merged_completed),
+        'has_global_session': bool(global_study_session),
+        'has_user': bool(user),
+        'sync_working': len(merged_completed) > len(study_session_completed),
+        'study_session_ids': [str(id) for id in study_session_completed],
+        'user_block_ids': [str(id) for id in user_block_completed],
+        'merged_ids': [str(id) for id in merged_completed]
+    }
+    
+    return JsonResponse(debug_info)

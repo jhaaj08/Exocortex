@@ -215,7 +215,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const graphData = {{ graph_data_json|safe }};
     console.log("📊 Graph data:", graphData);
     
-    const container = document.getElementById('knowledge-graph');
+const container = document.getElementById('knowledge-graph');
     
     if (!graphData.nodes || graphData.nodes.length === 0) {
         container.innerHTML = '<div style="text-align: center; padding: 50px; color: #666;">No nodes to display.</div>';
