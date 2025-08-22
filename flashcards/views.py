@@ -6877,3 +6877,57 @@ def debug_sw(request):
             <h1>Debug Tool Not Found</h1>
             <p>Service worker debug tool is not available.</p>
         """, content_type='text/html')
+
+
+def simple_sw_test(request):
+    """Serve the simple service worker test page"""
+    import os
+    from django.conf import settings
+    from django.http import HttpResponse
+    
+    html_path = os.path.join(settings.BASE_DIR, 'simple_sw_test.html')
+    
+    try:
+        with open(html_path, 'r') as f:
+            content = f.read()
+        return HttpResponse(content, content_type='text/html')
+    except FileNotFoundError:
+        return HttpResponse("<h1>Test page not found</h1>", content_type='text/html')
+
+
+def debug_lifecycle(request):
+    """Serve the service worker lifecycle debug page"""
+    import os
+    from django.conf import settings
+    from django.http import HttpResponse
+    
+    html_path = os.path.join(settings.BASE_DIR, 'debug_lifecycle.html')
+    
+    try:
+        with open(html_path, 'r') as f:
+            content = f.read()
+        return HttpResponse(content, content_type='text/html')
+    except FileNotFoundError:
+        return HttpResponse("<h1>Lifecycle debug not found</h1>", content_type='text/html')
+
+def serve_service_worker(request):
+    """Serve the service worker file from root with proper headers"""
+    import os
+    from django.conf import settings
+    from django.http import HttpResponse, Http404
+    
+    # Path to the service worker file in project root
+    sw_path = os.path.join(settings.BASE_DIR, 'sw.js')
+    
+    try:
+        with open(sw_path, 'r') as f:
+            content = f.read()
+        
+        response = HttpResponse(content, content_type='application/javascript')
+        # Add Service-Worker-Allowed header to allow root scope
+        response['Service-Worker-Allowed'] = '/'
+        response['Cache-Control'] = 'no-cache'
+        return response
+        
+    except FileNotFoundError:
+        raise Http404("Service worker not found")

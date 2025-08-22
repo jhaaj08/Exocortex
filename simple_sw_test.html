@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Simple SW Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .log { background: #f0f0f0; padding: 10px; margin: 10px 0; border: 1px solid #ccc; }
+        button { padding: 10px; margin: 5px; }
+    </style>
+</head>
+<body>
+    <h1>Service Worker Registration Test</h1>
+    
+    <button onclick="testSimpleSW()">Test Simple SW</button>
+    <button onclick="testFullSW()">Test Full SW</button>
+    <button onclick="testFixedSW()">Test Fixed SW</button>
+    <button onclick="testWorkingSW()">Test Working SW</button>
+    <button onclick="testMinimalSW()">Test Minimal SW</button>
+    <button onclick="checkStatus()">Check Status</button>
+    <button onclick="unregisterAll()">Unregister All</button>
+    
+    <div id="log"></div>
+
+    <script>
+        function log(message) {
+            const div = document.createElement('div');
+            div.className = 'log';
+            div.innerHTML = `[${new Date().toLocaleTimeString()}] ${message}`;
+            document.getElementById('log').appendChild(div);
+            console.log(message);
+        }
+
+        async function testSimpleSW() {
+            log('🧪 Testing simple service worker...');
+            
+            if (!('serviceWorker' in navigator)) {
+                log('❌ Service Worker not supported');
+                return;
+            }
+
+            try {
+                const registration = await navigator.serviceWorker.register('/static/sw-simple.js');
+                log(`✅ Simple SW registered: ${registration.scope}`);
+                
+                await navigator.serviceWorker.ready;
+                log('✅ Simple SW ready!');
+                
+            } catch (error) {
+                log(`❌ Simple SW failed: ${error.message}`);
+            }
+        }
+
+        async function testMinimalSW() {
+            log("🔬 Testing minimal service worker...");
+            
+            try {
+                await navigator.serviceWorker.unregister();
+                log("Cleared existing registrations");
+                
+                const registration = await navigator.serviceWorker.register("/static/sw-minimal.js");
+                log(`✅ Minimal SW registered: ${registration.scope}`);
+                
+                // Wait a bit longer and check status
+                setTimeout(async () => {
+                    const reg = await navigator.serviceWorker.getRegistration();
+                    if (reg async function testWorkingSW() {async function testWorkingSW() { reg.active) {
+                        log("🎉 Minimal SW is ACTIVE and PERSISTENT!");
+                    } else {
+                        log("❌ Minimal SW disappeared");
+                    }
+                }, 2000);
+                
+                await navigator.serviceWorker.ready;
+                log("✅ Minimal SW ready!");
+                
+            } catch (error) {
+                log(`❌ Minimal SW failed: ${error.message}`);
+            }
+        }
+
+        async function testWorkingSW() {
+            log("🚀 Testing working service worker...");
+            
+            try {
+                const registration = await navigator.serviceWorker.register("/static/sw-working.js");
+                log(`✅ Working SW registered: ${registration.scope}`);
+                
+                await navigator.serviceWorker.ready;
+                log("✅ Working SW ready and active!");
+                
+            } catch (error) {
+                log(`❌ Working SW failed: ${error.message}`);
+            }
+        }
+
+        async function testFixedSW() {
+            log("🔧 Testing fixed service worker...");
+            
+            try {
+                const registration = await navigator.serviceWorker.register("/static/sw-fixed.js");
+                log(`✅ Fixed SW registered: ${registration.scope}`);
+                
+                await navigator.serviceWorker.ready;
+                log("✅ Fixed SW ready!");
+                
+            } catch (error) {
+                log(`❌ Fixed SW failed: ${error.message}`);
+            }
+        }
+
+        async function testFullSW() {
+            log('🔧 Testing full service worker...');
+            
+            try {
+                const registration = await navigator.serviceWorker.register('/static/sw-fixed.js');
+                log(`✅ Full SW registered: ${registration.scope}`);
+                
+                await navigator.serviceWorker.ready;
+                log('✅ Full SW ready!');
+                
+            } catch (error) {
+                log(`❌ Full SW failed: ${error.message}`);
+            }
+        }
+
+        async function checkStatus() {
+            log('🔍 Checking status...');
+            
+            try {
+                const registration = await navigator.serviceWorker.getRegistration();
+                if (registration) {
+                    log(`✅ SW Active: ${registration.active ? registration.active.scriptURL : 'None'}`);
+                    log(`📍 Scope: ${registration.scope}`);
+                } else {
+                    log('❌ No service worker registered');
+                }
+            } catch (error) {
+                log(`❌ Status check failed: ${error.message}`);
+            }
+        }
+
+        async function unregisterAll() {
+            log('🗑️ Unregistering all...');
+            
+            try {
+                const registration = await navigator.serviceWorker.getRegistration();
+                if (registration) {
+                    await registration.unregister();
+                    log('✅ Unregistered successfully');
+                } else {
+                    log('⚠️ Nothing to unregister');
+                }
+            } catch (error) {
+                log(`❌ Unregister failed: ${error.message}`);
+            }
+        }
+
+        // Auto-check on load
+        window.addEventListener('load', () => {
+            log('🚀 Page loaded - ready for testing');
+            checkStatus();
+        });
+    </script>
+</body>
+</html>

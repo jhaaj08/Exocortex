@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Service Worker Lifecycle Debug</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .log { background: #f9f9f9; padding: 5px; margin: 2px 0; border-left: 3px solid #007bff; font-family: monospace; font-size: 12px; }
+        .error { border-left-color: #dc3545; background: #f8d7da; }
+        .success { border-left-color: #28a745; background: #d4edda; }
+        .warning { border-left-color: #ffc107; background: #fff3cd; }
+        button { padding: 8px 16px; margin: 5px; }
+        #log-container { max-height: 500px; overflow-y: auto; border: 1px solid #ccc; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>🔬 Service Worker Lifecycle Debug</h1>
+    
+    <div>
+        <button onclick="registerMinimal()">Register Minimal SW</button>
+        <button onclick="registerRoot()">Register Root Scope SW</button>
+        <button onclick="checkDetailed()">Detailed Status</button>
+        <button onclick="monitorLifecycle()">Monitor Lifecycle</button>
+        <button onclick="unregisterAll()">Unregister All</button>
+        <button onclick="clearLog()">Clear Log</button>
+    </div>
+    
+    <div id="log-container">
+        <div id="log"></div>
+    </div>
+
+    <script>
+        function log(message, type = 'info') {
+            const div = document.createElement('div');
+            div.className = `log ${type}`;
+            div.innerHTML = `[${new Date().toLocaleTimeString()}] ${message}`;
+            document.getElementById('log').appendChild(div);
+            document.getElementById('log-container').scrollTop = document.getElementById('log-container').scrollHeight;
+            console.log(message);
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        async function registerMinimal() {
+            log('🚀 Registering minimal service worker...', 'info');
+            
+            if (!('serviceWorker' in navigator)) {
+                log('❌ Service Worker not supported', 'error');
+                return;
+            }
+
+            try {
+                // Clear any existing registration first
+                const existing = await navigator.serviceWorker.getRegistration();
+                if (existing) {
+                    log('🗑️ Unregistering existing service worker...', 'warning');
+                    await existing.unregister();
+                    log('✅ Existing service worker unregistered', 'success');
+                }
+
+                // Register new service worker
+                const registration = await navigator.serviceWorker.register('/static/sw-minimal.js', {
+                    scope: '/static/'
+                });
+                
+                log(`📝 Registration object created: ${registration.scope}`, 'success');
+
+                // Monitor the registration states
+                if (registration.installing) {
+                    log('⏳ Service worker is installing...', 'info');
+                    registration.installing.addEventListener('statechange', () => {
+                        log(`🔄 Installing state changed to: ${registration.installing.state}`, 'info');
+                    });
+                }
+
+                if (registration.waiting) {
+                    log('⏸️ Service worker is waiting...', 'warning');
+                }
+
+                if (registration.active) {
+                    log('✅ Service worker is already active', 'success');
+                }
+
+                // Wait for ready
+                await navigator.serviceWorker.ready;
+                log('🎉 Service worker ready!', 'success');
+
+                // Check status after a delay
+                setTimeout(async () => {
+                    await checkDetailed();
+                }, 1000);
+
+            } catch (error) {
+                log(`❌ Registration failed: ${error.message}`, 'error');
+                log(`📋 Stack: ${error.stack}`, 'error');
+            }
+        }
+
+        async function registerRoot() {
+            log("🌍 Registering ROOT SCOPE service worker...", "info");
+            
+            if (!("serviceWorker" in navigator)) {
+                log("❌ Service Worker not supported", "error");
+                return;
+            }
+
+            try {
+                // Clear any existing registration first
+                const existing = await navigator.serviceWorker.getRegistration();
+                if (existing) {
+                    log("🗑️ Unregistering existing service worker...", "warning");
+                    await existing.unregister();
+                    log("✅ Existing service worker unregistered", "success");
+                }
+
+                // Register new service worker with ROOT SCOPE
+                const registration = await navigator.serviceWorker.register("/sw.js", {
+                    scope: "/" // ROOT SCOPE - controls all pages
+                });
+                
+                log(`📝 ROOT SCOPE registration created: ${registration.scope}`, "success");
+
+                // Monitor the registration states
+                if (registration.installing) {
+                    log("⏳ Service worker is installing...", "info");
+                    registration.installing.addEventListener("statechange", () => {
+                        log(`🔄 Installing state changed to: ${registration.installing.state}`, "info");
+                    });
+                }
+
+                if (registration.waiting) {
+                    log("⏸️ Service worker is waiting...", "warning");
+                }
+
+                if (registration.active) {
+                    log("✅ Service worker is already active", "success");
+                }
+
+                // Wait for ready
+                await navigator.serviceWorker.ready;
+                log("🎉 ROOT SCOPE service worker ready!", "success");
+
+                // Force page reload to activate controller
+                setTimeout(() => {
+                    log("🔄 Reloading page to activate controller...", "info");
+                    window.location.reload();
+                }, 1000);
+
+            } catch (error) {
+                log(`❌ ROOT SCOPE registration failed: ${error.message}`, "error");
+                log(`📋 Stack: ${error.stack}`, "error");
+            }
+        }
+
+        async function checkDetailed() {
+            log('🔍 Checking detailed status...', 'info');
+            
+            try {
+                const registration = await navigator.serviceWorker.getRegistration('/static/');
+                
+                if (registration) {
+                    log('✅ Registration found:', 'success');
+                    log(`📍 Scope: ${registration.scope}`, 'info');
+                    log(`🔄 Update via cache: ${registration.updateViaCache}`, 'info');
+                    
+                    if (registration.installing) {
+                        log(`⏳ Installing: ${registration.installing.scriptURL} (${registration.installing.state})`, 'info');
+                    } else {
+                        log('ℹ️ Nothing installing', 'info');
+                    }
+                    
+                    if (registration.waiting) {
+                        log(`⏸️ Waiting: ${registration.waiting.scriptURL} (${registration.waiting.state})`, 'warning');
+                    } else {
+                        log('ℹ️ Nothing waiting', 'info');
+                    }
+                    
+                    if (registration.active) {
+                        log(`✅ Active: ${registration.active.scriptURL} (${registration.active.state})`, 'success');
+                    } else {
+                        log('❌ No active service worker', 'error');
+                    }
+                    
+                } else {
+                    log('❌ No registration found', 'error');
+                }
+                
+                // Check controller
+                if (navigator.serviceWorker.controller) {
+                    log(`🎮 Controller: ${navigator.serviceWorker.controller.scriptURL}`, 'success');
+                } else {
+                    log('❌ No controller', 'warning');
+                }
+                
+            } catch (error) {
+                log(`❌ Status check failed: ${error.message}`, 'error');
+            }
+        }
+
+        async function monitorLifecycle() {
+            log('👁️ Setting up lifecycle monitoring...', 'info');
+            
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                log('🎮 Controller changed!', 'warning');
+                checkDetailed();
+            });
+            
+            navigator.serviceWorker.addEventListener('message', (event) => {
+                log(`💬 Message from SW: ${event.data}`, 'info');
+            });
+            
+            // Check status every 5 seconds
+            const interval = setInterval(async () => {
+                const registration = await navigator.serviceWorker.getRegistration('/static/');
+                if (registration && registration.active) {
+                    log(`💓 SW still active: ${registration.active.state}`, 'success');
+                } else {
+                    log('💀 SW no longer active', 'error');
+                    clearInterval(interval);
+                }
+            }, 5000);
+            
+            log('👁️ Monitoring started (will check every 5 seconds)', 'info');
+        }
+
+        async function unregisterAll() {
+            log('🗑️ Unregistering all service workers...', 'warning');
+            
+            try {
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                log(`Found ${registrations.length} registrations`, 'info');
+                
+                for (const registration of registrations) {
+                    log(`Unregistering: ${registration.scope}`, 'info');
+                    await registration.unregister();
+                }
+                
+                log('✅ All service workers unregistered', 'success');
+            } catch (error) {
+                log(`❌ Unregister failed: ${error.message}`, 'error');
+            }
+        }
+
+        // Auto-setup
+        window.addEventListener('load', () => {
+            log('🚀 Lifecycle debugger ready', 'success');
+            checkDetailed();
+        });
+    </script>
+</body>
+</html>

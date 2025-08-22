@@ -112,6 +112,11 @@ urlpatterns = [
     path('api/debug-completion/', views.debug_completion_status, name='debug_completion_status'),
     path('api/warm-cache/', views.warm_offline_cache, name='warm_offline_cache'),
     path('api/check-offline/', views.check_offline_setup, name='check_offline_setup'),
+    path('lifecycle/', views.debug_lifecycle, name='debug_lifecycle'),
+    path('simple-test/', views.simple_sw_test, name='simple_sw_test'),
     path('debug-sw/', views.debug_sw, name='debug_sw'),
     path('force-update/', views.force_sw_update, name='force_sw_update'),
+    
+    # Service Worker (served from root for proper scope)
+    path('sw.js', views.serve_service_worker, name='service_worker'),
 ] 
