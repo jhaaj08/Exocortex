@@ -297,6 +297,78 @@
         });
     </script>
 
+    <!-- Offline Detection and Smart Routing -->
+    <script>
+        // Add offline detection and smart routing
+        function updateOfflineNavigation() {
+            if (!navigator.onLine) {
+                // If offline, redirect study plan links to offline version
+                const studyPlanLinks = document.querySelectorAll('a[href="/focus-blocks/"]');
+                studyPlanLinks.forEach(link => {
+                    link.href = '/offline-plan/';
+                    link.title = 'Study Plan (Offline Mode)';
+                    // Add offline indicator
+                    if (!link.querySelector('.offline-indicator')) {
+                        const indicator = document.createElement('i');
+                        indicator.className = 'fas fa-wifi-slash text-warning ms-1 offline-indicator';
+                        indicator.style.fontSize = '0.8em';
+                        link.appendChild(indicator);
+                    }
+                });
+                
+                // Add offline badge to navbar
+                addOfflineBadge();
+            } else {
+                // Restore original links when online
+                const studyPlanLinks = document.querySelectorAll('a[href="/offline-plan/"]');
+                studyPlanLinks.forEach(link => {
+                    link.href = '/focus-blocks/';
+                    link.title = 'Study Plan';
+                    // Remove offline indicator
+                    const indicator = link.querySelector('.offline-indicator');
+                    if (indicator) {
+                        indicator.remove();
+                    }
+                });
+                
+                // Remove offline badge
+                removeOfflineBadge();
+            }
+        }
+        
+        function addOfflineBadge() {
+            if (document.querySelector('.navbar-offline-badge')) return;
+            
+            const navbar = document.querySelector('.navbar-nav');
+            if (navbar) {
+                const badge = document.createElement('li');
+                badge.className = 'nav-item navbar-offline-badge';
+                badge.innerHTML = `
+                    <span class="nav-link">
+                        <span class="badge bg-warning">
+                            <i class="fas fa-wifi-slash me-1"></i>Offline
+                        </span>
+                    </span>
+                `;
+                navbar.appendChild(badge);
+            }
+        }
+        
+        function removeOfflineBadge() {
+            const badge = document.querySelector('.navbar-offline-badge');
+            if (badge) {
+                badge.remove();
+            }
+        }
+        
+        // Listen for connectivity changes
+        window.addEventListener('online', updateOfflineNavigation);
+        window.addEventListener('offline', updateOfflineNavigation);
+        
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', updateOfflineNavigation);
+    </script>
+
     {% block extra_js %}{% endblock %}
 </body>
 </html> 

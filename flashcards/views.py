@@ -6316,7 +6316,17 @@ def generate_study_schedule_view(request):
 def export_study_pack(request, pdf_id=None):
     """Export focus blocks as offline study pack"""
     
-    if pdf_id:
+    # Check for single block export
+    block_id = request.GET.get('block_id')
+    if block_id:
+        # Export single focus block
+        try:
+            focus_block = FocusBlock.objects.get(id=block_id)
+            focus_blocks = [focus_block]
+            pack_name = f"{focus_block.title}_study_pack"
+        except FocusBlock.DoesNotExist:
+            return JsonResponse({'error': 'Block not found'}, status=404)
+    elif pdf_id:
         # Export specific PDF's focus blocks
         pdf_document = get_object_or_404(PDFDocument, id=pdf_id)
         focus_blocks = list(FocusBlock.objects.filter(
@@ -6439,6 +6449,38 @@ def offline_study_interface(request):
         'pdf_documents': pdf_documents,
         'total_blocks': total_blocks
     })
+
+
+def offline_study_plan(request):
+    """Offline-capable study plan interface"""
+    
+    # Get all focus blocks for offline mode
+    all_blocks = FocusBlock.objects.filter(
+        compact7_data__has_key='segments'
+    ).exclude(title__startswith='[MIGRATED→').select_related('pdf_document')
+    
+    # Prepare block data for offline use
+    blocks_data = []
+    for block in all_blocks:
+        block_data = {
+            'id': str(block.id),
+            'title': block.title,
+            'order': block.block_order,
+            'duration': block.target_duration,
+            'difficulty': block.difficulty_level,
+            'pdf_name': block.pdf_document.name,
+            'segments': block.get_segments(),
+            'qa_items': block.get_qa_items(),
+            'estimated_duration': block.get_estimated_duration_display()
+        }
+        blocks_data.append(block_data)
+    
+    context = {
+        'blocks_data': blocks_data,
+        'total_blocks': len(blocks_data)
+    }
+    
+    return render(request, 'flashcards/offline_study_plan.html', context)
 
 
 @require_http_methods(["POST"])

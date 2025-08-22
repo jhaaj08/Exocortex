@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Offline Study Plan - Exocortex</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .block-card { cursor: pointer; transition: all 0.3s ease; }
+        .block-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        .offline-badge { 
+            position: fixed; 
+            top: 10px; 
+            right: 10px; 
+            z-index: 1000;
+        }
+        .completed-block { opacity: 0.6; background-color: #f8f9fa; }
+        .completed-block .card-header { background-color: #d4edda !important; }
+    </style>
+</head>
+<body>
+    <!-- Offline Badge -->
+    <div class="offline-badge badge bg-warning p-2" id="connectivity-status">
+        <i class="fas fa-wifi-slash me-1"></i>Checking...
+    </div>
+
+    <div class="container mt-4">
+        <!-- Header -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <a href="{% url 'flashcards:home' %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left me-2"></i>Back to Home
+                    </a>
+                    <h1 class="display-6 text-center mb-0">
+                        <i class="fas fa-book-reader text-primary me-3"></i>Study Plan
+                    </h1>
+                    <a href="{% url 'flashcards:offline_study' %}" class="btn btn-outline-primary">
+                        <i class="fas fa-download me-2"></i>Offline Options
+                    </a>
+                </div>
+                <div class="text-center text-muted mb-4">
+                    <p class="mb-1"><i class="fas fa-cubes me-2"></i>{{ total_blocks }} Focus Blocks Available</p>
+                    <p id="offline-status"><i class="fas fa-info-circle me-2"></i>Works online and offline!</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Study Progress Summary -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body">
+                        <div class="row text-center">
+                            <div class="col-md-3">
+                                <h4 id="total-blocks">{{ total_blocks }}</h4>
+                                <small class="text-muted">Total Blocks</small>
+                            </div>
+                            <div class="col-md-3">
+                                <h4 id="completed-count" class="text-success">0</h4>
+                                <small class="text-muted">Completed</small>
+                            </div>
+                            <div class="col-md-3">
+                                <h4 id="remaining-count" class="text-primary">{{ total_blocks }}</h4>
+                                <small class="text-muted">Remaining</small>
+                            </div>
+                            <div class="col-md-3">
+                                <h4 id="progress-percent">0%</h4>
+                                <small class="text-muted">Progress</small>
+                            </div>
+                        </div>
+                        <div class="progress mt-3">
+                            <div class="progress-bar" id="main-progress-bar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="row mb-4">
+            <div class="col-12 text-center">
+                <div class="btn-group" role="group">
+                    <button class="btn btn-success" onclick="startNextBlock()">
+                        <i class="fas fa-play me-2"></i>Start Next Block
+                    </button>
+                    <button class="btn btn-outline-primary" onclick="showAllBlocks()">
+                        <i class="fas fa-list me-2"></i>View All Blocks
+                    </button>
+                    <button class="btn btn-outline-secondary" onclick="clearProgress()">
+                        <i class="fas fa-undo me-2"></i>Reset Progress
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Block List -->
+        <div class="row" id="blocks-container">
+            {% for block in blocks_data %}
+            <div class="col-md-6 col-lg-4 mb-4">
+                <div class="card block-card" id="block-{{ block.id }}" onclick="studyBlock('{{ block.id }}')">
+                    <div class="card-header">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h6 class="mb-0">
+                                <span class="badge bg-primary me-2">{{ block.order }}</span>
+                                {{ block.title|truncatechars:35 }}
+                            </h6>
+                            <i class="fas fa-check-circle text-success completion-icon" style="display: none;"></i>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted mb-2">
+                            <i class="fas fa-file-pdf me-1"></i>{{ block.pdf_name|truncatechars:25 }}
+                        </p>
+                        <div class="row text-center mb-3">
+                            <div class="col-6">
+                                <small class="text-muted">Duration</small>
+                                <div class="fw-bold">{{ block.estimated_duration }}</div>
+                            </div>
+                            <div class="col-6">
+                                <small class="text-muted">Segments</small>
+                                <div class="fw-bold">{{ block.segments|length }}</div>
+                            </div>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="badge bg-{{ block.difficulty }}">{{ block.difficulty|title }}</span>
+                            {% if block.qa_items %}
+                            <span class="badge bg-info">{{ block.qa_items|length }} Q&A</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        // Block data from Django
+        const blocksData = {{ blocks_data|safe }};
+        
+        // ==========================================
+        // OFFLINE PROGRESS MANAGEMENT
+        // ==========================================
+        
+        function getOfflineProgress() {
+            return JSON.parse(localStorage.getItem('offline_study_progress') || '[]');
+        }
+        
+        function getCompletedBlockIds() {
+            const progress = getOfflineProgress();
+            return progress.filter(session => session.synced !== false).map(session => session.block_id);
+        }
+        
+        function updateProgressDisplay() {
+            const completedIds = getCompletedBlockIds();
+            const totalBlocks = blocksData.length;
+            const completedCount = completedIds.length;
+            const remainingCount = totalBlocks - completedCount;
+            const progressPercent = Math.round((completedCount / totalBlocks) * 100);
+            
+            // Update counters
+            document.getElementById('completed-count').textContent = completedCount;
+            document.getElementById('remaining-count').textContent = remainingCount;
+            document.getElementById('progress-percent').textContent = progressPercent + '%';
+            document.getElementById('main-progress-bar').style.width = progressPercent + '%';
+            
+            // Mark completed blocks visually
+            completedIds.forEach(blockId => {
+                const blockCard = document.getElementById(`block-${blockId}`);
+                if (blockCard) {
+                    blockCard.classList.add('completed-block');
+                    blockCard.querySelector('.completion-icon').style.display = 'inline';
+                }
+            });
+            
+            console.log(`📊 Progress: ${completedCount}/${totalBlocks} blocks completed (${progressPercent}%)`);
+        }
+        
+        function startNextBlock() {
+            const completedIds = getCompletedBlockIds();
+            const nextBlock = blocksData.find(block => !completedIds.includes(block.id));
+            
+            if (nextBlock) {
+                studyBlock(nextBlock.id);
+            } else {
+                alert('🎉 Congratulations! You have completed all focus blocks!');
+            }
+        }
+        
+        function studyBlock(blockId) {
+            // Create a study pack with just this block
+            const block = blocksData.find(b => b.id === blockId);
+            if (!block) {
+                alert('Block not found!');
+                return;
+            }
+            
+            const studyPack = {
+                metadata: {
+                    title: `Study: ${block.title}`,
+                    exported_at: new Date().toISOString(),
+                    block_count: 1,
+                    version: '1.0'
+                },
+                blocks: [block]
+            };
+            
+            // Store in sessionStorage
+            sessionStorage.setItem('current_study_pack', JSON.stringify(studyPack));
+            
+            // Create and open a new window with the study pack
+            const studyWindow = window.open('', 'studyWindow', 'width=1200,height=800');
+            
+            // Load the offline study pack HTML directly
+            fetch('/export/study-pack/?format=html')
+                .then(response => response.text())
+                .then(html => {
+                    // Replace the study pack data in the HTML
+                    const modifiedHtml = html.replace(
+                        /const studyPack = \{\{[^}]+\}\};/,
+                        `const studyPack = ${JSON.stringify(studyPack)};`
+                    );
+                    
+                    studyWindow.document.write(modifiedHtml);
+                    studyWindow.document.close();
+                })
+                .catch(error => {
+                    console.error('Failed to load study pack:', error);
+                    // Fallback: redirect to export URL with this block
+                    window.open(`/export/study-pack/?format=html&block_id=${blockId}`, '_blank');
+                });
+        }
+        
+        function showAllBlocks() {
+            // Scroll to blocks container
+            document.getElementById('blocks-container').scrollIntoView({ 
+                behavior: 'smooth' 
+            });
+        }
+        
+        function clearProgress() {
+            if (confirm('Are you sure you want to reset all study progress? This cannot be undone.')) {
+                localStorage.removeItem('offline_study_progress');
+                location.reload();
+            }
+        }
+        
+        // ==========================================
+        // CONNECTIVITY MONITORING  
+        // ==========================================
+        
+        function updateConnectivityStatus() {
+            const badge = document.getElementById('connectivity-status');
+            const statusText = document.getElementById('offline-status');
+            
+            if (navigator.onLine) {
+                badge.className = 'offline-badge badge bg-success p-2';
+                badge.innerHTML = '<i class="fas fa-wifi me-1"></i>Online';
+                statusText.innerHTML = '<i class="fas fa-cloud me-2"></i>Online - Progress syncs automatically';
+                
+                // Try to sync any pending offline progress
+                syncOfflineProgressIfNeeded();
+            } else {
+                badge.className = 'offline-badge badge bg-warning p-2';
+                badge.innerHTML = '<i class="fas fa-wifi-slash me-1"></i>Offline';
+                statusText.innerHTML = '<i class="fas fa-mobile-alt me-2"></i>Offline Mode - Progress saved locally';
+            }
+        }
+        
+        async function syncOfflineProgressIfNeeded() {
+            const offlineProgress = getOfflineProgress();
+            const unsyncedSessions = offlineProgress.filter(session => !session.synced);
+            
+            if (unsyncedSessions.length === 0) return;
+            
+            try {
+                const response = await fetch('/api/sync-progress/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken()
+                    },
+                    body: JSON.stringify({
+                        sessions: unsyncedSessions
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    // Mark sessions as synced
+                    const allProgress = getOfflineProgress();
+                    const syncedProgress = allProgress.map(session => ({
+                        ...session,
+                        synced: true
+                    }));
+                    localStorage.setItem('offline_study_progress', JSON.stringify(syncedProgress));
+                    
+                    console.log(`✅ Synced ${result.synced_count} offline sessions`);
+                    showNotification(`Synced ${result.synced_count} study sessions!`, 'success');
+                    
+                    // Update display to reflect synced progress
+                    updateProgressDisplay();
+                }
+            } catch (error) {
+                console.log('Sync failed:', error);
+            }
+        }
+        
+        function getCsrfToken() {
+            const cookies = document.cookie.split(';');
+            for (let cookie of cookies) {
+                const [name, value] = cookie.trim().split('=');
+                if (name === 'csrftoken') {
+                    return value;
+                }
+            }
+            return '';
+        }
+        
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.className = `alert alert-${type === 'success' ? 'success' : type === 'error' ? 'danger' : 'info'} 
+                                      position-fixed top-0 start-50 translate-middle-x mt-5`;
+            notification.style.zIndex = '9999';
+            notification.innerHTML = `
+                <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-triangle' : 'info-circle'} me-2"></i>
+                ${message}
+                <button type="button" class="btn-close" onclick="this.parentElement.remove()"></button>
+            `;
+            
+            document.body.appendChild(notification);
+            
+            // Auto-remove after 5 seconds
+            setTimeout(() => {
+                if (notification.parentElement) {
+                    notification.remove();
+                }
+            }, 5000);
+        }
+        
+        // Listen for connectivity changes
+        window.addEventListener('online', updateConnectivityStatus);
+        window.addEventListener('offline', updateConnectivityStatus);
+        
+        // ==========================================
+        // INITIALIZATION
+        // ==========================================
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            updateConnectivityStatus();
+            updateProgressDisplay();
+            
+            console.log('📖 Offline Study Plan loaded');
+            console.log(`🎯 ${blocksData.length} blocks available for study`);
+            
+            // Check for unsynced progress on load
+            const unsyncedCount = getOfflineProgress().filter(s => !s.synced).length;
+            if (unsyncedCount > 0) {
+                console.log(`📤 Found ${unsyncedCount} unsynced sessions`);
+            }
+        });
+    </script>
+</body>
+</html>
