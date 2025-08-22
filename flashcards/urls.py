@@ -100,6 +100,7 @@ urlpatterns = [
     # Offline Study URLs
     path('offline/', views.offline_study_interface, name='offline_study'),
     path('offline-plan/', views.offline_study_plan, name='offline_study_plan'),
+    path('offline-home/', views.offline_home, name='offline_home'),
     path('export/study-pack/', views.export_study_pack, name='export_all_study_pack'),
     path('export/study-pack/<int:pdf_id>/', views.export_study_pack, name='export_pdf_study_pack'),
     path('api/study-pack/<uuid:block_id>/', views.study_pack_api, name='study_pack_api'),
@@ -109,4 +110,5 @@ urlpatterns = [
     path('api/sync-progress/', views.sync_offline_progress, name='sync_offline_progress'),
     path('api/sync-status/', views.sync_status, name='sync_status'),
     path('api/debug-completion/', views.debug_completion_status, name='debug_completion_status'),
+    path('api/warm-cache/', views.warm_offline_cache, name='warm_offline_cache'),
 ] 

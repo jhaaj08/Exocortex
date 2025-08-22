@@ -1,0 +1,235 @@
+{% extends 'flashcards/base.html' %}
+
+{% block title %}Offline Home - Exocortex{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <!-- Offline Status Banner -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="alert alert-info d-flex align-items-center" role="alert">
+                <i class="fas fa-wifi-slash me-3"></i>
+                <div>
+                    <h6 class="alert-heading mb-1">📱 Offline Mode Active</h6>
+                    <small class="mb-0">You're currently offline, but you can still access your cached study materials!</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Study Access -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <h2 class="mb-3">
+                <i class="fas fa-rocket text-primary me-2"></i>Quick Study Access
+            </h2>
+        </div>
+    </div>
+
+    <div class="row mb-5">
+        <div class="col-md-6 col-lg-4 mb-3">
+            <div class="card h-100 border-primary shadow-sm">
+                <div class="card-body text-center">
+                    <i class="fas fa-book-reader fa-3x text-primary mb-3"></i>
+                    <h5 class="card-title">Study Plan</h5>
+                    <p class="card-text">Access your complete study plan with all {{ total_blocks }} focus blocks.</p>
+                    <a href="{% url 'flashcards:offline_study_plan' %}" class="btn btn-primary btn-lg">
+                        <i class="fas fa-play me-2"></i>Start Studying
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6 col-lg-4 mb-3">
+            <div class="card h-100 border-success shadow-sm">
+                <div class="card-body text-center">
+                    <i class="fas fa-download fa-3x text-success mb-3"></i>
+                    <h5 class="card-title">Download More</h5>
+                    <p class="card-text">Download additional study packs for offline use when you're back online.</p>
+                    <a href="{% url 'flashcards:offline_study' %}" class="btn btn-success btn-lg">
+                        <i class="fas fa-cloud-download-alt me-2"></i>Offline Options
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6 col-lg-4 mb-3">
+            <div class="card h-100 border-info shadow-sm">
+                <div class="card-body text-center">
+                    <i class="fas fa-chart-line fa-3x text-info mb-3"></i>
+                    <h5 class="card-title">Progress</h5>
+                    <p class="card-text">View your study progress and see which blocks you've completed.</p>
+                    <button class="btn btn-info btn-lg" onclick="showProgress()">
+                        <i class="fas fa-eye me-2"></i>View Progress
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Study Materials -->
+    {% if recent_blocks %}
+    <div class="row mb-4">
+        <div class="col-12">
+            <h4 class="mb-3">
+                <i class="fas fa-history text-secondary me-2"></i>Recent Study Materials
+            </h4>
+        </div>
+    </div>
+
+    <div class="row mb-5">
+        {% for block in recent_blocks %}
+        <div class="col-md-6 col-lg-4 mb-3">
+            <div class="card h-100 hover-shadow">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <small class="text-muted">{{ block.pdf_document.name|truncatechars:20 }}</small>
+                    <span class="badge bg-{{ block.difficulty_level }}">{{ block.difficulty_level|title }}</span>
+                </div>
+                <div class="card-body">
+                    <h6 class="card-title">{{ block.title|truncatechars:40 }}</h6>
+                    <p class="card-text">
+                        <small class="text-muted">
+                            <i class="fas fa-clock me-1"></i>{{ block.get_estimated_duration_display }}
+                            <i class="fas fa-list ms-2 me-1"></i>{{ block.get_segments|length }} segments
+                        </small>
+                    </p>
+                    <button class="btn btn-outline-primary btn-sm" onclick="studyBlock('{{ block.id }}')">
+                        <i class="fas fa-play me-1"></i>Study Now
+                    </button>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Study Statistics -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="fas fa-chart-bar me-2"></i>Available Offline Content
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row text-center">
+                        <div class="col-md-3">
+                            <h3 class="text-primary">{{ total_blocks }}</h3>
+                            <small class="text-muted">Focus Blocks</small>
+                        </div>
+                        <div class="col-md-3">
+                            <h3 class="text-success">{{ pdf_documents|length }}</h3>
+                            <small class="text-muted">Documents</small>
+                        </div>
+                        <div class="col-md-3">
+                            <h3 class="text-info" id="completed-count">-</h3>
+                            <small class="text-muted">Completed</small>
+                        </div>
+                        <div class="col-md-3">
+                            <h3 class="text-warning" id="progress-percent">-</h3>
+                            <small class="text-muted">Progress</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Available Documents -->
+    {% if pdf_documents %}
+    <div class="row mb-4">
+        <div class="col-12">
+            <h4 class="mb-3">
+                <i class="fas fa-file-pdf text-danger me-2"></i>Available Documents
+            </h4>
+        </div>
+    </div>
+
+    <div class="row">
+        {% for pdf in pdf_documents %}
+        <div class="col-md-6 col-lg-4 mb-3">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="card-title">
+                        <i class="fas fa-file-pdf text-danger me-2"></i>
+                        {{ pdf.name|truncatechars:30 }}
+                    </h6>
+                    <p class="card-text">
+                        <small class="text-muted">
+                            {{ pdf.focus_blocks.count }} focus blocks available
+                        </small>
+                    </p>
+                    <a href="{% url 'flashcards:offline_study_plan' %}" class="btn btn-outline-primary btn-sm">
+                        <i class="fas fa-eye me-1"></i>View Blocks
+                    </a>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+
+<style>
+.hover-shadow {
+    transition: box-shadow 0.3s ease;
+}
+.hover-shadow:hover {
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+}
+</style>
+
+<script>
+// Get offline progress data
+function getOfflineProgress() {
+    return JSON.parse(localStorage.getItem('offline_study_progress') || '[]');
+}
+
+function updateProgressDisplay() {
+    const progress = getOfflineProgress();
+    const completedSessions = progress.filter(session => session.synced !== false);
+    const completedCount = completedSessions.length;
+    const totalBlocks = {{ total_blocks }};
+    const progressPercent = totalBlocks > 0 ? Math.round((completedCount / totalBlocks) * 100) : 0;
+    
+    document.getElementById('completed-count').textContent = completedCount;
+    document.getElementById('progress-percent').textContent = progressPercent + '%';
+}
+
+function showProgress() {
+    const progress = getOfflineProgress();
+    const completedSessions = progress.filter(session => session.synced !== false);
+    
+    let progressText = `📊 Your Study Progress:\n\n`;
+    progressText += `✅ Completed: ${completedSessions.length} blocks\n`;
+    progressText += `📚 Total Available: {{ total_blocks }} blocks\n`;
+    progressText += `📈 Progress: ${Math.round((completedSessions.length / {{ total_blocks }}) * 100)}%\n\n`;
+    
+    if (completedSessions.length > 0) {
+        progressText += `Recent completions:\n`;
+        completedSessions.slice(-3).forEach(session => {
+            const date = new Date(session.completed_at).toLocaleDateString();
+            progressText += `• ${session.proficiency_rating}⭐ (${date})\n`;
+        });
+    } else {
+        progressText += `Start studying to track your progress!`;
+    }
+    
+    alert(progressText);
+}
+
+function studyBlock(blockId) {
+    // Redirect to study plan and scroll to specific block
+    window.location.href = `{% url 'flashcards:offline_study_plan' %}#block-${blockId}`;
+}
+
+// Initialize progress display
+document.addEventListener('DOMContentLoaded', function() {
+    updateProgressDisplay();
+    
+    console.log('📱 Offline Home loaded');
+    console.log(`🎯 {{ total_blocks }} blocks available offline`);
+});
+</script>
+{% endblock %}

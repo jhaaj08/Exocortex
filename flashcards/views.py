@@ -6483,6 +6483,35 @@ def offline_study_plan(request):
     return render(request, 'flashcards/offline_study_plan.html', context)
 
 
+def offline_home(request):
+    """Offline-capable home page with study plans"""
+    
+    # Get basic study statistics
+    total_blocks = FocusBlock.objects.filter(
+        compact7_data__has_key='segments'
+    ).exclude(title__startswith='[MIGRATED→').count()
+    
+    # Get PDF documents with focus blocks
+    pdf_documents = PDFDocument.objects.filter(
+        focus_blocks__isnull=False,
+        processed=True
+    ).distinct()[:5]  # Limit for offline performance
+    
+    # Get recent focus blocks for quick access
+    recent_blocks = FocusBlock.objects.filter(
+        compact7_data__has_key='segments'
+    ).exclude(title__startswith='[MIGRATED→').select_related('pdf_document')[:6]
+    
+    context = {
+        'total_blocks': total_blocks,
+        'pdf_documents': pdf_documents,
+        'recent_blocks': recent_blocks,
+        'offline_mode': True
+    }
+    
+    return render(request, 'flashcards/offline_home.html', context)
+
+
 @require_http_methods(["POST"])
 def cache_blocks_for_offline(request):
     """Cache selected blocks for offline study via service worker"""
@@ -6695,3 +6724,41 @@ def debug_completion_status(request):
     }
     
     return JsonResponse(debug_info)
+
+
+def warm_offline_cache(request):
+    """Warm up the offline cache by pre-loading essential pages"""
+    
+    # List of essential URLs to cache
+    essential_urls = [
+        '/',
+        '/offline-home/',
+        '/offline-plan/',
+        '/offline/',
+    ]
+    
+    cached_urls = []
+    failed_urls = []
+    
+    for url in essential_urls:
+        try:
+            # Make internal request to warm cache
+            from django.test import Client
+            client = Client()
+            response = client.get(url)
+            
+            if response.status_code == 200:
+                cached_urls.append(url)
+            else:
+                failed_urls.append(f"{url} (status: {response.status_code})")
+                
+        except Exception as e:
+            failed_urls.append(f"{url} (error: {str(e)})")
+    
+    return JsonResponse({
+        'success': True,
+        'cached_urls': cached_urls,
+        'failed_urls': failed_urls,
+        'message': f'Warmed cache for {len(cached_urls)} URLs',
+        'instructions': 'Service worker will now cache these pages for offline use'
+    })
