@@ -518,8 +518,8 @@ def process_pdf_complete(pdf_document):
             # Ensure the PDF is marked as processed (task should have done this already)
             pdf_document.refresh_from_db()
             if not pdf_document.processed:
-            pdf_document.processed = True
-            pdf_document.save()
+                pdf_document.processed = True
+                pdf_document.save()
             
             return True, f"📚 Content already exists as '{duplicate_info['existing_name']}'!", {}
         
@@ -2289,7 +2289,7 @@ def bulk_upload(request):
                     # Store task ID for progress tracking
                     # Note: task ID will be generated after transaction commit
                     pdf_doc.save()
-                        uploaded_count += 1
+                    uploaded_count += 1
                     print(f"✅ {file.name}: Processing started in background")
                             
                 except Exception as e:
