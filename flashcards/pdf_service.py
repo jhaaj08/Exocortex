@@ -157,7 +157,7 @@ class PDFTextExtractor:
             
             # Step 3: Update PDF document
             pdf_document.extracted_text = raw_text
-            pdf_document.cleaned_text = cleaned_text
+            # Note: cleaned_text is now generated on-demand via get_cleaned_text()
             pdf_document.page_count = page_count
             pdf_document.word_count = stats['words']
             pdf_document.processed = True
@@ -244,6 +244,6 @@ def extract_pdf_text(pdf_document, analyze_concepts=True):
     success, error_msg, stats = extractor.extract_and_process_pdf(pdf_document, analyze_concepts)
     
     if success:
-        return pdf_document.cleaned_text, pdf_document.page_count, True, ""
+        return pdf_document.get_cleaned_text(), pdf_document.page_count, True, ""
     else:
         return "", 0, False, error_msg

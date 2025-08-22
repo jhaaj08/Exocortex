@@ -1506,7 +1506,7 @@ def copy_pdf_data(source_pdf: PDFDocument, target_pdf: PDFDocument) -> Dict:
     target_pdf.focus_blocks.all().delete()
     
     # Copy basic info
-    target_pdf.cleaned_text = source_pdf.cleaned_text
+    # Note: cleaned_text is now generated on-demand, no need to copy
     target_pdf.processed = True
     target_pdf.is_duplicate = True
     target_pdf.duplicate_of = source_pdf

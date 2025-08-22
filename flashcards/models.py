@@ -28,6 +28,7 @@ class PDFDocument(models.Model):
     
     # Basic fields
     content_hash = models.CharField(max_length=64, db_index=True, blank=True)
+    content_fingerprint = models.TextField(blank=True, help_text="Content fingerprint for fuzzy matching")
     file_size = models.IntegerField(default=0)
     page_count = models.IntegerField(default=0)
     word_count = models.IntegerField(default=0)
@@ -39,7 +40,7 @@ class PDFDocument(models.Model):
     
     # Text fields (for now)
     extracted_text = models.TextField(blank=True)
-    cleaned_text = models.TextField(blank=True)  # ✅ ADD BACK
+    # Note: cleaned_text removed - now generated on-demand via get_cleaned_text()
     processing_duration = models.FloatField(null=True, blank=True, help_text="Processing time in seconds")
     
     # ✅ ADD: Advanced chunking data
@@ -71,13 +72,32 @@ class PDFDocument(models.Model):
             return self.extracted_text_file.read().decode('utf-8')
         return ""
     
+    def get_cleaned_text(self):
+        """Generate cleaned text on-demand from extracted_text"""
+        if not self.extracted_text:
+            return ""
+        
+        # Import here to avoid circular imports
+        from .text_processor import TextProcessor
+        processor = TextProcessor()
+        return processor.clean_text(self.extracted_text)
+    
+    def calculate_content_hash(self):
+        """Calculate SHA-256 hash of extracted text for deduplication"""
+        if not self.extracted_text:
+            return ""
+        
+        import hashlib
+        return hashlib.sha256(self.extracted_text.encode('utf-8')).hexdigest()
+    
     def create_content_fingerprint(self, length=1000):
         """Create shortened fingerprint for fuzzy matching"""
-        if not self.cleaned_text:
+        cleaned_text = self.get_cleaned_text()
+        if not cleaned_text:
             return ""
         
         # Create fingerprint from key sentences
-        sentences = self.cleaned_text.split('.')[:50]  # First 50 sentences
+        sentences = cleaned_text.split('.')[:50]  # First 50 sentences
         fingerprint = '. '.join(sentences)[:length]
         return fingerprint
     

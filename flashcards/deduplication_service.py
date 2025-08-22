@@ -18,7 +18,8 @@ class PDFDeduplicationService:
         Check if PDF is duplicate of existing content
         Returns: (is_duplicate, original_pdf, similarity_score)
         """
-        if not pdf_document.cleaned_text or len(pdf_document.cleaned_text) < self.min_content_length:
+        cleaned_text = pdf_document.get_cleaned_text()
+        if not cleaned_text or len(cleaned_text) < self.min_content_length:
             return False, None, 0.0
         
         # Generate content identifiers
