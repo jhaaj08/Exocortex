@@ -131,7 +131,10 @@
         {% for plan_key, plan in study_plans.items %}
         <div class="col-lg-4 mb-4">
             <a href="{% url 'flashcards:preview_intelligent_plan' plan_key %}" class="text-decoration-none">
-                <div class="card h-100 study-plan-card">
+                <div class="card h-100 study-plan-card" 
+                     data-plan-type="{{ plan_key }}" 
+                     data-blocks="{{ plan.blocks|length }}" 
+                     data-duration="{{ plan.estimated_duration }}">
                     <div class="card-header bg-primary text-white">
                         <h5 class="mb-0 text-white">{{ plan.name }}</h5>
                     </div>

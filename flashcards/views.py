@@ -7204,7 +7204,24 @@ def sync_offline_progress_enhanced(request):
 
 def offline_study_enhanced(request):
     """Enhanced offline study interface with master sequence sync"""
-    return render(request, 'flashcards/offline_study_enhanced.html')
+    # Get the plan parameter if provided
+    plan_type = request.GET.get('plan', 'balanced')
+    
+    # Validate plan type
+    valid_plans = ['quick', 'balanced', 'deep']
+    if plan_type not in valid_plans:
+        plan_type = 'balanced'
+    
+    context = {
+        'selected_plan': plan_type,
+        'plan_configs': {
+            'quick': {'name': 'Quick Review', 'duration': 20, 'blocks': 3},
+            'balanced': {'name': 'Balanced Study', 'duration': 60, 'blocks': 8},
+            'deep': {'name': 'Deep Study', 'duration': 120, 'blocks': 17}
+        }
+    }
+    
+    return render(request, 'flashcards/offline_study_enhanced.html', context)
 
 def offline_study_session(request):
     """Offline study session following master sequence"""

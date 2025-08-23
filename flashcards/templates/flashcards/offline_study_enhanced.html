@@ -11,6 +11,11 @@
                 <div class="card-header bg-primary text-white">
                     <h3 class="mb-0"><i class="fas fa-cloud-download-alt me-2"></i>Enhanced Offline Study System</h3>
                     <small>Sync master sequence • Study offline • Auto-sync progress</small>
+                    {% if selected_plan %}
+                    <div class="mt-2">
+                        <span class="badge bg-primary">Selected: {{ plan_configs.selected_plan.name|default:"Balanced Study" }}</span>
+                    </div>
+                    {% endif %}
                 </div>
                 <div class="card-body">
                     <div class="row">
@@ -376,6 +381,28 @@ class EnhancedOfflineStudy {
         return document.querySelector('[name=csrfmiddlewaretoken]').value;
     }
 }
+
+
+    // Handle selected plan from URL parameter
+    const urlParams = new URLSearchParams(window.location.search);
+    const selectedPlan = urlParams.get('plan') || 'balanced';
+    
+    // Highlight the selected plan
+    document.addEventListener('DOMContentLoaded', function() {
+        const planCards = document.querySelectorAll('[data-plan-type]');
+        planCards.forEach(card => {
+            const planType = card.getAttribute('data-plan-type');
+            if (planType === selectedPlan) {
+                card.classList.add('border-primary', 'bg-light');
+                const button = card.querySelector('button');
+                if (button) {
+                    button.classList.remove('btn-outline-primary', 'btn-outline-warning', 'btn-outline-success');
+                    button.classList.add('btn-primary');
+                    button.innerHTML = '<i class="fas fa-star me-1"></i>Start Selected Plan';
+                }
+            }
+        });
+    });
 
 // Initialize when page loads
 document.addEventListener('DOMContentLoaded', () => {
