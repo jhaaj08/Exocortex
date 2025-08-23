@@ -672,7 +672,9 @@ class StudySession(models.Model):
         self.ended_at = timezone.now()
         self.save()
         print("🎉 Planned playlist completed!")
-        return False    @classmethod
+        return False
+    
+    @classmethod
     def create_intelligent_plan(cls, user, target_duration_min=60, review_ratio=0.3):
         """Create an intelligent study plan following the master sequence"""
         from django.contrib.auth.models import User
@@ -754,7 +756,9 @@ class StudySession(models.Model):
         print(f"✅ Plan created: {review_count} review + {new_count} new = {len(selected_blocks)} total")
         print(f"📋 Sequential order maintained from master sequence")
         
-        return [str(block.id) for block in selected_blocks]    @classmethod
+        return [str(block.id) for block in selected_blocks]
+    
+    @classmethod
     def _create_simple_plan(cls, target_duration_min=60):
         """Fallback: simple plan following master sequence"""
         print("📝 Creating simple plan (following master sequence)")
