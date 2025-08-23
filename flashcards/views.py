@@ -2014,8 +2014,9 @@ def deduplication_stats(request):
     return render(request, 'flashcards/deduplication_stats.html', context)
 
 def all_focus_blocks(request):
-    """Unified advanced study interface for all focus blocks"""
+    """Show the complete master sequence of all focus blocks (same order as study plans)"""
     
+    # Get ALL blocks in the exact same order as study plans use
     all_blocks = FocusBlock.objects.select_related('pdf_document').order_by(
         'pdf_document__created_at', 'block_order'
     )
@@ -2099,29 +2100,76 @@ def all_focus_blocks(request):
     current_block = study_session.current_focus_block
     print(f"📖 Currently studying: {current_block.title}")
 
-    # Format blocks for advanced study (use our merged completion list)
-    remaining_blocks = all_blocks.exclude(id__in=completed_block_ids)
+    # Apply the same prerequisite ordering that study plans use
+    ordered_blocks = StudySession._order_by_prerequisites(list(all_blocks))
+    
+    # Format ALL blocks to show complete master sequence
     formatted_blocks = []
-    for block in remaining_blocks:
-        # Get segments using the model method (now fixed to handle new data structure)
-        segments = block.get_segments()
-        qa_items = block.get_qa_items()
-        learning_objectives = block.compact7_data.get('learning_objectives', []) if block.compact7_data else []
+    available_count = 0
+    locked_count = 0
+    
+    for index, block in enumerate(ordered_blocks, 1):
+        is_completed = str(block.id) in [str(cid) for cid in completed_block_ids]
         
-        print(f"🔍 Block: {block.title}")
-        print(f"   Segments: {len(segments)}")
-        print(f"   Q&A Items: {len(qa_items)}")
-        print(f"   Learning Objectives: {len(learning_objectives)}")
+        # Determine status for each block in sequence
+        if is_completed:
+            status = 'completed'
+            status_class = 'success'
+            status_icon = 'fas fa-check-circle'
+            status_text = 'Completed'
+        elif index == 1:
+            # First block is always available
+            status = 'available'
+            status_class = 'primary'
+            status_icon = 'fas fa-play-circle'
+            status_text = 'Ready to Study'
+            available_count += 1
+        else:
+            # Check if all previous blocks are completed
+            prev_blocks_completed = all(
+                str(prev_block.id) in [str(cid) for cid in completed_block_ids] 
+                for prev_block in ordered_blocks[:index-1]
+            )
+            if prev_blocks_completed:
+                status = 'available'
+                status_class = 'primary'
+                status_icon = 'fas fa-play-circle'
+                status_text = 'Ready to Study'
+                available_count += 1
+            else:
+                status = 'locked'
+                status_class = 'secondary'
+                status_icon = 'fas fa-lock'
+                status_text = 'Prerequisites Required'
+                locked_count += 1
+        
+        # Get detailed content only for available/current blocks to save processing
+        if status in ['available', 'completed'] and not is_completed:
+            segments = block.get_segments()
+            qa_items = block.get_qa_items()
+            learning_objectives = block.compact7_data.get('learning_objectives', []) if block.compact7_data else []
+        else:
+            segments = []
+            qa_items = []
+            learning_objectives = []
+        
+        print(f"🔍 Block {index}: {block.title} - Status: {status}")
         
         formatted_blocks.append({
             'block': block,
+            'sequence_number': index,
+            'status': status,
+            'status_class': status_class,
+            'status_icon': status_icon,
+            'status_text': status_text,
+            'is_completed': is_completed,
             'segments': segments,
             'qa_items': qa_items,
             'learning_objectives': learning_objectives,
             'source_pdf': block.pdf_document.name,
             'total_segments': len(segments),
             'total_qa': len(qa_items),
-            'estimated_duration': block.get_estimated_duration_display(),
+            'estimated_duration': f"{(block.target_duration or 420) // 60}min",
         })
     
     total_time = sum(block.target_duration or 420 for block in all_blocks) / 60
@@ -2135,12 +2183,15 @@ def all_focus_blocks(request):
         'focus_blocks': formatted_blocks,
         'study_session': study_session,
         'current_block': current_block,
-        'total_blocks': len(formatted_blocks),  # Remaining blocks (for other uses)
-        'total_all_blocks': total_all_blocks,   # ✅ NEW: All blocks ever
-        'current_block_position': current_block_position,  # ✅ NEW: Absolute position
-        'completed_blocks_count': completed_count,  # ✅ NEW: How many completed
+        'total_blocks': len(formatted_blocks),  # All blocks in sequence
+        'total_all_blocks': total_all_blocks,   # Total blocks that exist
+        'current_block_position': current_block_position,  # Absolute position
+        'completed_blocks_count': completed_count,  # How many completed
+        'available_count': available_count,  # How many available to study
+        'locked_count': locked_count,  # How many locked
         'total_study_time': total_time,
-        'unique_pdfs': len(set(block.pdf_document.name for block in all_blocks)),
+        'progress_percentage': (completed_count / total_all_blocks * 100) if total_all_blocks > 0 else 0,
+        'unique_pdfs': len(set(block.pdf_document.name for block in ordered_blocks)),
     }
     
     return render(request, 'flashcards/all_focus_blocks.html', context)
