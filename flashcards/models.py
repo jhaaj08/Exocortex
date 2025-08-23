@@ -672,11 +672,9 @@ class StudySession(models.Model):
         self.ended_at = timezone.now()
         self.save()
         print("🎉 Planned playlist completed!")
-        return False
-    
-    @classmethod
+        return False    @classmethod
     def create_intelligent_plan(cls, user, target_duration_min=60, review_ratio=0.3):
-        """Create an intelligent study plan mixing new and review blocks"""
+        """Create an intelligent study plan following the master sequence"""
         from django.contrib.auth.models import User
         
         # For now, use first admin user if user is None
@@ -689,58 +687,103 @@ class StudySession(models.Model):
         print(f"🧠 Creating intelligent plan for {user.username}")
         print(f"📊 Target: {target_duration_min}min, Review ratio: {review_ratio:.0%}")
         
-        # Get different types of blocks
-        due_states = UserBlockState.get_due_blocks_for_user(user)
-        struggling_states = UserBlockState.get_struggling_blocks_for_user(user)
-        new_blocks = UserBlockState.get_new_blocks_for_user(user)
+        # Get the MASTER SEQUENCE (same as Focus Blocks page)
+        all_blocks = FocusBlock.objects.select_related('pdf_document').order_by(
+            'pdf_document__created_at', 'block_order'
+        )
+        master_sequence = cls._order_by_prerequisites(list(all_blocks))
         
-        due_blocks = [state.block for state in due_states[:10]]  # Limit due blocks
-        struggling_blocks = [state.block for state in struggling_states[:5]]  # Priority struggling
-        
-        print(f"📚 Found: {len(due_blocks)} due, {len(struggling_blocks)} struggling, {len(new_blocks)} new")
+        # Get completion status
+        completed_block_ids = set()
+        if user:
+            # Get completed blocks from UserBlockState
+            user_completed = UserBlockState.objects.filter(
+                user=user,
+                status='completed'
+            ).values_list('block_id', flat=True)
+            completed_block_ids.update(str(bid) for bid in user_completed)
+            
+            # Also get completed blocks from StudySessions
+            session_completed = StudySession.objects.values_list('completed_focus_blocks', flat=True).distinct()
+            completed_block_ids.update(str(bid) for bid in session_completed if bid)
         
         # Calculate target counts
         avg_block_duration = 7  # minutes
         total_blocks = max(1, target_duration_min // avg_block_duration)
-        review_count = int(total_blocks * review_ratio)
-        new_count = total_blocks - review_count
         
-        # Build review list (prioritize struggling, then due)
-        review_blocks = []
-        review_blocks.extend(struggling_blocks[:review_count])
+        # Select blocks sequentially from master sequence
+        selected_blocks = []
+        review_count = 0
+        new_count = 0
+        target_review_count = int(total_blocks * review_ratio)
+        target_new_count = total_blocks - target_review_count
         
-        if len(review_blocks) < review_count:
-            remaining_review = review_count - len(review_blocks)
-            review_blocks.extend([b for b in due_blocks if b not in review_blocks][:remaining_review])
+        print(f"📋 Master sequence has {len(master_sequence)} blocks")
+        print(f"🎯 Target: {target_review_count} review + {target_new_count} new = {total_blocks} total")
         
-        # Add new blocks
-        new_blocks_list = list(new_blocks[:new_count])
+        for block in master_sequence:
+            if len(selected_blocks) >= total_blocks:
+                break
+                
+            block_id = str(block.id)
+            is_completed = block_id in completed_block_ids
+            
+            if is_completed and review_count < target_review_count:
+                # This is a review block
+                selected_blocks.append(block)
+                review_count += 1
+                print(f"📖 Added review block {len(selected_blocks)}: {block.title[:50]}")
+            elif not is_completed and new_count < target_new_count:
+                # This is a new block
+                selected_blocks.append(block)
+                new_count += 1
+                print(f"🆕 Added new block {len(selected_blocks)}: {block.title[:50]}")
         
-        # Combine and order using knowledge graph
-        all_planned_blocks = review_blocks + new_blocks_list
-        ordered_blocks = cls._order_by_prerequisites(all_planned_blocks)
+        # If we don't have enough blocks, fill with available blocks from sequence
+        if len(selected_blocks) < total_blocks:
+            remaining_needed = total_blocks - len(selected_blocks)
+            print(f"🔄 Need {remaining_needed} more blocks, adding from sequence...")
+            
+            for block in master_sequence:
+                if len(selected_blocks) >= total_blocks:
+                    break
+                if block not in selected_blocks:
+                    selected_blocks.append(block)
+                    print(f"➕ Added additional block {len(selected_blocks)}: {block.title[:50]}")
         
-        print(f"✅ Plan created: {len(review_blocks)} review + {len(new_blocks_list)} new = {len(ordered_blocks)} total")
+        print(f"✅ Plan created: {review_count} review + {new_count} new = {len(selected_blocks)} total")
+        print(f"📋 Sequential order maintained from master sequence")
         
-        return [str(block.id) for block in ordered_blocks]
-    
-    @classmethod
+        return [str(block.id) for block in selected_blocks]    @classmethod
     def _create_simple_plan(cls, target_duration_min=60):
-        """Fallback: simple plan with all uncompleted blocks"""
-        print("📝 Creating simple plan (all uncompleted blocks)")
+        """Fallback: simple plan following master sequence"""
+        print("📝 Creating simple plan (following master sequence)")
         
-        # Get all focus blocks, excluding completed ones
+        # Get the same master sequence as other plans
+        all_blocks = FocusBlock.objects.select_related('pdf_document').order_by(
+            'pdf_document__created_at', 'block_order'
+        )
+        master_sequence = cls._order_by_prerequisites(list(all_blocks))
+        
+        # Get completed blocks
         all_completed_ids = StudySession.objects.values_list('completed_focus_blocks', flat=True).distinct()
-        uncompleted_blocks = FocusBlock.objects.exclude(id__in=all_completed_ids).order_by('created_at', 'block_order')
+        completed_ids = set(str(bid) for bid in all_completed_ids if bid)
         
-        # Limit by target duration
+        # Select uncompleted blocks from master sequence
         avg_block_duration = 7  # minutes
         max_blocks = target_duration_min // avg_block_duration
         
-        limited_blocks = uncompleted_blocks[:max_blocks]
-        print(f"📊 Simple plan: {len(limited_blocks)} blocks (max {max_blocks})")
+        selected_blocks = []
+        for block in master_sequence:
+            if len(selected_blocks) >= max_blocks:
+                break
+            if str(block.id) not in completed_ids:
+                selected_blocks.append(block)
+                print(f"📋 Added block {len(selected_blocks)}: {block.title[:50]}")
         
-        return [str(block.id) for block in limited_blocks]
+        print(f"📊 Simple plan: {len(selected_blocks)} blocks (max {max_blocks}) following master sequence")
+        
+        return [str(block.id) for block in selected_blocks]
     
     @classmethod
     def _order_by_prerequisites(cls, blocks):
