@@ -298,3 +298,76 @@
 // No JavaScript needed for navigation
 </script>
 {% endblock %}
+<script>
+// Enhanced home page offline support
+document.addEventListener('DOMContentLoaded', function() {
+    const offlineIndicator = document.querySelector('.offline-indicator');
+    const offlineStudyOptions = document.querySelectorAll('.offline-study-option');
+    
+    function updateOfflineUI() {
+        const isOffline = !navigator.onLine;
+        
+        if (isOffline) {
+            // Show offline indicator
+            if (offlineIndicator) {
+                offlineIndicator.classList.remove('d-none');
+                offlineIndicator.style.display = 'block';
+            }
+            
+            // Show offline study options
+            offlineStudyOptions.forEach(option => {
+                option.style.display = 'block';
+            });
+            
+            // Modify study plan links to go to offline version
+            document.querySelectorAll('.study-plan-card').forEach(card => {
+                const link = card.parentElement;
+                if (link.tagName === 'A') {
+                    const planType = card.getAttribute('data-plan-type');
+                    link.href = `/offline-study-enhanced/?plan=${planType}`;
+                    
+                    // Add offline badge
+                    let badge = card.querySelector('.offline-badge');
+                    if (!badge) {
+                        badge = document.createElement('span');
+                        badge.className = 'badge bg-warning offline-badge position-absolute top-0 end-0 m-2';
+                        badge.innerHTML = '<i class="fas fa-wifi-slash me-1"></i>Offline';
+                        card.style.position = 'relative';
+                        card.appendChild(badge);
+                    }
+                }
+            });
+            
+        } else {
+            // Hide offline indicator
+            if (offlineIndicator) {
+                offlineIndicator.classList.add('d-none');
+                offlineIndicator.style.display = 'none';
+            }
+            
+            // Hide offline study options
+            offlineStudyOptions.forEach(option => {
+                option.style.display = 'none';
+            });
+            
+            // Remove offline badges
+            document.querySelectorAll('.offline-badge').forEach(badge => {
+                badge.remove();
+            });
+        }
+    }
+    
+    // Initial check
+    updateOfflineUI();
+    
+    // Listen for connection changes
+    window.addEventListener('online', updateOfflineUI);
+    window.addEventListener('offline', updateOfflineUI);
+    
+    // Cache current page data for offline use
+    if (window.offlineManager) {
+        window.offlineManager.cacheStudyData();
+    }
+});
+</script>
+{% endblock %}
