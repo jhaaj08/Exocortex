@@ -1,0 +1,414 @@
+{% extends "flashcards/base.html" %}
+
+{% block title %}Offline Study Session{% endblock %}
+
+{% block content %}
+<div class="container-fluid" id="study-session-container">
+    <!-- Session Header -->
+    <div class="row mb-3">
+        <div class="col-12">
+            <div class="card border-primary">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="mb-0"><i class="fas fa-brain me-2"></i><span id="session-title">Offline Study Session</span></h5>
+                        <small id="session-subtitle">Following master sequence</small>
+                    </div>
+                    <div class="d-flex align-items-center">
+                        <span class="badge bg-light text-primary me-2" id="connection-badge">
+                            <i class="fas fa-wifi-slash"></i> Offline
+                        </span>
+                        <button class="btn btn-outline-light btn-sm" onclick="studySession.endSession()">
+                            <i class="fas fa-times"></i> End
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-3">
+                            <div class="d-flex align-items-center">
+                                <i class="fas fa-list-ol me-2"></i>
+                                <span id="block-progress">Block 0 of 0</span>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="d-flex align-items-center">
+                                <i class="fas fa-clock me-2"></i>
+                                <span id="time-elapsed">00:00</span>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="d-flex align-items-center">
+                                <i class="fas fa-check-circle me-2"></i>
+                                <span id="completed-count">0 completed</span>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="progress">
+                                <div class="progress-bar" role="progressbar" style="width: 0%" id="session-progress"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Current Block Display -->
+    <div class="row" id="current-block-container" style="display: none;">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="mb-0" id="current-block-title">Block Title</h6>
+                        <small class="text-muted" id="current-block-info">PDF Name • Duration</small>
+                    </div>
+                    <div>
+                        <span class="badge bg-secondary" id="current-sequence">Sequence #1</span>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <!-- Learning Objectives -->
+                    <div class="mb-3" id="learning-objectives-section">
+                        <h6><i class="fas fa-bullseye me-2"></i>Learning Objectives</h6>
+                        <ul id="learning-objectives-list"></ul>
+                    </div>
+
+                    <!-- Study Content -->
+                    <div id="study-content">
+                        <!-- Segments will be populated here -->
+                    </div>
+
+                    <!-- Q&A Section -->
+                    <div class="mt-4" id="qa-section" style="display: none;">
+                        <h6><i class="fas fa-question-circle me-2"></i>Quick Assessment</h6>
+                        <div id="qa-content"></div>
+                    </div>
+
+                    <!-- Block Completion -->
+                    <div class="mt-4 p-3 bg-light rounded" id="completion-section" style="display: none;">
+                        <h6><i class="fas fa-star me-2"></i>Rate Your Understanding</h6>
+                        <div class="d-flex justify-content-center mb-3">
+                            <div class="btn-group" role="group">
+                                <button type="button" class="btn btn-outline-danger" onclick="studySession.rateBlock(1)">1 - Hard</button>
+                                <button type="button" class="btn btn-outline-warning" onclick="studySession.rateBlock(2)">2 - Difficult</button>
+                                <button type="button" class="btn btn-outline-info" onclick="studySession.rateBlock(3)">3 - OK</button>
+                                <button type="button" class="btn btn-outline-success" onclick="studySession.rateBlock(4)">4 - Good</button>
+                                <button type="button" class="btn btn-outline-primary" onclick="studySession.rateBlock(5)">5 - Easy</button>
+                            </div>
+                        </div>
+                        <button class="btn btn-primary w-100" onclick="studySession.completeBlock()">
+                            <i class="fas fa-check me-2"></i>Complete Block
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Session Complete -->
+    <div class="row" id="session-complete-container" style="display: none;">
+        <div class="col-12">
+            <div class="card border-success">
+                <div class="card-header bg-success text-white text-center">
+                    <h4><i class="fas fa-trophy me-2"></i>Session Complete!</h4>
+                </div>
+                <div class="card-body text-center">
+                    <div class="row mb-4">
+                        <div class="col-md-4">
+                            <h3 class="text-success" id="final-completed">0</h3>
+                            <p>Blocks Completed</p>
+                        </div>
+                        <div class="col-md-4">
+                            <h3 class="text-primary" id="final-time">00:00</h3>
+                            <p>Total Time</p>
+                        </div>
+                        <div class="col-md-4">
+                            <h3 class="text-warning" id="final-rating">0.0</h3>
+                            <p>Avg Rating</p>
+                        </div>
+                    </div>
+                    
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        Progress saved offline. Will sync when you're back online.
+                    </div>
+                    
+                    <div class="d-flex justify-content-center gap-3">
+                        <button class="btn btn-primary" onclick="window.location.href='/offline-study-enhanced/'">
+                            <i class="fas fa-home me-2"></i>Back to Offline Study
+                        </button>
+                        <button class="btn btn-success" onclick="studySession.startNewSession()">
+                            <i class="fas fa-redo me-2"></i>Start New Session
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- No Blocks Available -->
+    <div class="row" id="no-blocks-container" style="display: none;">
+        <div class="col-12">
+            <div class="card border-warning">
+                <div class="card-body text-center">
+                    <i class="fas fa-exclamation-triangle text-warning fa-3x mb-3"></i>
+                    <h4>No Blocks Available</h4>
+                    <p>Please sync the master sequence first to study offline.</p>
+                    <button class="btn btn-primary" onclick="window.location.href='/offline-study-enhanced/'">
+                        <i class="fas fa-download me-2"></i>Go to Sync
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+class OfflineStudySession {
+    constructor() {
+        this.masterSequence = [];
+        this.currentPlan = [];
+        this.currentBlockIndex = 0;
+        this.currentBlock = null;
+        this.sessionStartTime = Date.now();
+        this.completedBlocks = [];
+        this.currentRating = 3;
+        
+        this.init();
+    }
+
+    init() {
+        this.loadOfflineData();
+        this.setupSession();
+        this.updateConnectionStatus();
+        
+        // Monitor connection changes
+        window.addEventListener('online', () => this.updateConnectionStatus());
+        window.addEventListener('offline', () => this.updateConnectionStatus());
+    }
+
+    loadOfflineData() {
+        // Load master sequence
+        const stored = localStorage.getItem('masterSequence');
+        if (stored) {
+            this.masterSequence = JSON.parse(stored);
+        }
+        
+        // Load current plan type
+        const planType = localStorage.getItem('currentOfflinePlan') || 'balanced';
+        this.generateStudyPlan(planType);
+    }
+
+    generateStudyPlan(planType) {
+        const planConfigs = {
+            'quick': { duration: 20, blocks: 3 },
+            'balanced': { duration: 60, blocks: 8 },
+            'deep': { duration: 120, blocks: 17 }
+        };
+        
+        const config = planConfigs[planType] || planConfigs['balanced'];
+        
+        // Get blocks following master sequence order
+        const availableBlocks = this.masterSequence.filter(block => !block.is_completed);
+        this.currentPlan = availableBlocks.slice(0, config.blocks);
+        
+        // Update session title
+        document.getElementById('session-title').textContent = 
+            `${planType.charAt(0).toUpperCase() + planType.slice(1)} Study Session`;
+        document.getElementById('session-subtitle').textContent = 
+            `${this.currentPlan.length} blocks • Following master sequence`;
+    }
+
+    setupSession() {
+        if (this.currentPlan.length === 0) {
+            document.getElementById('no-blocks-container').style.display = 'block';
+            return;
+        }
+        
+        this.showCurrentBlock();
+        this.updateProgress();
+        this.startTimer();
+    }
+
+    showCurrentBlock() {
+        if (this.currentBlockIndex >= this.currentPlan.length) {
+            this.completeSession();
+            return;
+        }
+        
+        this.currentBlock = this.currentPlan[this.currentBlockIndex];
+        
+        // Show current block container
+        document.getElementById('current-block-container').style.display = 'block';
+        
+        // Update block info
+        document.getElementById('current-block-title').textContent = this.currentBlock.title;
+        document.getElementById('current-block-info').textContent = 
+            `${this.currentBlock.pdf_name} • ${this.currentBlock.estimated_duration}`;
+        document.getElementById('current-sequence').textContent = 
+            `Sequence #${this.currentBlock.sequence_number}`;
+        
+        // Show learning objectives
+        const objectivesList = document.getElementById('learning-objectives-list');
+        objectivesList.innerHTML = this.currentBlock.learning_objectives
+            .map(obj => `<li>${obj}</li>`).join('');
+        
+        // Show study content (segments)
+        this.showStudyContent();
+    }
+
+    showStudyContent() {
+        const contentDiv = document.getElementById('study-content');
+        const segments = this.currentBlock.segments || [];
+        
+        contentDiv.innerHTML = segments.map((segment, index) => `
+            <div class="mb-4 p-3 border rounded">
+                <h6><i class="fas fa-play-circle me-2"></i>Segment ${index + 1}: ${segment.title || 'Study Content'}</h6>
+                <div class="content-text">${segment.content || segment.text || 'Study this concept carefully.'}</div>
+                ${segment.time_sec ? `<small class="text-muted"><i class="fas fa-clock me-1"></i>${Math.ceil(segment.time_sec / 60)} minutes</small>` : ''}
+            </div>
+        `).join('');
+        
+        // Show Q&A if available
+        const qaItems = this.currentBlock.qa_items || [];
+        if (qaItems.length > 0) {
+            document.getElementById('qa-section').style.display = 'block';
+            document.getElementById('qa-content').innerHTML = qaItems.map((qa, index) => `
+                <div class="mb-3 p-3 bg-light rounded">
+                    <strong>Q${index + 1}: ${qa.question}</strong>
+                    <div class="mt-2 text-muted">${qa.answer}</div>
+                </div>
+            `).join('');
+        }
+        
+        // Show completion section
+        document.getElementById('completion-section').style.display = 'block';
+    }
+
+    rateBlock(rating) {
+        this.currentRating = rating;
+        
+        // Update button states
+        document.querySelectorAll('#completion-section .btn').forEach((btn, index) => {
+            if (index === rating - 1) {
+                btn.classList.remove('btn-outline-danger', 'btn-outline-warning', 'btn-outline-info', 'btn-outline-success', 'btn-outline-primary');
+                btn.classList.add('btn-primary');
+            } else {
+                btn.classList.remove('btn-primary');
+                const colors = ['btn-outline-danger', 'btn-outline-warning', 'btn-outline-info', 'btn-outline-success', 'btn-outline-primary'];
+                btn.className = `btn ${colors[index]}`;
+            }
+        });
+    }
+
+    completeBlock() {
+        const blockStartTime = Date.now();
+        const timeSpent = Math.floor((blockStartTime - this.sessionStartTime) / 1000);
+        
+        // Record completion
+        const completionData = {
+            block_id: this.currentBlock.id,
+            rating: this.currentRating,
+            time_spent: timeSpent,
+            completed_at: new Date().toISOString(),
+            sequence_number: this.currentBlock.sequence_number
+        };
+        
+        this.completedBlocks.push(completionData);
+        
+        // Save to offline progress
+        this.saveOfflineProgress();
+        
+        // Move to next block
+        this.currentBlockIndex++;
+        this.showCurrentBlock();
+        this.updateProgress();
+    }
+
+    saveOfflineProgress() {
+        const offlineProgress = JSON.parse(localStorage.getItem('offlineProgress') || '{}');
+        
+        if (!offlineProgress.completed_blocks) {
+            offlineProgress.completed_blocks = [];
+        }
+        
+        // Add new completions
+        offlineProgress.completed_blocks.push(...this.completedBlocks);
+        offlineProgress.total_study_time = (offlineProgress.total_study_time || 0) + 
+            Math.floor((Date.now() - this.sessionStartTime) / 1000);
+        
+        localStorage.setItem('offlineProgress', JSON.stringify(offlineProgress));
+        
+        // Clear session completions
+        this.completedBlocks = [];
+    }
+
+    updateProgress() {
+        const completed = this.currentBlockIndex;
+        const total = this.currentPlan.length;
+        const percentage = total > 0 ? (completed / total) * 100 : 0;
+        
+        document.getElementById('block-progress').textContent = `Block ${completed + 1} of ${total}`;
+        document.getElementById('completed-count').textContent = `${completed} completed`;
+        document.getElementById('session-progress').style.width = `${percentage}%`;
+    }
+
+    startTimer() {
+        setInterval(() => {
+            const elapsed = Math.floor((Date.now() - this.sessionStartTime) / 1000);
+            const minutes = Math.floor(elapsed / 60);
+            const seconds = elapsed % 60;
+            document.getElementById('time-elapsed').textContent = 
+                `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }, 1000);
+    }
+
+    completeSession() {
+        // Hide current block, show completion
+        document.getElementById('current-block-container').style.display = 'none';
+        document.getElementById('session-complete-container').style.display = 'block';
+        
+        // Calculate final stats
+        const totalTime = Math.floor((Date.now() - this.sessionStartTime) / 1000);
+        const avgRating = this.completedBlocks.length > 0 ? 
+            this.completedBlocks.reduce((sum, block) => sum + block.rating, 0) / this.completedBlocks.length : 0;
+        
+        document.getElementById('final-completed').textContent = this.completedBlocks.length;
+        document.getElementById('final-time').textContent = 
+            `${Math.floor(totalTime / 60)}:${(totalTime % 60).toString().padStart(2, '0')}`;
+        document.getElementById('final-rating').textContent = avgRating.toFixed(1);
+        
+        // Save final progress
+        this.saveOfflineProgress();
+    }
+
+    endSession() {
+        if (this.completedBlocks.length > 0) {
+            this.saveOfflineProgress();
+        }
+        window.location.href = '/offline-study-enhanced/';
+    }
+
+    startNewSession() {
+        localStorage.removeItem('currentOfflinePlan');
+        window.location.reload();
+    }
+
+    updateConnectionStatus() {
+        const badge = document.getElementById('connection-badge');
+        if (navigator.onLine) {
+            badge.innerHTML = '<i class="fas fa-wifi"></i> Online';
+            badge.className = 'badge bg-success text-white me-2';
+        } else {
+            badge.innerHTML = '<i class="fas fa-wifi-slash"></i> Offline';
+            badge.className = 'badge bg-light text-primary me-2';
+        }
+    }
+}
+
+// Initialize when page loads
+document.addEventListener('DOMContentLoaded', () => {
+    window.studySession = new OfflineStudySession();
+});
+</script>
+{% endblock %}

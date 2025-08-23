@@ -119,4 +119,10 @@ urlpatterns = [
     
     # Service Worker (served from root for proper scope)
     path('sw.js', views.serve_service_worker, name='service_worker'),
-] 
+]     
+    # Enhanced Offline Study System
+    path('api/sync-master-sequence/', views.sync_master_sequence_offline, name='sync_master_sequence'),
+    path('api/offline-study-plan/', views.get_offline_study_plan, name='offline_study_plan_api'),
+    path('api/sync-offline-enhanced/', views.sync_offline_progress_enhanced, name='sync_offline_enhanced'),
+    path('offline-study-enhanced/', views.offline_study_enhanced, name='offline_study_enhanced'),
+    path('offline-study-session/', views.offline_study_session, name='offline_study_session'),

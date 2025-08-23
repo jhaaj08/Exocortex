@@ -6982,3 +6982,230 @@ def serve_service_worker(request):
         
     except FileNotFoundError:
         raise Http404("Service worker not found")
+
+def sync_master_sequence_offline(request):
+    """Sync first 1000 blocks from master sequence to offline storage"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST method required'}, status=405)
+    
+    try:
+        # Get the MASTER SEQUENCE (same as Focus Blocks page)
+        all_blocks = FocusBlock.objects.select_related('pdf_document').order_by(
+            'pdf_document__created_at', 'block_order'
+        )
+        master_sequence = StudySession._order_by_prerequisites(list(all_blocks))
+        
+        # Limit to first 1000 blocks for offline storage
+        blocks_to_sync = master_sequence[:1000]
+        
+        # Get user completion status
+        user = request.user if request.user.is_authenticated else None
+        completed_block_ids = set()
+        
+        if user:
+            # Get completed blocks from UserBlockState
+            user_completed = UserBlockState.objects.filter(
+                user=user,
+                status='completed'
+            ).values_list('block_id', flat=True)
+            completed_block_ids.update(str(bid) for bid in user_completed)
+            
+            # Also get completed blocks from StudySessions
+            session_completed = StudySession.objects.values_list('completed_focus_blocks', flat=True).distinct()
+            completed_block_ids.update(str(bid) for bid in session_completed if bid)
+        
+        # Prepare blocks data for offline storage
+        offline_blocks = []
+        for index, block in enumerate(blocks_to_sync, 1):
+            block_data = {
+                'id': str(block.id),
+                'sequence_number': index,
+                'title': block.title,
+                'pdf_name': block.pdf_document.name if block.pdf_document else 'Unknown',
+                'estimated_duration': block.get_estimated_duration_display(),
+                'difficulty_level': block.difficulty_level,
+                'learning_objectives': block.learning_objectives,
+                'is_completed': str(block.id) in completed_block_ids,
+                'segments': block.get_segments(),
+                'qa_items': block.get_qa_items(),
+                'revision_data': block.get_revision_data(),
+                'recap_data': block.get_recap_data(),
+                'rescue_data': block.get_rescue_data(),
+                'created_at': block.created_at.isoformat(),
+            }
+            offline_blocks.append(block_data)
+        
+        # Return the master sequence for offline storage
+        response_data = {
+            'success': True,
+            'master_sequence': offline_blocks,
+            'total_blocks': len(offline_blocks),
+            'completed_count': len([b for b in offline_blocks if b['is_completed']]),
+            'sync_timestamp': timezone.now().isoformat(),
+            'message': f'Synced first {len(offline_blocks)} blocks from master sequence'
+        }
+        
+        return JsonResponse(response_data)
+        
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e),
+            'message': 'Failed to sync master sequence'
+        }, status=500)
+
+def get_offline_study_plan(request):
+    """Get study plan from offline master sequence"""
+    if request.method != 'GET':
+        return JsonResponse({'error': 'GET method required'}, status=405)
+    
+    try:
+        # Get parameters
+        plan_type = request.GET.get('type', 'balanced')  # quick, balanced, deep
+        target_duration = int(request.GET.get('duration', 60))
+        
+        # Define plan parameters
+        plan_configs = {
+            'quick': {'duration': 20, 'review_ratio': 0.8},
+            'balanced': {'duration': 60, 'review_ratio': 0.3},
+            'deep': {'duration': 120, 'review_ratio': 0.2}
+        }
+        
+        config = plan_configs.get(plan_type, plan_configs['balanced'])
+        
+        # Calculate blocks needed
+        avg_block_duration = 7  # minutes
+        total_blocks = max(1, config['duration'] // avg_block_duration)
+        
+        response_data = {
+            'success': True,
+            'plan_type': plan_type,
+            'target_duration': config['duration'],
+            'total_blocks_needed': total_blocks,
+            'review_ratio': config['review_ratio'],
+            'message': f'Use first {total_blocks} blocks from offline master sequence',
+            'instructions': {
+                'step1': 'Load master sequence from localStorage',
+                'step2': f'Filter first {total_blocks} blocks following completion status',
+                'step3': 'Maintain sequential order from master sequence',
+                'step4': 'Track progress in localStorage for sync'
+            }
+        }
+        
+        return JsonResponse(response_data)
+        
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+def sync_offline_progress_enhanced(request):
+    """Enhanced bidirectional sync for offline progress and new blocks"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST method required'}, status=405)
+    
+    try:
+        data = json.loads(request.body)
+        user = request.user if request.user.is_authenticated else None
+        
+        if not user:
+            return JsonResponse({'error': 'Authentication required'}, status=401)
+        
+        # Process offline progress
+        offline_progress = data.get('offline_progress', {})
+        completed_blocks = offline_progress.get('completed_blocks', [])
+        block_ratings = offline_progress.get('block_ratings', {})
+        study_time = offline_progress.get('total_study_time', 0)
+        
+        # Sync completed blocks to database
+        synced_count = 0
+        for block_data in completed_blocks:
+            block_id = block_data.get('block_id')
+            rating = block_data.get('rating', 3)
+            time_spent = block_data.get('time_spent', 0)
+            completed_at = block_data.get('completed_at')
+            
+            try:
+                # Update UserBlockState
+                block = FocusBlock.objects.get(id=block_id)
+                user_state, created = UserBlockState.objects.get_or_create(
+                    user=user,
+                    block=block,
+                    defaults={'status': 'new'}
+                )
+                
+                # Update with offline progress
+                user_state.update_from_rating(rating, time_spent)
+                user_state.status = 'completed'
+                user_state.save()
+                
+                synced_count += 1
+                
+            except FocusBlock.DoesNotExist:
+                continue
+        
+        # Get latest master sequence for return sync
+        all_blocks = FocusBlock.objects.select_related('pdf_document').order_by(
+            'pdf_document__created_at', 'block_order'
+        )
+        master_sequence = StudySession._order_by_prerequisites(list(all_blocks))
+        
+        # Get user's latest completion status
+        user_completed = UserBlockState.objects.filter(
+            user=user,
+            status='completed'
+        ).values_list('block_id', flat=True)
+        session_completed = StudySession.objects.values_list('completed_focus_blocks', flat=True).distinct()
+        
+        all_completed = set(str(bid) for bid in user_completed) | set(str(bid) for bid in session_completed if bid)
+        
+        # Check for new blocks since last sync
+        last_sync = data.get('last_sync_timestamp')
+        new_blocks = []
+        
+        if last_sync:
+            try:
+                last_sync_dt = datetime.fromisoformat(last_sync.replace('Z', '+00:00'))
+                new_blocks_qs = FocusBlock.objects.filter(
+                    created_at__gt=last_sync_dt
+                ).select_related('pdf_document')[:100]  # Limit new blocks
+                
+                for block in new_blocks_qs:
+                    new_blocks.append({
+                        'id': str(block.id),
+                        'title': block.title,
+                        'pdf_name': block.pdf_document.name if block.pdf_document else 'Unknown',
+                        'created_at': block.created_at.isoformat(),
+                        'segments': block.get_segments(),
+                        'qa_items': block.get_qa_items(),
+                    })
+            except:
+                pass  # Invalid timestamp format
+        
+        response_data = {
+            'success': True,
+            'synced_blocks': synced_count,
+            'total_completed': len(all_completed),
+            'new_blocks': new_blocks,
+            'new_blocks_count': len(new_blocks),
+            'sync_timestamp': timezone.now().isoformat(),
+            'message': f'Synced {synced_count} completed blocks, found {len(new_blocks)} new blocks'
+        }
+        
+        return JsonResponse(response_data)
+        
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e),
+            'message': 'Failed to sync offline progress'
+        }, status=500)
+
+def offline_study_enhanced(request):
+    """Enhanced offline study interface with master sequence sync"""
+    return render(request, 'flashcards/offline_study_enhanced.html')
+
+def offline_study_session(request):
+    """Offline study session following master sequence"""
+    return render(request, 'flashcards/offline_study_session.html')

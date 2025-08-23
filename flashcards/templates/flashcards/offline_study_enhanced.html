@@ -1,0 +1,385 @@
+{% extends "flashcards/base.html" %}
+
+{% block title %}Enhanced Offline Study{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card border-primary">
+                <div class="card-header bg-primary text-white">
+                    <h3 class="mb-0"><i class="fas fa-cloud-download-alt me-2"></i>Enhanced Offline Study System</h3>
+                    <small>Sync master sequence • Study offline • Auto-sync progress</small>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="d-flex align-items-center">
+                                <i class="fas fa-wifi text-success me-2" id="connection-icon"></i>
+                                <span id="connection-status">Checking connection...</span>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="d-flex align-items-center">
+                                <i class="fas fa-database me-2"></i>
+                                <span id="offline-blocks-count">0 blocks cached</span>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="d-flex align-items-center">
+                                <i class="fas fa-sync-alt me-2"></i>
+                                <span id="last-sync">Never synced</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sync Controls -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-download me-2"></i>Download Master Sequence</h5>
+                </div>
+                <div class="card-body">
+                    <p>Sync first 1000 blocks from master sequence for offline study</p>
+                    <button class="btn btn-primary" id="sync-master-btn">
+                        <i class="fas fa-cloud-download-alt me-2"></i>Sync Master Sequence
+                    </button>
+                    <div class="progress mt-3" style="display: none;" id="sync-progress">
+                        <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+                    </div>
+                    <div id="sync-status" class="mt-2"></div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-upload me-2"></i>Sync Progress</h5>
+                </div>
+                <div class="card-body">
+                    <p>Upload offline progress and get new blocks</p>
+                    <button class="btn btn-success" id="sync-progress-btn">
+                        <i class="fas fa-cloud-upload-alt me-2"></i>Sync Progress
+                    </button>
+                    <div id="progress-sync-status" class="mt-2"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Offline Study Plans -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-list-ol me-2"></i>Offline Study Plans</h5>
+                    <small>Following master sequence order</small>
+                </div>
+                <div class="card-body">
+                    <div class="row" id="study-plans-container">
+                        <!-- Study plans will be populated by JavaScript -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Offline Progress Summary -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-chart-line me-2"></i>Offline Progress</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-3">
+                            <div class="text-center">
+                                <h4 class="text-primary" id="completed-offline">0</h4>
+                                <small>Completed Offline</small>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="text-center">
+                                <h4 class="text-info" id="pending-sync">0</h4>
+                                <small>Pending Sync</small>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="text-center">
+                                <h4 class="text-success" id="total-cached">0</h4>
+                                <small>Total Cached</small>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="text-center">
+                                <h4 class="text-warning" id="storage-used">0%</h4>
+                                <small>Storage Used</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+class EnhancedOfflineStudy {
+    constructor() {
+        this.masterSequence = [];
+        this.offlineProgress = {
+            completed_blocks: [],
+            block_ratings: {},
+            total_study_time: 0,
+            last_sync: null
+        };
+        this.init();
+    }
+
+    init() {
+        this.checkConnection();
+        this.loadOfflineData();
+        this.setupEventListeners();
+        this.updateUI();
+        
+        // Auto-sync when coming online
+        window.addEventListener('online', () => {
+            this.checkConnection();
+            this.autoSyncProgress();
+        });
+        
+        window.addEventListener('offline', () => {
+            this.checkConnection();
+        });
+    }
+
+    checkConnection() {
+        const isOnline = navigator.onLine;
+        const icon = document.getElementById('connection-icon');
+        const status = document.getElementById('connection-status');
+        
+        if (isOnline) {
+            icon.className = 'fas fa-wifi text-success me-2';
+            status.textContent = 'Online';
+            status.className = 'text-success';
+        } else {
+            icon.className = 'fas fa-wifi-slash text-danger me-2';
+            status.textContent = 'Offline';
+            status.className = 'text-danger';
+        }
+    }
+
+    setupEventListeners() {
+        document.getElementById('sync-master-btn').addEventListener('click', () => {
+            this.syncMasterSequence();
+        });
+        
+        document.getElementById('sync-progress-btn').addEventListener('click', () => {
+            this.syncProgress();
+        });
+    }
+
+    async syncMasterSequence() {
+        if (!navigator.onLine) {
+            this.showStatus('sync-status', 'Cannot sync while offline', 'danger');
+            return;
+        }
+
+        const btn = document.getElementById('sync-master-btn');
+        const progress = document.getElementById('sync-progress');
+        const status = document.getElementById('sync-status');
+        
+        btn.disabled = true;
+        progress.style.display = 'block';
+        
+        try {
+            const response = await fetch('/api/sync-master-sequence/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': this.getCSRFToken()
+                }
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                // Store master sequence in localStorage
+                localStorage.setItem('masterSequence', JSON.stringify(data.master_sequence));
+                localStorage.setItem('lastSync', data.sync_timestamp);
+                
+                this.masterSequence = data.master_sequence;
+                this.showStatus('sync-status', `✅ Synced ${data.total_blocks} blocks from master sequence`, 'success');
+                this.updateUI();
+            } else {
+                this.showStatus('sync-status', `❌ Sync failed: ${data.error}`, 'danger');
+            }
+        } catch (error) {
+            this.showStatus('sync-status', `❌ Network error: ${error.message}`, 'danger');
+        } finally {
+            btn.disabled = false;
+            progress.style.display = 'none';
+        }
+    }
+
+    async syncProgress() {
+        if (!navigator.onLine) {
+            this.showStatus('progress-sync-status', 'Cannot sync while offline', 'danger');
+            return;
+        }
+
+        const btn = document.getElementById('sync-progress-btn');
+        btn.disabled = true;
+        
+        try {
+            const syncData = {
+                offline_progress: this.offlineProgress,
+                last_sync_timestamp: localStorage.getItem('lastSync')
+            };
+            
+            const response = await fetch('/api/sync-offline-enhanced/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': this.getCSRFToken()
+                },
+                body: JSON.stringify(syncData)
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                // Clear synced progress
+                this.offlineProgress.completed_blocks = [];
+                localStorage.setItem('offlineProgress', JSON.stringify(this.offlineProgress));
+                localStorage.setItem('lastSync', data.sync_timestamp);
+                
+                // Add new blocks if any
+                if (data.new_blocks && data.new_blocks.length > 0) {
+                    const currentSequence = JSON.parse(localStorage.getItem('masterSequence') || '[]');
+                    currentSequence.push(...data.new_blocks);
+                    localStorage.setItem('masterSequence', JSON.stringify(currentSequence));
+                }
+                
+                this.showStatus('progress-sync-status', 
+                    `✅ Synced ${data.synced_blocks} blocks, got ${data.new_blocks_count} new blocks`, 'success');
+                this.updateUI();
+            } else {
+                this.showStatus('progress-sync-status', `❌ Sync failed: ${data.error}`, 'danger');
+            }
+        } catch (error) {
+            this.showStatus('progress-sync-status', `❌ Network error: ${error.message}`, 'danger');
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    loadOfflineData() {
+        // Load master sequence
+        const stored = localStorage.getItem('masterSequence');
+        if (stored) {
+            this.masterSequence = JSON.parse(stored);
+        }
+        
+        // Load offline progress
+        const progress = localStorage.getItem('offlineProgress');
+        if (progress) {
+            this.offlineProgress = JSON.parse(progress);
+        }
+    }
+
+    updateUI() {
+        // Update counts
+        document.getElementById('offline-blocks-count').textContent = `${this.masterSequence.length} blocks cached`;
+        document.getElementById('completed-offline').textContent = this.offlineProgress.completed_blocks.length;
+        document.getElementById('pending-sync').textContent = this.offlineProgress.completed_blocks.length;
+        document.getElementById('total-cached').textContent = this.masterSequence.length;
+        
+        // Update last sync
+        const lastSync = localStorage.getItem('lastSync');
+        if (lastSync) {
+            const date = new Date(lastSync);
+            document.getElementById('last-sync').textContent = `Last: ${date.toLocaleString()}`;
+        }
+        
+        // Update storage usage (rough estimate)
+        const usage = Math.min(100, (this.masterSequence.length / 1000) * 100);
+        document.getElementById('storage-used').textContent = `${usage.toFixed(0)}%`;
+        
+        // Generate study plans
+        this.generateStudyPlans();
+    }
+
+    generateStudyPlans() {
+        const container = document.getElementById('study-plans-container');
+        const plans = [
+            { type: 'quick', name: 'Quick Review', duration: 20, blocks: 3, color: 'warning' },
+            { type: 'balanced', name: 'Balanced Study', duration: 60, blocks: 8, color: 'primary' },
+            { type: 'deep', name: 'Deep Study', duration: 120, blocks: 17, color: 'success' }
+        ];
+        
+        container.innerHTML = plans.map(plan => `
+            <div class="col-md-4 mb-3">
+                <div class="card border-${plan.color}">
+                    <div class="card-header bg-${plan.color} text-white">
+                        <h6 class="mb-0">${plan.name}</h6>
+                    </div>
+                    <div class="card-body">
+                        <p class="mb-2"><i class="fas fa-clock me-1"></i>${plan.duration} minutes</p>
+                        <p class="mb-3"><i class="fas fa-layer-group me-1"></i>${plan.blocks} blocks</p>
+                        <button class="btn btn-outline-${plan.color} btn-sm w-100" 
+                                onclick="offlineStudy.startOfflineStudy('${plan.type}')">
+                            <i class="fas fa-play me-1"></i>Start Offline
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    startOfflineStudy(planType) {
+        if (this.masterSequence.length === 0) {
+            alert('Please sync master sequence first');
+            return;
+        }
+        
+        // Store current plan type and redirect to offline study
+        localStorage.setItem('currentOfflinePlan', planType);
+        window.location.href = '/offline-study-session/';
+    }
+
+    autoSyncProgress() {
+        if (this.offlineProgress.completed_blocks.length > 0) {
+            setTimeout(() => {
+                this.syncProgress();
+            }, 2000); // Auto-sync after 2 seconds when coming online
+        }
+    }
+
+    showStatus(elementId, message, type) {
+        const element = document.getElementById(elementId);
+        element.innerHTML = `<div class="alert alert-${type} alert-sm">${message}</div>`;
+        setTimeout(() => {
+            element.innerHTML = '';
+        }, 5000);
+    }
+
+    getCSRFToken() {
+        return document.querySelector('[name=csrfmiddlewaretoken]').value;
+    }
+}
+
+// Initialize when page loads
+document.addEventListener('DOMContentLoaded', () => {
+    window.offlineStudy = new EnhancedOfflineStudy();
+});
+</script>
+{% endblock %}
