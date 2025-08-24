@@ -3,6 +3,7 @@
 {% block title %}Enhanced Offline Study{% endblock %}
 
 {% block content %}
+{% csrf_token %}
 <div class="container-fluid">
     <!-- Header -->
     <div class="row mb-4">
@@ -159,10 +160,12 @@ class EnhancedOfflineStudy {
         window.addEventListener('online', () => {
             this.checkConnection();
             this.autoSyncProgress();
+            this.showStatus('sync-status', '🌐 Back online! Auto-syncing progress...', 'success');
         });
         
         window.addEventListener('offline', () => {
             this.checkConnection();
+            this.showStatus('sync-status', '📱 Offline mode - using cached content', 'warning');
         });
     }
 
@@ -175,10 +178,31 @@ class EnhancedOfflineStudy {
             icon.className = 'fas fa-wifi text-success me-2';
             status.textContent = 'Online';
             status.className = 'text-success';
+            
+            // Hide offline warnings when online
+            document.querySelectorAll('.offline-warning').forEach(el => {
+                el.style.display = 'none';
+            });
+            
+            // Enable sync buttons
+            document.getElementById('sync-master-btn').disabled = false;
+            document.getElementById('sync-progress-btn').disabled = false;
         } else {
             icon.className = 'fas fa-wifi-slash text-danger me-2';
             status.textContent = 'Offline';
             status.className = 'text-danger';
+            
+            // Show offline warnings
+            document.querySelectorAll('.offline-warning').forEach(el => {
+                el.style.display = 'block';
+            });
+            
+            // Disable sync buttons when offline
+            document.getElementById('sync-master-btn').disabled = true;
+            document.getElementById('sync-progress-btn').disabled = true;
+            
+            // Update study plans to show offline state
+            this.generateStudyPlans();
         }
     }
 
@@ -194,7 +218,7 @@ class EnhancedOfflineStudy {
 
     async syncMasterSequence() {
         if (!navigator.onLine) {
-            this.showStatus('sync-status', 'Cannot sync while offline', 'danger');
+            this.showStatus('sync-status', '⚠️ Cannot sync while offline. Please connect to internet and try again.', 'danger');
             return;
         }
 
@@ -205,30 +229,57 @@ class EnhancedOfflineStudy {
         btn.disabled = true;
         progress.style.display = 'block';
         
+        // Show progress updates
+        this.showStatus('sync-status', '🔄 Connecting to server...', 'info');
+        
         try {
+            const csrfToken = this.getCSRFToken();
+            if (!csrfToken) {
+                throw new Error('CSRF token not available. Please refresh the page and try again.');
+            }
+            
+            this.showStatus('sync-status', '📡 Fetching master sequence...', 'info');
+            
             const response = await fetch('/api/sync-master-sequence/', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-CSRFToken': this.getCSRFToken()
+                    'X-CSRFToken': csrfToken
                 }
             });
+            
+            if (!response.ok) {
+                throw new Error(`Server error: ${response.status} ${response.statusText}`);
+            }
             
             const data = await response.json();
             
             if (data.success) {
+                this.showStatus('sync-status', '💾 Saving to offline storage...', 'info');
+                
                 // Store master sequence in localStorage
                 localStorage.setItem('masterSequence', JSON.stringify(data.master_sequence));
                 localStorage.setItem('lastSync', data.sync_timestamp);
                 
                 this.masterSequence = data.master_sequence;
-                this.showStatus('sync-status', `✅ Synced ${data.total_blocks} blocks from master sequence`, 'success');
+                this.showStatus('sync-status', `✅ Successfully synced ${data.total_blocks} blocks! You can now study offline.`, 'success');
                 this.updateUI();
             } else {
-                this.showStatus('sync-status', `❌ Sync failed: ${data.error}`, 'danger');
+                this.showStatus('sync-status', `❌ Sync failed: ${data.error || 'Unknown server error'}`, 'danger');
             }
         } catch (error) {
-            this.showStatus('sync-status', `❌ Network error: ${error.message}`, 'danger');
+            console.error('Sync error:', error);
+            let errorMessage = '❌ Network error: ';
+            
+            if (error.message.includes('CSRF')) {
+                errorMessage += 'Security token expired. Please refresh the page and try again.';
+            } else if (error.message.includes('Failed to fetch')) {
+                errorMessage += 'Unable to connect to server. Check your internet connection.';
+            } else {
+                errorMessage += error.message;
+            }
+            
+            this.showStatus('sync-status', errorMessage, 'danger');
         } finally {
             btn.disabled = false;
             progress.style.display = 'none';
@@ -325,29 +376,70 @@ class EnhancedOfflineStudy {
 
     generateStudyPlans() {
         const container = document.getElementById('study-plans-container');
+        const isOffline = !navigator.onLine;
+        const hasBlocks = this.masterSequence.length > 0;
+        
         const plans = [
             { type: 'quick', name: 'Quick Review', duration: 20, blocks: 3, color: 'warning' },
             { type: 'balanced', name: 'Balanced Study', duration: 60, blocks: 8, color: 'primary' },
             { type: 'deep', name: 'Deep Study', duration: 120, blocks: 17, color: 'success' }
         ];
         
-        container.innerHTML = plans.map(plan => `
-            <div class="col-md-4 mb-3">
-                <div class="card border-${plan.color}">
-                    <div class="card-header bg-${plan.color} text-white">
-                        <h6 class="mb-0">${plan.name}</h6>
-                    </div>
-                    <div class="card-body">
-                        <p class="mb-2"><i class="fas fa-clock me-1"></i>${plan.duration} minutes</p>
-                        <p class="mb-3"><i class="fas fa-layer-group me-1"></i>${plan.blocks} blocks</p>
-                        <button class="btn btn-outline-${plan.color} btn-sm w-100" 
-                                onclick="offlineStudy.startOfflineStudy('${plan.type}')">
-                            <i class="fas fa-play me-1"></i>Start Offline
-                        </button>
+        if (!hasBlocks && isOffline) {
+            // Show offline message when no blocks are cached
+            container.innerHTML = `
+                <div class="col-12">
+                    <div class="card border-warning">
+                        <div class="card-body text-center">
+                            <i class="fas fa-exclamation-triangle text-warning fa-3x mb-3"></i>
+                            <h4>No Offline Content Available</h4>
+                            <p>You need to sync the master sequence while online to study offline.</p>
+                            <p><strong>Next time you're online:</strong></p>
+                            <ol class="text-start">
+                                <li>Click "Sync Master Sequence" above</li>
+                                <li>Wait for sync to complete</li>
+                                <li>Study offline anytime!</li>
+                            </ol>
+                        </div>
                     </div>
                 </div>
-            </div>
-        `).join('');
+            `;
+            return;
+        }
+        
+        // Show study plans
+        container.innerHTML = plans.map(plan => {
+            const buttonText = isOffline ? 
+                `<i class="fas fa-wifi-slash me-1"></i>Study Offline` : 
+                `<i class="fas fa-play me-1"></i>Start ${plan.name}`;
+            
+            const buttonClass = hasBlocks ? 
+                `btn-outline-${plan.color}` : 
+                `btn-secondary disabled`;
+                
+            return `
+                <div class="col-md-4 mb-3">
+                    <div class="card border-${plan.color} ${isOffline ? 'border-2' : ''}">
+                        <div class="card-header bg-${plan.color} text-white">
+                            <h6 class="mb-0">
+                                ${plan.name}
+                                ${isOffline ? '<i class="fas fa-wifi-slash ms-2"></i>' : ''}
+                            </h6>
+                        </div>
+                        <div class="card-body">
+                            <p class="mb-2"><i class="fas fa-clock me-1"></i>${plan.duration} minutes</p>
+                            <p class="mb-3"><i class="fas fa-layer-group me-1"></i>${Math.min(plan.blocks, this.masterSequence.length)} blocks</p>
+                            <button class="btn ${buttonClass} btn-sm w-100" 
+                                    onclick="offlineStudy.startOfflineStudy('${plan.type}')"
+                                    ${hasBlocks ? '' : 'disabled'}>
+                                ${buttonText}
+                            </button>
+                            ${!hasBlocks ? '<small class="text-muted">Sync required</small>' : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
     }
 
     startOfflineStudy(planType) {
@@ -378,7 +470,29 @@ class EnhancedOfflineStudy {
     }
 
     getCSRFToken() {
-        return document.querySelector('[name=csrfmiddlewaretoken]').value;
+        // Try multiple methods to get CSRF token
+        const tokenInput = document.querySelector('[name=csrfmiddlewaretoken]');
+        if (tokenInput) {
+            return tokenInput.value;
+        }
+        
+        // Fallback: try getting from cookies
+        const cookies = document.cookie.split(';');
+        for (let cookie of cookies) {
+            const [name, value] = cookie.trim().split('=');
+            if (name === 'csrftoken') {
+                return decodeURIComponent(value);
+            }
+        }
+        
+        // Ultimate fallback: try meta tag
+        const metaToken = document.querySelector('meta[name="csrf-token"]');
+        if (metaToken) {
+            return metaToken.getAttribute('content');
+        }
+        
+        console.warn('CSRF token not found');
+        return '';
     }
 }
 

@@ -446,7 +446,7 @@ function revealAnswer(qaId) {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || ''
             },
             body: JSON.stringify({
                 block_id: '{{ focus_block.id }}',
@@ -486,7 +486,7 @@ function revealAnswer(qaId) {
             fetch('{% url "flashcards:complete_study_path_block" block_id=focus_block.id session_key=session_key %}', {
                 method: 'POST',
                 headers: {
-                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || '',
                     'Content-Type': 'application/json'
                 }
             }).then(response => {
