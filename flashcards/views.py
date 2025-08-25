@@ -7119,18 +7119,21 @@ def sync_offline_progress_enhanced(request):
             completed_at = block_data.get('completed_at')
             
             try:
-                # Update UserBlockState
+                # Update UserBlockState only for authenticated users
                 block = FocusBlock.objects.get(id=block_id)
-                user_state, created = UserBlockState.objects.get_or_create(
-                    user=user,
-                    block=block,
-                    defaults={'status': 'new'}
-                )
                 
-                # Update with offline progress
-                user_state.update_from_rating(rating, time_spent)
-                user_state.status = 'completed'
-                user_state.save()
+                # Only create UserBlockState for authenticated users
+                if user:
+                    user_state, created = UserBlockState.objects.get_or_create(
+                        user=user,
+                        block=block,
+                        defaults={'status': 'new'}
+                    )
+                    
+                    # Update with offline progress
+                    user_state.update_from_rating(rating, time_spent)
+                    user_state.status = 'completed'
+                    user_state.save()
                 
                 synced_count += 1
                 
@@ -7143,11 +7146,13 @@ def sync_offline_progress_enhanced(request):
         )
         master_sequence = StudySession._order_by_prerequisites(list(all_blocks))
         
-        # Get user's latest completion status
-        user_completed = UserBlockState.objects.filter(
-            user=user,
-            status='completed'
-        ).values_list('block_id', flat=True)
+        # Get user's latest completion status (only for authenticated users)
+        user_completed = []
+        if user:
+            user_completed = UserBlockState.objects.filter(
+                user=user,
+                status='completed'
+            ).values_list('block_id', flat=True)
         session_completed = StudySession.objects.values_list('completed_focus_blocks', flat=True).distinct()
         
         all_completed = set(str(bid) for bid in user_completed) | set(str(bid) for bid in session_completed if bid)
