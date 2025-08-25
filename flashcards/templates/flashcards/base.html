@@ -145,8 +145,8 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.resolver_match.url_name == 'offline_study' %}active{% endif %}" 
-                           href="{% url 'flashcards:offline_study' %}">
+                        <a class="nav-link {% if request.resolver_match.url_name == 'offline_study_enhanced' %}active{% endif %}" 
+                           href="{% url 'flashcards:offline_study_enhanced' %}">
                             <i class="fas fa-download me-1"></i>Offline Study
                         </a>
                     </li>

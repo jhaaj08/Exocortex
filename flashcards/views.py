@@ -7109,8 +7109,9 @@ def sync_offline_progress_enhanced(request):
         data = json.loads(request.body)
         user = request.user if request.user.is_authenticated else None
         
-        if not user:
-            return JsonResponse({'error': 'Authentication required'}, status=401)
+        # Optional authentication - works for both authenticated and anonymous users
+        # if not user:
+        #     return JsonResponse({'error': 'Authentication required'}, status=401)
         
         # Process offline progress
         offline_progress = data.get('offline_progress', {})
