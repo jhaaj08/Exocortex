@@ -7137,7 +7137,7 @@ def sync_offline_progress_enhanced(request):
                     )
                     
                     # Update with offline progress
-                    user_state.update_from_rating(rating, time_spent)
+                    user_state.update_from_rating(rating, time_spent_seconds=time_spent)
                     user_state.status = 'completed'
                     user_state.save()
                 
