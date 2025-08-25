@@ -313,6 +313,20 @@ class EnhancedOfflineStudy {
             const data = await response.json();
             
             if (data.success) {
+                // ✅ CRITICAL FIX: Update master sequence completion states before clearing progress
+                const completedBlockIds = this.offlineProgress.completed_blocks.map(block => block.block_id);
+                if (completedBlockIds.length > 0) {
+                    // Update master sequence to mark synced blocks as completed
+                    this.masterSequence.forEach(block => {
+                        if (completedBlockIds.includes(block.id)) {
+                            block.is_completed = true;
+                        }
+                    });
+                    // Save updated master sequence
+                    localStorage.setItem('masterSequence', JSON.stringify(this.masterSequence));
+                    console.log(`📝 Updated completion status for ${completedBlockIds.length} blocks in master sequence`);
+                }
+                
                 // Clear synced progress
                 this.offlineProgress.completed_blocks = [];
                 localStorage.setItem('offlineProgress', JSON.stringify(this.offlineProgress));
@@ -323,6 +337,8 @@ class EnhancedOfflineStudy {
                     const currentSequence = JSON.parse(localStorage.getItem('masterSequence') || '[]');
                     currentSequence.push(...data.new_blocks);
                     localStorage.setItem('masterSequence', JSON.stringify(currentSequence));
+                    // Update this.masterSequence as well
+                    this.masterSequence = currentSequence;
                 }
                 
                 this.showStatus('progress-sync-status', 
