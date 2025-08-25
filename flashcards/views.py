@@ -6962,13 +6962,13 @@ def debug_lifecycle(request):
         return HttpResponse("<h1>Lifecycle debug not found</h1>", content_type='text/html')
 
 def serve_service_worker(request):
-    """Serve the service worker file from root with proper headers"""
+    """Serve the enhanced service worker file with proper headers"""
     import os
     from django.conf import settings
     from django.http import HttpResponse, Http404
     
-    # Path to the service worker file in project root
-    sw_path = os.path.join(settings.BASE_DIR, 'sw.js')
+    # Path to the enhanced service worker file in static directory
+    sw_path = os.path.join(settings.BASE_DIR, 'static', 'sw.js')
     
     try:
         with open(sw_path, 'r') as f:

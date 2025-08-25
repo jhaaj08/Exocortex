@@ -1,5 +1,5 @@
 /* Enhanced Service Worker for Seamless Offline Experience */
-const CACHE_VERSION = "exocortex-v2.0.0";
+const CACHE_VERSION = "exocortex-v2.1.0";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const OFFLINE_CACHE = `${CACHE_VERSION}-offline`;
@@ -91,7 +91,7 @@ self.addEventListener("fetch", (event) => {
         return;
     }
     
-    console.log("[SW] Handling fetch for:", pathname);
+    console.log(`[SW] 🌐 Handling fetch for: ${pathname} (online: ${navigator.onLine})`);
     
     // Home page strategy - cache first with offline fallback
     if (pathname === '/' || pathname === '/home/') {
@@ -196,28 +196,116 @@ async function homePageStrategy(request) {
 // Cache first strategy - for offline pages and static assets
 async function cacheFirstStrategy(request) {
     try {
+        // Always try cache first
         const cachedResponse = await caches.match(request);
         if (cachedResponse) {
-            console.log("[SW] Serving from cache:", request.url);
+            console.log("[SW] ✅ Serving from cache:", request.url);
             return cachedResponse;
         }
         
-        console.log("[SW] Cache miss, fetching from network:", request.url);
+        console.log("[SW] 🔍 Cache miss, trying network:", request.url);
+        
+        // Try network
         const networkResponse = await fetch(request);
         
         if (networkResponse.ok) {
+            // Cache successful responses
             const cache = await caches.open(DYNAMIC_CACHE);
-            cache.put(request, networkResponse.clone());
+            await cache.put(request, networkResponse.clone());
+            console.log("[SW] 💾 Cached from network:", request.url);
+            return networkResponse;
+        } else {
+            throw new Error(`Network response not ok: ${networkResponse.status}`);
         }
         
-        return networkResponse;
-        
     } catch (error) {
-        console.error("[SW] Cache first strategy failed:", error);
+        console.error("[SW] ❌ Cache first strategy failed for:", request.url, error);
         
-        // For offline pages, return a basic offline message
+        // For offline pages, try to return a meaningful offline experience
         if (request.url.includes('/offline-')) {
-            return new Response('Offline page not available', { status: 503 });
+            // Try to serve a cached offline page or return offline HTML
+            const offlineCache = await caches.open(OFFLINE_CACHE);
+            const offlineResponse = await offlineCache.match('/offline-home/');
+            
+            if (offlineResponse) {
+                console.log("[SW] 🔄 Serving alternative offline page");
+                return offlineResponse;
+            }
+            
+            // Ultimate fallback for offline pages
+            return new Response(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Offline - Exocortex</title>
+                    <meta name="viewport" content="width=device-width, initial-scale=1">
+                    <style>
+                        body { 
+                            font-family: Arial, sans-serif; 
+                            text-align: center; 
+                            padding: 50px; 
+                            background: #f8f9fa;
+                        }
+                        .offline-container { 
+                            max-width: 500px; 
+                            margin: 0 auto; 
+                            background: white;
+                            padding: 40px;
+                            border-radius: 10px;
+                            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                        }
+                        .icon { font-size: 64px; margin-bottom: 20px; }
+                        .btn { 
+                            background: #007bff; 
+                            color: white; 
+                            padding: 12px 24px; 
+                            text-decoration: none; 
+                            border-radius: 5px; 
+                            margin: 10px;
+                            display: inline-block;
+                        }
+                        .btn:hover { background: #0056b3; }
+                    </style>
+                </head>
+                <body>
+                    <div class="offline-container">
+                        <div class="icon">📚</div>
+                        <h1>Exocortex</h1>
+                        <h2>Offline Mode</h2>
+                        <p>You're viewing this page offline. Some content may not be available.</p>
+                        <p><strong>To use full offline features:</strong></p>
+                        <ol style="text-align: left;">
+                            <li>Connect to the internet</li>
+                            <li>Visit the Enhanced Offline Study page</li>
+                            <li>Click "Sync Master Sequence"</li>
+                            <li>Study offline anytime!</li>
+                        </ol>
+                        <div>
+                            <a href="/" class="btn">Try Homepage</a>
+                            <a href="/offline-study-enhanced/" class="btn">Offline Study</a>
+                        </div>
+                    </div>
+                    <script>
+                        // Auto-reload when back online
+                        window.addEventListener('online', () => {
+                            setTimeout(() => window.location.reload(), 1000);
+                        });
+                        
+                        // Show connection status
+                        function updateStatus() {
+                            const status = navigator.onLine ? 'Online' : 'Offline';
+                            document.title = status + ' - Exocortex';
+                        }
+                        updateStatus();
+                        window.addEventListener('online', updateStatus);
+                        window.addEventListener('offline', updateStatus);
+                    </script>
+                </body>
+                </html>
+            `, {
+                status: 200,
+                headers: { 'Content-Type': 'text/html' }
+            });
         }
         
         throw error;
@@ -297,7 +385,10 @@ async function syncOfflineProgress() {
 self.addEventListener('message', (event) => {
     console.log("[SW] Received message:", event.data);
     
-    if (event.data.type === 'CACHE_STUDY_DATA') {
+    if (event.data.type === 'SKIP_WAITING') {
+        // Force activate new service worker
+        self.skipWaiting();
+    } else if (event.data.type === 'CACHE_STUDY_DATA') {
         // Cache study data for offline use
         cacheStudyData(event.data.data);
     }
