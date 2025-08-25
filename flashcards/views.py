@@ -6994,16 +6994,22 @@ def sync_master_sequence_offline(request):
         completed_block_ids = set()
         
         if user:
-            # Get completed blocks from UserBlockState
+            # Get completed blocks from UserBlockState (offline sync data)
             user_completed = UserBlockState.objects.filter(
                 user=user,
                 status='completed'
             ).values_list('block_id', flat=True)
             completed_block_ids.update(str(bid) for bid in user_completed)
-            
-            # Also get completed blocks from StudySessions
-            session_completed = StudySession.objects.values_list('completed_focus_blocks', flat=True).distinct()
-            completed_block_ids.update(str(bid) for bid in session_completed if bid)
+        
+        # ✅ CRITICAL: Always get completed blocks from StudySessions (online completions)
+        # This ensures offline gets ALL completion data, not just authenticated user data
+        study_session = StudySession.objects.filter(
+            session_type='focus_blocks'
+        ).order_by('-last_accessed').first()
+        
+        if study_session:
+            session_completed = study_session.completed_focus_blocks.values_list('id', flat=True)
+            completed_block_ids.update(str(bid) for bid in session_completed)
         
         # Prepare blocks data for offline storage
         offline_blocks = []
@@ -7135,6 +7141,24 @@ def sync_offline_progress_enhanced(request):
                     user_state.status = 'completed'
                     user_state.save()
                 
+                # ✅ CRITICAL: Also update StudySession.completed_focus_blocks for online sync
+                # This ensures online system shows offline completions
+                study_session = StudySession.objects.filter(
+                    session_type='focus_blocks'
+                ).order_by('-last_accessed').first()
+                
+                if not study_session:
+                    # Create global study session if it doesn't exist
+                    study_session = StudySession.objects.create(
+                        session_type='focus_blocks',
+                        current_focus_block=block
+                    )
+                
+                # Add to completed focus blocks (online system)
+                study_session.completed_focus_blocks.add(block)
+                study_session.last_accessed = timezone.now()
+                study_session.save()
+                
                 synced_count += 1
                 
             except FocusBlock.DoesNotExist:
@@ -7153,9 +7177,17 @@ def sync_offline_progress_enhanced(request):
                 user=user,
                 status='completed'
             ).values_list('block_id', flat=True)
-        session_completed = StudySession.objects.values_list('completed_focus_blocks', flat=True).distinct()
         
-        all_completed = set(str(bid) for bid in user_completed) | set(str(bid) for bid in session_completed if bid)
+        # ✅ Get completion status from StudySession (online completions)
+        study_session = StudySession.objects.filter(
+            session_type='focus_blocks'
+        ).order_by('-last_accessed').first()
+        
+        session_completed = []
+        if study_session:
+            session_completed = study_session.completed_focus_blocks.values_list('id', flat=True)
+        
+        all_completed = set(str(bid) for bid in user_completed) | set(str(bid) for bid in session_completed)
         
         # Check for new blocks since last sync
         last_sync = data.get('last_sync_timestamp')
