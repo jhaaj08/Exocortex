@@ -92,9 +92,8 @@ urlpatterns = [
     path('study/session/start/', views.start_study_session, name='start_study_session_api'),
     path('study/session/end/<uuid:session_id>/', views.end_study_session, name='end_study_session_api'),
     
-    # Intelligent Plan URLs
-    path('plan/preview/<str:plan_type>/', views.preview_intelligent_plan, name='preview_intelligent_plan'),
-    path('plan/start/<str:plan_type>/', views.start_intelligent_plan, name='start_intelligent_plan'),
+    # Dynamic Study Sequence URLs (replaces old three-plan system)
+    path('sequence/preview/', views.preview_dynamic_sequence, name='preview_dynamic_sequence'),
     path('resume/<str:session_key>/', views.resume_study_session, name='resume_study_session'),
     
     # Offline Study URLs

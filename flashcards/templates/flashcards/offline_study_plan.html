@@ -38,14 +38,32 @@
                         <i class="fas fa-arrow-left me-2"></i>Back to Home
                     </a>
                     <h1 class="display-6 text-center mb-0">
-                        <i class="fas fa-book-reader text-primary me-3"></i>Study Plan
+                        <i class="fas fa-rocket text-primary me-3"></i>{% if using_dynamic_sequence %}Dynamic Study Sequence{% else %}Study Plan{% endif %}
                     </h1>
                     <a href="{% url 'flashcards:offline_study' %}" class="btn btn-outline-primary">
                         <i class="fas fa-download me-2"></i>Offline Options
                     </a>
                 </div>
                 <div class="text-center text-muted mb-4">
+                    {% if dynamic_sequence %}
+                    <div class="row justify-content-center">
+                        <div class="col-auto">
+                            <span class="badge bg-success">🎯 Position {{ dynamic_sequence.current_position }}/{{ dynamic_sequence.total_blocks }}</span>
+                        </div>
+                        <div class="col-auto">
+                            <span class="badge bg-primary">{{ dynamic_sequence.new_blocks_count }} New</span>
+                        </div>
+                        <div class="col-auto">
+                            <span class="badge bg-warning text-dark">{{ dynamic_sequence.review_blocks_count }} Review</span>
+                        </div>
+                        <div class="col-auto">
+                            <span class="badge bg-info">{{ dynamic_sequence.blocks_studied }} Studied</span>
+                        </div>
+                    </div>
+                    <p class="mt-2 mb-1"><i class="fas fa-rocket me-2"></i>Intelligent sequence with spaced repetition</p>
+                    {% else %}
                     <p class="mb-1"><i class="fas fa-cubes me-2"></i>{{ total_blocks }} Focus Blocks Available</p>
+                    {% endif %}
                     <p id="offline-status"><i class="fas fa-info-circle me-2"></i>Works online and offline!</p>
                 </div>
             </div>

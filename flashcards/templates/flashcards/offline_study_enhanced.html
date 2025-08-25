@@ -11,10 +11,16 @@
             <div class="card border-primary">
                 <div class="card-header bg-primary text-white">
                     <h3 class="mb-0"><i class="fas fa-cloud-download-alt me-2"></i>Enhanced Offline Study System</h3>
-                    <small>Sync master sequence • Study offline • Auto-sync progress</small>
-                    {% if selected_plan %}
+                    <small>Sync dynamic sequence • Study offline • Auto-sync progress</small>
+                    {% if dynamic_sequence %}
                     <div class="mt-2">
-                        <span class="badge bg-primary">Selected: {{ plan_configs.selected_plan.name|default:"Balanced Study" }}</span>
+                        <span class="badge bg-success">🎯 Dynamic Sequence Active</span>
+                        <span class="badge bg-light text-primary ms-2">Position {{ dynamic_sequence.current_position }}/{{ dynamic_sequence.total_blocks }}</span>
+                        <span class="badge bg-warning text-dark ms-2">{{ dynamic_sequence.blocks_studied }} Studied</span>
+                    </div>
+                    {% elif selected_plan %}
+                    <div class="mt-2">
+                        <span class="badge bg-primary">Selected: {{ plan_configs.selected_plan.name|default:"Dynamic Study" }}</span>
                     </div>
                     {% endif %}
                 </div>
@@ -49,12 +55,22 @@
         <div class="col-md-6">
             <div class="card">
                 <div class="card-header">
-                    <h5><i class="fas fa-download me-2"></i>Download Master Sequence</h5>
+                    <h5><i class="fas fa-download me-2"></i>Download Dynamic Sequence</h5>
                 </div>
                 <div class="card-body">
-                    <p>Sync first 1000 blocks from master sequence for offline study</p>
+                    {% if dynamic_sequence %}
+                    <p><strong>🎯 Dynamic Sequence Ready!</strong></p>
+                    <p>{{ dynamic_sequence.sync_blocks_count }} blocks to sync ({{ dynamic_sequence.new_blocks_count }} new + {{ dynamic_sequence.review_blocks_count }} review)</p>
+                    {% if dynamic_sequence.current_block %}
+                    <div class="alert alert-info mb-3">
+                        <strong>Next to study:</strong> {{ dynamic_sequence.current_block }}
+                    </div>
+                    {% endif %}
+                    {% else %}
+                    <p>Sync your personalized dynamic sequence for offline study</p>
+                    {% endif %}
                     <button class="btn btn-primary" id="sync-master-btn">
-                        <i class="fas fa-cloud-download-alt me-2"></i>Sync Master Sequence
+                        <i class="fas fa-cloud-download-alt me-2"></i>Sync Dynamic Sequence
                     </button>
                     <div class="progress mt-3" style="display: none;" id="sync-progress">
                         <div class="progress-bar" role="progressbar" style="width: 0%"></div>
@@ -80,18 +96,95 @@
         </div>
     </div>
 
-    <!-- Offline Study Plans -->
+    <!-- Dynamic Study Sequence -->
     <div class="row mb-4">
         <div class="col-12">
             <div class="card">
                 <div class="card-header">
-                    <h5><i class="fas fa-list-ol me-2"></i>Offline Study Plans</h5>
-                    <small>Following master sequence order</small>
+                    <h5><i class="fas fa-rocket me-2"></i>Your Dynamic Study Sequence</h5>
+                    <small>Personalized sequence with intelligent spaced repetition</small>
                 </div>
                 <div class="card-body">
-                    <div class="row" id="study-plans-container">
-                        <!-- Study plans will be populated by JavaScript -->
+                    {% if dynamic_sequence %}
+                    <div class="row">
+                        <div class="col-lg-8 mx-auto">
+                            <div class="card border-primary">
+                                <div class="card-header bg-primary text-white">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <h6 class="mb-0">🎯 {{ plan_configs.dynamic.name }}</h6>
+                                        <span class="badge bg-light text-primary">
+                                            {{ dynamic_sequence.current_position }}/{{ dynamic_sequence.total_blocks }}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="card-body">
+                                    <p class="mb-3">{{ plan_configs.dynamic.description }}</p>
+                                    
+                                    <!-- Progress Bar -->
+                                    <div class="mb-3">
+                                        <div class="progress" style="height: 8px;">
+                                            <div class="progress-bar bg-success" role="progressbar" 
+                                                 style="width: {{ dynamic_sequence.progress_percentage|floatformat:1 }}%">
+                                            </div>
+                                        </div>
+                                        <small class="text-muted">{{ dynamic_sequence.blocks_studied }} blocks studied ({{ dynamic_sequence.progress_percentage|floatformat:1 }}%)</small>
+                                    </div>
+                                    
+                                    <!-- Stats -->
+                                    <div class="row text-center mb-3">
+                                        <div class="col-4">
+                                            <div class="text-primary">
+                                                <h6>{{ dynamic_sequence.new_blocks_count }}</h6>
+                                                <small>New Blocks</small>
+                                            </div>
+                                        </div>
+                                        <div class="col-4">
+                                            <div class="text-warning">
+                                                <h6>{{ dynamic_sequence.review_blocks_count }}</h6>
+                                                <small>Review Blocks</small>
+                                            </div>
+                                        </div>
+                                        <div class="col-4">
+                                            <div class="text-info">
+                                                <h6>{{ dynamic_sequence.sync_blocks_count }}</h6>
+                                                <small>Ready to Sync</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Next Blocks Preview -->
+                                    {% if dynamic_sequence.next_blocks %}
+                                    <div class="mb-3">
+                                        <h6 class="text-muted mb-2">
+                                            <i class="fas fa-list me-2"></i>Next blocks in sequence:
+                                        </h6>
+                                        {% for block_title in dynamic_sequence.next_blocks %}
+                                        <div class="d-flex align-items-center mb-1">
+                                            <span class="badge bg-secondary me-2">{{ forloop.counter|add:1 }}</span>
+                                            <small class="text-truncate">{{ block_title|truncatechars:50 }}</small>
+                                        </div>
+                                        {% endfor %}
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                <div class="card-footer text-center">
+                                    <a href="/offline-plan/" class="btn btn-primary">
+                                        <i class="fas fa-play me-2"></i>Start Offline Study
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
                     </div>
+                    {% else %}
+                    <div class="text-center py-4">
+                        <i class="fas fa-sync fa-3x text-muted mb-3"></i>
+                        <h5 class="text-muted">Dynamic sequence not loaded</h5>
+                        <p class="text-muted">Sync your dynamic sequence to start offline study</p>
+                        <button class="btn btn-primary" onclick="syncMasterSequence()">
+                            <i class="fas fa-download me-2"></i>Load Sequence
+                        </button>
+                    </div>
+                    {% endif %}
                 </div>
             </div>
         </div>

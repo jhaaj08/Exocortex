@@ -461,8 +461,8 @@ function revealAnswer(qaId) {
                 // Hide modal
                 bootstrap.Modal.getInstance(document.getElementById('blockCompletionModal')).hide();
                 
-                // Continue with study path logic
-                proceedToNextBlock();
+                // Continue with study path logic or advance to next block in dynamic sequence
+                proceedToNextBlock(data);
             } else {
                 alert('Error saving rating: ' + data.error);
             }
@@ -479,7 +479,7 @@ function revealAnswer(qaId) {
         proceedToNextBlock();
     }
     
-    function proceedToNextBlock() {
+    function proceedToNextBlock(completionData = null) {
         // Check if we're in a study path (from study planner)
         {% if session_key and study_path %}
             // We're in a study path - use the study path completion logic
@@ -501,8 +501,46 @@ function revealAnswer(qaId) {
                 window.location.href = '{% url "flashcards:home" %}';
             });
         {% else %}
-            // Regular focus block completion - redirect to all focus blocks
-            window.location.href = '{% url "flashcards:all_focus_blocks" %}';
+            // 🎯 DYNAMIC SEQUENCE: Auto-advance to next block
+            if (completionData && completionData.next_block) {
+                const nextBlockId = completionData.next_block.block_id;
+                const nextBlockTitle = completionData.next_block.title;
+                const position = completionData.next_block.position;
+                
+                console.log(`🔄 Advancing to next block: ${nextBlockTitle} (${position})`);
+                
+                // Show brief success message
+                const successMsg = document.createElement('div');
+                successMsg.className = 'alert alert-success position-fixed top-0 start-50 translate-middle-x mt-3';
+                successMsg.style.zIndex = '9999';
+                successMsg.innerHTML = `
+                    <i class="fas fa-check-circle me-2"></i>
+                    <strong>Block Completed!</strong><br>
+                    <small>Advancing to: ${nextBlockTitle}</small>
+                `;
+                document.body.appendChild(successMsg);
+                
+                // Auto-advance to next block after 2 seconds
+                setTimeout(() => {
+                    window.location.href = `/study/focus-blocks/${nextBlockId}/`;
+                }, 2000);
+                
+            } else {
+                // No next block or sequence completed
+                const completionMsg = document.createElement('div');
+                completionMsg.className = 'alert alert-info position-fixed top-0 start-50 translate-middle-x mt-3';
+                completionMsg.style.zIndex = '9999';
+                completionMsg.innerHTML = `
+                    <i class="fas fa-trophy me-2"></i>
+                    <strong>Study Sequence Complete!</strong><br>
+                    <small>Great work! Returning to overview...</small>
+                `;
+                document.body.appendChild(completionMsg);
+                
+                setTimeout(() => {
+                    window.location.href = '{% url "flashcards:all_focus_blocks" %}';
+                }, 2000);
+            }
         {% endif %}
     }
 

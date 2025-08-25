@@ -81,13 +81,15 @@
                             </h6>
                             <div class="d-flex justify-content-between align-items-center">
                                 <small class="text-muted">{{ block_data.estimated_duration }}</small>
-                                {% if block_data.status == 'available' and not block_data.is_completed %}
-                                    <a href="#block-{{ forloop.counter0 }}" class="btn btn-sm btn-primary">
-                                        <i class="fas fa-play me-1"></i>Study
+                                {% if block_data.status == 'current' %}
+                                    <a href="{% url 'flashcards:focus_block_study' block_data.block.id %}" class="btn btn-sm btn-primary">
+                                        <i class="fas fa-play me-1"></i>Study Now
                                     </a>
                                 {% elif block_data.status == 'completed' %}
-                                    <span class="badge bg-success">✓ Done</span>
-    {% else %}
+                                    <a href="{% url 'flashcards:focus_block_study' block_data.block.id %}" class="btn btn-sm btn-success">
+                                        <i class="fas fa-redo me-1"></i>Review
+                                    </a>
+                                {% else %}
                                     <span class="badge bg-secondary">🔒 Locked</span>
                                 {% endif %}
             </div>
@@ -110,7 +112,7 @@
         <div class="col-lg-8">
 
         {% for block_data in focus_blocks %}
-        {% if block_data.status == 'available' and not block_data.is_completed %}
+        {% if block_data.status == 'current' %}
             {# ===== Learning Objectives ====================================== #}
             {% if block_data.learning_objectives %}
             <div class="card mb-4"

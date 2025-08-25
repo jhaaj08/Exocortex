@@ -202,54 +202,44 @@ def home(request):
                     except FocusBlock.DoesNotExist:
                         continue
 
-    # 📊 GENERATE INTELLIGENT STUDY PLANS
-    study_plans = {}
+    # 🎯 SINGLE DYNAMIC STUDY SEQUENCE (replaces old three-plan system)
+    from flashcards.models import DynamicStudyPlan
     
-    # Quick Session (15-30 min)
-    quick_plan = StudySession.create_intelligent_plan(
-        user=user, 
-        target_duration_min=20, 
-        review_ratio=0.8  # Focus on review for quick sessions
-    )
-    study_plans['quick_review'] = {
-        'name': '⚡ Quick Review',
-        'description': 'Perfect for review breaks - focus on due blocks',
-        'duration_min': 20,
-        'block_ids': quick_plan,
-        'composition': 'Heavy review focus',
-        'best_for': 'Review breaks, commute study'
-    }
-    
-    # Balanced Session (45-60 min)
-    balanced_plan = StudySession.create_intelligent_plan(
-        user=user,
-        target_duration_min=45,
-        review_ratio=0.4
-    )
-    study_plans['balanced'] = {
-        'name': '⚖️ Balanced Learning',
-        'description': 'Optimal mix of new content and review',
-        'duration_min': 45,
-        'block_ids': balanced_plan,
-        'composition': '60% new + 40% review',
-        'best_for': 'Regular study sessions'
-    }
-    
-    # Deep Dive Session (90+ min)
-    deep_plan = StudySession.create_intelligent_plan(
-        user=user,
-        target_duration_min=90,
-        review_ratio=0.2
-    )
-    study_plans['deep_dive'] = {
-        'name': '🎯 Deep Learning',
-        'description': 'Extended session for mastering new concepts',
-        'duration_min': 90,
-        'block_ids': deep_plan,
-        'composition': '80% new + 20% review',
-        'best_for': 'Weekend deep study'
-    }
-    
+    dynamic_sequence_info = None
+    if user:
+        try:
+            # Get user's dynamic study plan
+            study_plan = DynamicStudyPlan.get_or_create_for_user(user)
+            
+            # Generate current dynamic sequence (always start from position 0)
+            dynamic_sequence = StudySession.create_dynamic_study_sequence(user, 0)
+            
+            if dynamic_sequence:
+                # Get next few blocks to show (always start from position 0)
+                next_blocks = dynamic_sequence[0:5]
+                total_blocks = len(dynamic_sequence)
+                progress_percentage = (study_plan.total_blocks_studied / 32 * 100) if 32 > 0 else 0  # Use total blocks studied for progress
+                
+                # Count block types
+                new_blocks_count = sum(1 for b in dynamic_sequence if b['type'] == 'new')
+                review_blocks_count = sum(1 for b in dynamic_sequence if b['type'] == 'review')
+                
+                dynamic_sequence_info = {
+                    'current_position': 1,  # Always position 1 in dynamic sequence
+                    'total_blocks': total_blocks,
+                    'progress_percentage': progress_percentage,
+                    'blocks_studied': study_plan.total_blocks_studied,
+                    'next_blocks': next_blocks,
+                    'new_blocks_count': new_blocks_count,
+                    'review_blocks_count': review_blocks_count,
+                    'current_block': next_blocks[0] if next_blocks else None
+                }
+                print(f"🏠 Dynamic sequence for home: 1/{total_blocks} ({new_blocks_count} new, {review_blocks_count} review)")
+            
+        except Exception as e:
+            print(f"❌ Error getting dynamic sequence for home: {e}")
+            dynamic_sequence_info = None
+
     # 📈 RECOMMENDATIONS
     recommendations = []
     
@@ -292,7 +282,7 @@ def home(request):
     context = {
         'user': user,
         'analytics': analytics,
-        'study_plans': study_plans,
+        'dynamic_sequence': dynamic_sequence_info,  # Single dynamic sequence replaces study_plans
         'incomplete_sessions': incomplete_sessions,
         'recommendations': recommendations,
         'total_blocks': focus_blocks.count(),
@@ -2024,84 +2014,123 @@ def all_focus_blocks(request):
         from django.contrib.auth.models import User
         user = User.objects.filter(is_superuser=True).first()
     
-    # ✅ NEW: Use block-based master sequence
+    # ✅ NEW: Try dynamic study sequence first
+    use_dynamic_sequence = False
+    dynamic_sequence = []
+    
     if user:
-        block_sequence = StudySession.create_block_based_master_sequence(user, total_blocks=100)
-        
-        if not block_sequence:
-            return render(request, 'flashcards/all_focus_blocks.html', {'no_blocks': True})
-        
+        try:
+            # Get or create dynamic study plan for user
+            from flashcards.models import DynamicStudyPlan
+            study_plan = DynamicStudyPlan.get_or_create_for_user(user)
+            
+            # Generate dynamic sequence (always start from position 0)
+            dynamic_sequence = StudySession.create_dynamic_study_sequence(user, 0)
+            print(f"🎯 Dynamic sequence generated: {len(dynamic_sequence) if dynamic_sequence else 0} blocks")
+            
+            if dynamic_sequence and len(dynamic_sequence) > 0:
+                print(f"✅ Using dynamic sequence with {len(dynamic_sequence)} blocks at position 0")
+                use_dynamic_sequence = True
+            else:
+                print("⚠️ Dynamic sequence empty, falling back to original system")
+        except Exception as e:
+            print(f"❌ Error in dynamic sequence: {e}")
+            print("⚠️ Falling back to original system")
+            import traceback
+            traceback.print_exc()
+    else:
+        print("⚠️ No user found, using original system")
+    
+    if use_dynamic_sequence:
+        # Block-based system implementation
         # Find or create continuous study session
         study_session = StudySession.objects.filter(
             session_type='focus_blocks'
         ).order_by('-last_accessed').first()
 
         if not study_session:
-            first_block = block_sequence[0]['block'] if block_sequence else None
+            first_block = dynamic_sequence[0]['block'] if dynamic_sequence else None
             study_session = StudySession.objects.create(
                 session_type='focus_blocks',
                 current_focus_block=first_block
             )
-            print(f"✅ Created new block-based study session: {study_session.session_id}")
+            print(f"✅ Created new dynamic study session: {study_session.session_id}")
         else:
             print(f"✅ Found existing study session: {study_session.session_id}")
             study_session.last_accessed = timezone.now()
             study_session.save()
         
-        # Get completed block IDs for display
-        completed_block_ids = list(study_session.completed_focus_blocks.values_list('id', flat=True))
+        # Set current block to the one at current position
+        current_block_item = None
+        if study_plan.current_position < len(dynamic_sequence):
+            current_block_item = dynamic_sequence[study_plan.current_position]
+            study_session.current_focus_block = current_block_item['block']
+            study_session.save()
         
-        # Also include blocks completed via UserBlockState
-        if user:
-            user_completed_blocks = UserBlockState.objects.filter(
-                user=user,
-                status__in=['completed', 'review']  # Include review status blocks as completed
-            ).values_list('block_id', flat=True)
-            completed_block_ids.extend(user_completed_blocks)
+        print(f"🔍 DEBUG: Creating template context for {len(dynamic_sequence)} blocks")
         
-        # Format blocks for display with block-based information
-        formatted_blocks = []
-        current_block_id = study_session.current_focus_block.id if study_session.current_focus_block else None
-        
-        for item in block_sequence:
+        # Create template context directly from dynamic_sequence 
+        focus_blocks_for_template = []
+        for i, item in enumerate(dynamic_sequence):
             block = item['block']
             block_type = item['type']
-            position = item['position']
+            status = item['status']
+            is_current = (i == 0)  # Always first block is current in dynamic sequence
+            is_completed = status in ['completed', 'review']
             
-            is_completed = block.id in completed_block_ids
-            is_current = block.id == current_block_id
+            # Determine styling based on position and type
+            if is_current:
+                status_class = 'warning'  # Current block
+                status_icon = 'fas fa-arrow-right'
+                item_status = 'current'
+            elif is_completed:
+                status_class = 'success'
+                status_icon = 'fas fa-check-circle'
+                item_status = 'completed'
+            elif block_type == 'review':
+                status_class = 'info'
+                status_icon = 'fas fa-redo'
+                item_status = 'review'
+            else:
+                status_class = 'primary'
+                status_icon = 'fas fa-play-circle'
+                item_status = 'available'
             
-            # Get user state for additional info
-            user_state = UserBlockState.objects.filter(user=user, block=block).first()
-            
-            formatted_block = {
-                'id': block.id,
-                'title': block.title,
-                'position': position,
-                'type': block_type,  # 'new' or 'review'
+            template_item = {
+                'block': block,  # The actual FocusBlock Django object
+                'sequence_number': i + 1,
+                'status': item_status,
+                'status_class': status_class,
+                'status_icon': status_icon,
+                'source_pdf': block.pdf_document.name if block.pdf_document else 'Unknown',
+                'estimated_duration': f"{getattr(block, 'estimated_time_min', 7)} min",
                 'is_completed': is_completed,
                 'is_current': is_current,
-                'is_available': True,  # In block-based system, all blocks in sequence are available
-                'pdf_name': block.pdf_document.name if block.pdf_document else 'Unknown',
-                'estimated_time': getattr(block, 'estimated_time_min', 7),
-                'block_state': {
-                    'status': user_state.status if user_state else 'new',
-                    'review_count': user_state.review_count if user_state else 0,
-                    'blocks_until_due': user_state.blocks_until_due() if user_state else 0,
-                    'next_due_after_blocks': user_state.next_due_after_blocks if user_state else None,
-                } if user_state else None
+                'block_type': block_type,  # NEW or REVIEW
+                'position_in_sequence': i
             }
-            formatted_blocks.append(formatted_block)
+            
+            # Add review-specific data
+            if block_type == 'review' and 'due_after_blocks' in item:
+                template_item['due_after_blocks'] = item['due_after_blocks']
+                template_item['blocks_studied'] = item.get('blocks_studied', 0)
+            
+            focus_blocks_for_template.append(template_item)
+            
+        print(f"🔍 DEBUG: First 3 template blocks:")
+        for i, item in enumerate(focus_blocks_for_template[:3]):
+            print(f"   {i+1}. [{item['block_type'].upper()}] {item['block'].title[:30]}... (completed: {item['is_completed']}, status: {item['status']})")
         
         # Check if all blocks are completed
-        total_in_sequence = len(block_sequence)
-        completed_in_sequence = sum(1 for b in formatted_blocks if b['is_completed'])
+        total_in_sequence = len(dynamic_sequence)
+        completed_in_sequence = sum(1 for b in focus_blocks_for_template if b['is_completed'])
+        current_position = study_plan.current_position
         
-        if completed_in_sequence >= total_in_sequence:
-            print("🎉 All blocks in sequence completed!")
+        if current_position >= total_in_sequence:
+            print("🎉 All blocks in dynamic sequence completed!")
             return render(request, 'flashcards/all_focus_blocks.html', {
                 'all_completed': True,
-                'message': 'All focus blocks in current sequence completed!',
+                'message': 'All focus blocks in dynamic sequence completed!',
                 'total_completed': completed_in_sequence,
                 'total_blocks': total_in_sequence
             })
@@ -2109,56 +2138,68 @@ def all_focus_blocks(request):
         # Get current block for context
         current_block = study_session.current_focus_block
         print(f"📖 Currently studying: {current_block.title if current_block else 'None'}")
+        print(f"📍 Current position: 1/{total_in_sequence}")  # Always position 1 in dynamic sequence
+        
+        print(f"🎯 Creating context with {len(focus_blocks_for_template)} focus blocks")
         
         context = {
-            'blocks': formatted_blocks,
+            'focus_blocks': focus_blocks_for_template,  # Template expects focus_blocks
             'current_block': current_block,
             'study_session': study_session,
-            'total_blocks': total_in_sequence,
-            'completed_count': completed_in_sequence,
-            'progress_percentage': (completed_in_sequence / total_in_sequence * 100) if total_in_sequence > 0 else 0,
-            'using_block_based_scheduling': True,
+            'total_all_blocks': total_in_sequence,  # Template expects total_all_blocks
+            'completed_blocks_count': completed_in_sequence,  # Template expects completed_blocks_count
+            'available_count': total_in_sequence - 1,  # Remaining blocks (total - current position 1)
+            'locked_count': 0,  # In dynamic system, no blocks are locked
+            'total_study_time': total_in_sequence * 7,  # Estimate
+            'progress_percentage': (study_plan.total_blocks_studied / 32 * 100) if 32 > 0 else 0,  # Use blocks studied for progress
+            'using_dynamic_sequence': True,  # Changed flag name
+            'current_position': 1,  # Always position 1 in dynamic sequence
+            'study_plan': study_plan,
             'user': user,
         }
         
+        print(f"✅ Returning render with context. Block-based system successful!")
         return render(request, 'flashcards/all_focus_blocks.html', context)
     
-    else:
-        # Fallback to original time-based system for users without proper authentication
-        all_blocks = FocusBlock.objects.select_related('pdf_document').order_by(
-            'pdf_document__created_at', 'block_order'
-        )
-        
-        if not all_blocks.exists():
-            return render(request, 'flashcards/all_focus_blocks.html', {'no_blocks': True})
-        
-        study_session = StudySession.objects.filter(
-            session_type='focus_blocks'
-        ).order_by('-last_accessed').first()
-
-        if not study_session:
-            study_session = StudySession.objects.create(
-                session_type='focus_blocks',
-                current_focus_block=all_blocks.first()
-            )
-            print(f"✅ Created new continuous study session: {study_session.session_id}")
-        else:
-            print(f"✅ Found existing study session: {study_session.session_id}")
-            study_session.last_accessed = timezone.now()
-            study_session.save()
-            
-        completed_block_ids = list(study_session.completed_focus_blocks.values_list('id', flat=True))
-        
-        # Also get user completed blocks for fallback system  
-        if user:
-            user_completed_blocks = UserBlockState.objects.filter(
-                user=user,
-                status='completed'
-            ).values_list('block_id', flat=True)
-            completed_block_ids.extend(user_completed_blocks)
-        completed_block_ids = list(set(completed_block_ids))  # Remove duplicates
-        print(f"📋 Total completed (StudySession + UserBlockState): {len(completed_block_ids)}")
+    # Fallback to original time-based system
+    print("🔄 Using original time-based system")
     
+    # Get ALL blocks in the exact same order as study plans use
+    all_blocks = FocusBlock.objects.select_related('pdf_document').order_by(
+        'pdf_document__created_at', 'block_order'
+    )
+    
+    if not all_blocks.exists():
+        return render(request, 'flashcards/all_focus_blocks.html', {'no_blocks': True})
+    
+    study_session = StudySession.objects.filter(
+        session_type='focus_blocks'
+    ).order_by('-last_accessed').first()
+
+    if not study_session:
+        study_session = StudySession.objects.create(
+            session_type='focus_blocks',
+            current_focus_block=all_blocks.first()
+        )
+        print(f"✅ Created new continuous study session: {study_session.session_id}")
+    else:
+        print(f"✅ Found existing study session: {study_session.session_id}")
+        study_session.last_accessed = timezone.now()
+        study_session.save()
+        
+    completed_block_ids = list(study_session.completed_focus_blocks.values_list('id', flat=True))
+    
+    # Also get user completed blocks for fallback system  
+    if user:
+        user_completed_blocks = UserBlockState.objects.filter(
+            user=user,
+            status='completed'
+        ).values_list('block_id', flat=True)
+        completed_block_ids.extend(user_completed_blocks)
+    
+    completed_block_ids = list(set(completed_block_ids))  # Remove duplicates
+    print(f"📋 Total completed (StudySession + UserBlockState): {len(completed_block_ids)}")
+
     uncompleted_blocks = all_blocks.exclude(id__in=completed_block_ids)
 
     print(f"📋 Completed blocks: {len(completed_block_ids)}")
@@ -2793,45 +2834,74 @@ def complete_focus_block_api(request, focus_block_id):
             completion_time = float(completion_time)
             
             if user:
-                # Create or update UserBlockState for block-based scheduling
-                user_state, created = UserBlockState.objects.get_or_create(
-                    user=user,
-                    block=focus_block,
-                    defaults={
-                        'status': 'new',
-                        'blocks_studied_count': 0
+                # ✅ NEW: Update dynamic study sequence
+                from flashcards.models import DynamicStudyPlan
+                
+                try:
+                    # Get user's study plan
+                    study_plan = DynamicStudyPlan.get_or_create_for_user(user)
+                    
+                    # Reposition the completed block in the sequence
+                    next_due_after = StudySession.reposition_completed_block(
+                        user=user,
+                        completed_block=focus_block,
+                        rating=proficiency_score,
+                        current_position=study_plan.current_position
+                    )
+                    
+                    # Advance user's position in the sequence
+                    study_plan.advance_position()
+                    
+                    print(f"🎯 Updated dynamic study sequence for {user.username}")
+                    print(f"   Completed block: {focus_block.title}")
+                    print(f"   Advanced to position: {study_plan.current_position}")
+                    print(f"   Block will reappear after: {next_due_after} blocks")
+                    
+                    # Create response for dynamic system
+                    response_data = {
+                        'success': True,
+                        'session_id': str(session.id),
+                        'dynamic_sequence': {
+                            'current_position': study_plan.current_position,
+                            'total_blocks_studied': study_plan.total_blocks_studied,
+                            'next_due_after_blocks': next_due_after,
+                        },
+                        'message': f'Completed! Block will reappear after {next_due_after or 0} new blocks'
                     }
-                )
-                
-                # Update using block-based scheduling
-                user_state.update_from_rating_blocks(
-                    rating=proficiency_score,
-                    time_spent_seconds=completion_time
-                )
-                
-                # Increment blocks_studied_count for all other review blocks
-                UserBlockState.increment_blocks_studied_for_user(
-                    user=user,
-                    exclude_current_block=focus_block.id
-                )
-                
-                print(f"🔢 Updated block-based scheduling for {user.username}")
-                print(f"   Block: {focus_block.title}")
-                print(f"   Status: {user_state.status}")
-                print(f"   Next review after: {user_state.next_due_after_blocks} blocks")
-                
-                # Create response with both systems
-                response_data = {
-                    'success': True,
-                    'session_id': str(session.id),
-                    'block_scheduling': {
-                        'next_due_after_blocks': user_state.next_due_after_blocks,
-                        'blocks_interval': user_state.blocks_interval,
-                        'status': user_state.status,
-                        'blocks_until_due': user_state.blocks_until_due()
-                    },
-                    'message': f'Completed! Next review after {user_state.next_due_after_blocks or 0} new blocks'
-                }
+                    
+                except Exception as e:
+                    print(f"❌ Error updating dynamic sequence: {e}")
+                    # Fallback to original block-based system
+                    user_state, created = UserBlockState.objects.get_or_create(
+                        user=user,
+                        block=focus_block,
+                        defaults={
+                            'status': 'new',
+                            'blocks_studied_count': 0
+                        }
+                    )
+                    
+                    user_state.update_from_rating_blocks(
+                        rating=proficiency_score,
+                        time_spent_seconds=completion_time
+                    )
+                    
+                    UserBlockState.increment_blocks_studied_for_user(
+                        user=user,
+                        exclude_current_block=focus_block.id
+                    )
+                    
+                    response_data = {
+                        'success': True,
+                        'session_id': str(session.id),
+                        'block_scheduling': {
+                            'next_due_after_blocks': user_state.next_due_after_blocks,
+                            'blocks_interval': user_state.blocks_interval,
+                            'status': user_state.status,
+                            'blocks_until_due': user_state.blocks_until_due()
+                        },
+                        'message': f'Completed! Next review after {user_state.next_due_after_blocks or 0} new blocks'
+                    }
             else:
                 # Fallback to time-based system for users without authentication
                 base_intervals = [1, 3, 7, 21, 52]  # days
@@ -5569,10 +5639,18 @@ def save_block_rating(request):
         )
         
         if not created:
-            # Update existing state
-            user_block_state.update_from_rating(proficiency_rating)
+            # Update existing state using NEW block-based system
+            user_block_state.update_from_rating_blocks(
+                rating=proficiency_rating, 
+                time_spent_seconds=time_spent_minutes * 60
+            )
             user_block_state.total_time_spent = (user_block_state.total_time_spent or 0) + time_spent_minutes
-            user_block_state.save()
+        else:
+            # For new state, also use block-based system
+            user_block_state.update_from_rating_blocks(
+                rating=proficiency_rating, 
+                time_spent_seconds=time_spent_minutes * 60
+            )
         
         # Also update session-based study path if we're in one
         if session_key and session_key in request.session:
@@ -5590,13 +5668,45 @@ def save_block_rating(request):
         
         print(f"✅ Saved rating for {focus_block.title}: {proficiency_rating}⭐ in {time_spent_minutes}min")
         
+        # 🎯 ADVANCE DYNAMIC STUDY PLAN
+        from flashcards.models import DynamicStudyPlan
+        
+        # Get or create user's study plan
+        study_plan = DynamicStudyPlan.get_or_create_for_user(user)
+        
+        # Advance to next position and increment total blocks studied
+        study_plan.advance_position()
+        
+        # Increment blocks_studied_count for all other blocks using new system
+        UserBlockState.increment_blocks_studied_for_user(user=user, exclude_current_block=block_id)
+        
+        # Get next block in dynamic sequence
+        next_block_info = None
+        try:
+            dynamic_sequence = StudySession.create_dynamic_study_sequence(user, 0)  # Always start from position 0
+            if dynamic_sequence and len(dynamic_sequence) > 0:
+                # Get the current block (next to study)
+                current_item = dynamic_sequence[0]  # First item is the current block to study
+                next_block_info = {
+                    'block_id': str(current_item['block'].id),
+                    'title': current_item['block'].title,
+                    'type': current_item['type'],
+                    'position': f"1/{len(dynamic_sequence)}"  # Always position 1 in dynamic sequence
+                }
+                print(f"🔄 Next block: {next_block_info['title']} (position {next_block_info['position']})")
+        except Exception as e:
+            print(f"❌ Error getting next block: {e}")
+        
         return JsonResponse({
             'success': True,
             'message': 'Block rating saved successfully',
             'block_id': block_id,
             'rating': proficiency_rating,
             'time_spent_minutes': time_spent_minutes,
-            'user_block_state_created': created
+            'user_block_state_created': created,
+            'next_block': next_block_info,
+            'blocks_studied': study_plan.total_blocks_studied,
+            'current_position': 1  # Always position 1 in dynamic sequence
         })
             
     except FocusBlock.DoesNotExist:
@@ -6173,94 +6283,81 @@ def end_study_session(request, session_id):
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)})
 
-def preview_intelligent_plan(request, plan_type):
+def preview_dynamic_sequence(request):
     """
-    Preview an intelligent study plan showing the sequence of blocks
+    Preview the dynamic study sequence (replaces old three-plan system)
     """
     from django.contrib.auth.models import User
+    from flashcards.models import DynamicStudyPlan
     
     # Get current user (for now, use admin user)
     user = User.objects.filter(is_superuser=True).first()
     
-    # Get all available focus blocks
-    focus_blocks = FocusBlock.objects.filter(
-        compact7_data__has_key='segments'
-    ).exclude(title__startswith='[MIGRATED→')
-    
-    if focus_blocks.count() < 2:
-        messages.error(request, "Need at least 2 focus blocks to generate study plan")
+    if not user:
+        messages.error(request, "No user found for preview")
         return redirect('flashcards:home')
     
-    # Generate plan based on type
-    if plan_type == 'quick_review':
-        plan_ids = StudySession.create_intelligent_plan(
-            user=user, 
-            target_duration_min=20, 
-            review_ratio=0.8
-        )
+    try:
+        # Get user's dynamic study plan
+        study_plan = DynamicStudyPlan.get_or_create_for_user(user)
+        
+        # Generate dynamic sequence (always start from position 0)
+        dynamic_sequence = StudySession.create_dynamic_study_sequence(user, 0)
+        
+        if not dynamic_sequence:
+            messages.error(request, "Could not generate dynamic sequence")
+            return redirect('flashcards:home')
+        
+        # Get next 20 blocks for preview
+        preview_blocks = dynamic_sequence[:20]
+        
+        # Format blocks for display
+        plan_blocks = []
+        for i, item in enumerate(preview_blocks, 1):
+            block = item['block']
+            block_type = item['type']
+            is_current = (i - 1 == 0)  # Only first block is current in dynamic sequence
+            
+            plan_blocks.append({
+                'sequence_number': i,
+                'block': block,
+                'block_type': block_type,
+                'is_current': is_current,
+                'pdf_name': block.pdf_document.name if block.pdf_document else 'Unknown',
+                'estimated_time': getattr(block, 'estimated_time_min', 7),
+                'segments_count': len(block.compact7_data.get('segments', [])) if hasattr(block, 'compact7_data') and block.compact7_data else 0,
+                'status': 'current' if is_current else ('review' if block_type == 'review' else 'upcoming')
+            })
+        
+        # Generate metrics
+        total_blocks = len(dynamic_sequence)
+        new_blocks_count = sum(1 for b in dynamic_sequence if b['type'] == 'new')
+        review_blocks_count = sum(1 for b in dynamic_sequence if b['type'] == 'review')
+        
         plan_info = {
-            'name': '⚡ Quick Review',
-            'description': 'Perfect for review breaks - focus on due blocks',
-            'duration_min': 20,
-            'composition': 'Heavy review focus',
-            'best_for': 'Review breaks, commute study'
+            'name': '🎯 Dynamic Study Sequence',
+            'description': 'Personalized sequence with automatic spaced repetition',
+            'total_blocks': total_blocks,
+            'composition': f'{new_blocks_count} new + {review_blocks_count} review',
+            'current_position': 1,  # Always position 1 in dynamic sequence
+            'blocks_studied': study_plan.total_blocks_studied
         }
-    elif plan_type == 'balanced':
-        plan_ids = StudySession.create_intelligent_plan(
-            user=user,
-            target_duration_min=45,
-            review_ratio=0.4
-        )
-        plan_info = {
-            'name': '⚖️ Balanced Learning',
-            'description': 'Optimal mix of new content and review',
-            'duration_min': 45,
-            'composition': '60% new + 40% review',
-            'best_for': 'Regular study sessions'
+        
+        context = {
+            'plan_info': plan_info,
+            'plan_blocks': plan_blocks,
+            'total_blocks': len(preview_blocks),
+            'total_time': sum(block['estimated_time'] for block in plan_blocks),
+            'current_position': 1,  # Always position 1 in dynamic sequence
+            'using_dynamic_sequence': True
         }
-    elif plan_type == 'deep_dive':
-        plan_ids = StudySession.create_intelligent_plan(
-            user=user,
-            target_duration_min=90,
-            review_ratio=0.2
-        )
-        plan_info = {
-            'name': '🎯 Deep Learning',
-            'description': 'Extended session for mastering new concepts',
-            'duration_min': 90,
-            'composition': '80% new + 20% review',
-            'best_for': 'Weekend deep study'
-        }
-    else:
-        messages.error(request, f"Unknown plan type: {plan_type}")
+        
+        return render(request, 'flashcards/plan_preview.html', context)
+        
+    except Exception as e:
+        print(f"❌ Error in preview_dynamic_sequence: {e}")
+        messages.error(request, f"Error generating sequence: {e}")
         return redirect('flashcards:home')
-    
-    # Get the actual focus block objects
-    planned_blocks = []
-    for block_id in plan_ids:
-        try:
-            block = FocusBlock.objects.get(id=block_id)
-            planned_blocks.append(block)
-        except FocusBlock.DoesNotExist:
-            continue
-    
-    if not planned_blocks:
-        messages.error(request, "Could not generate study plan")
-        return redirect('flashcards:home')
-    
-    # Calculate plan statistics
-    total_duration = sum(block.target_duration or 420 for block in planned_blocks) / 60
-    
-    context = {
-        'plan_type': plan_type,
-        'plan_info': plan_info,
-        'planned_blocks': planned_blocks,
-        'total_blocks': len(planned_blocks),
-        'total_duration': total_duration,
-        'user': user,
-    }
-    
-    return render(request, 'flashcards/plan_preview.html', context)
 
 def start_intelligent_plan(request, plan_type):
     """
@@ -6643,32 +6740,103 @@ def offline_study_interface(request):
 
 
 def offline_study_plan(request):
-    """Offline-capable study plan interface"""
+    """Offline-capable study plan interface using SAME dynamic sequence as online"""
+    from django.contrib.auth.models import User
+    from flashcards.models import DynamicStudyPlan
     
-    # Get all focus blocks for offline mode
-    all_blocks = FocusBlock.objects.filter(
-        compact7_data__has_key='segments'
-    ).exclude(title__startswith='[MIGRATED→').select_related('pdf_document')
+    # Get current user (for now, use admin user)
+    user = User.objects.filter(is_superuser=True).first()
     
-    # Prepare block data for offline use
+    # 🎯 GENERATE SAME DYNAMIC SEQUENCE AS ONLINE SYSTEM
     blocks_data = []
-    for block in all_blocks:
-        block_data = {
-            'id': str(block.id),
-            'title': block.title,
-            'order': block.block_order,
-            'duration': block.target_duration,
-            'difficulty': block.difficulty_level,
-            'pdf_name': block.pdf_document.name,
-            'segments': block.get_segments(),
-            'qa_items': block.get_qa_items(),
-            'estimated_duration': block.get_estimated_duration_display()
-        }
-        blocks_data.append(block_data)
+    dynamic_sequence_info = None
+    
+    if user:
+        try:
+            # Get user's dynamic study plan
+            study_plan = DynamicStudyPlan.get_or_create_for_user(user)
+            
+            # Generate same dynamic sequence as online (always start from position 0)
+            dynamic_sequence = StudySession.create_dynamic_study_sequence(user, 0)
+            print(f"📱 Offline: Generated dynamic sequence with {len(dynamic_sequence) if dynamic_sequence else 0} blocks")
+            
+            if dynamic_sequence:
+                # Prepare blocks data for offline use (up to 1000 blocks as requested)
+                sequence_limit = min(len(dynamic_sequence), 1000)
+                
+                for i, item in enumerate(dynamic_sequence[:sequence_limit]):
+                    block = item['block']
+                    block_type = item['type']
+                    is_current = (i == 0)  # First block is current in dynamic sequence
+                    
+                    block_data = {
+                        'id': str(block.id),
+                        'title': block.title,
+                        'order': i + 1,  # Sequence position
+                        'duration': block.target_duration,
+                        'difficulty': block.difficulty_level,
+                        'pdf_name': block.pdf_document.name if block.pdf_document else 'Unknown',
+                        'segments': block.get_segments(),
+                        'qa_items': block.get_qa_items(),
+                        'estimated_duration': block.get_estimated_duration_display(),
+                        'block_type': block_type,  # 'new' or 'review'
+                        'is_current': is_current,
+                        'status': 'current' if is_current else 'available'
+                    }
+                    blocks_data.append(block_data)
+                
+                # Generate sequence info for display
+                new_blocks_count = sum(1 for b in dynamic_sequence if b['type'] == 'new')
+                review_blocks_count = sum(1 for b in dynamic_sequence if b['type'] == 'review')
+                
+                # Calculate progress percentage
+                progress_percentage = 0
+                if len(dynamic_sequence) > 0:
+                    progress_percentage = (study_plan.total_blocks_studied / len(dynamic_sequence)) * 100
+                
+                dynamic_sequence_info = {
+                    'current_position': 1,  # Always position 1 in dynamic sequence
+                    'total_blocks': len(dynamic_sequence),
+                    'blocks_studied': study_plan.total_blocks_studied,
+                    'new_blocks_count': new_blocks_count,
+                    'review_blocks_count': review_blocks_count,
+                    'synced_blocks': len(blocks_data),
+                    'progress_percentage': progress_percentage
+                }
+                
+                print(f"📱 Offline: Prepared {len(blocks_data)} blocks for offline study")
+                print(f"📱 Offline: {new_blocks_count} new + {review_blocks_count} review blocks")
+                
+        except Exception as e:
+            print(f"❌ Error generating offline dynamic sequence: {e}")
+            # Fallback to simple block list if dynamic sequence fails
+            all_blocks = FocusBlock.objects.filter(
+                compact7_data__has_key='segments'
+            ).exclude(title__startswith='[MIGRATED→').select_related('pdf_document')[:1000]
+            
+            for i, block in enumerate(all_blocks):
+                block_data = {
+                    'id': str(block.id),
+                    'title': block.title,
+                    'order': i + 1,
+                    'duration': block.target_duration,
+                    'difficulty': block.difficulty_level,
+                    'pdf_name': block.pdf_document.name if block.pdf_document else 'Unknown',
+                    'segments': block.get_segments(),
+                    'qa_items': block.get_qa_items(),
+                    'estimated_duration': block.get_estimated_duration_display(),
+                    'block_type': 'new',
+                    'is_current': (i == 0),
+                    'status': 'current' if i == 0 else 'available'
+                }
+                blocks_data.append(block_data)
     
     context = {
         'blocks_data': blocks_data,
-        'total_blocks': len(blocks_data)
+        'total_blocks': len(blocks_data),
+        'dynamic_sequence': dynamic_sequence_info,
+        'using_dynamic_sequence': True,
+        'user': user
     }
     
     return render(request, 'flashcards/offline_study_plan.html', context)
@@ -7392,21 +7560,69 @@ def sync_offline_progress_enhanced(request):
         }, status=500)
 
 def offline_study_enhanced(request):
-    """Enhanced offline study interface with master sequence sync"""
-    # Get the plan parameter if provided
-    plan_type = request.GET.get('plan', 'balanced')
+    """Enhanced offline study interface with DYNAMIC SEQUENCE sync"""
+    from django.contrib.auth.models import User
+    from flashcards.models import DynamicStudyPlan
     
-    # Validate plan type
-    valid_plans = ['quick', 'balanced', 'deep']
-    if plan_type not in valid_plans:
-        plan_type = 'balanced'
+    # Get current user (for now, use admin user)
+    user = User.objects.filter(is_superuser=True).first()
+    
+    # 🎯 GENERATE SAME DYNAMIC SEQUENCE FOR OFFLINE SYNC
+    dynamic_sequence_info = None
+    sync_ready = False
+    
+    if user:
+        try:
+            # Get user's dynamic study plan
+            study_plan = DynamicStudyPlan.get_or_create_for_user(user)
+            
+            # Generate same dynamic sequence as online (always start from position 0)
+            dynamic_sequence = StudySession.create_dynamic_study_sequence(user, 0)
+            print(f"📱 Enhanced Offline: Generated dynamic sequence with {len(dynamic_sequence) if dynamic_sequence else 0} blocks")
+            
+            if dynamic_sequence:
+                # Calculate sync information
+                new_blocks_count = sum(1 for b in dynamic_sequence if b['type'] == 'new')
+                review_blocks_count = sum(1 for b in dynamic_sequence if b['type'] == 'review')
+                sync_limit = min(len(dynamic_sequence), 1000)  # Up to 1000 blocks as requested
+                
+                # Calculate progress percentage
+                progress_percentage = 0
+                if len(dynamic_sequence) > 0:
+                    progress_percentage = (study_plan.total_blocks_studied / len(dynamic_sequence)) * 100
+                
+                dynamic_sequence_info = {
+                    'current_position': 1,  # Always position 1 in dynamic sequence
+                    'total_blocks': len(dynamic_sequence),
+                    'blocks_studied': study_plan.total_blocks_studied,
+                    'new_blocks_count': new_blocks_count,
+                    'review_blocks_count': review_blocks_count,
+                    'sync_blocks_count': sync_limit,
+                    'current_block': dynamic_sequence[0]['block'].title if dynamic_sequence else None,
+                    'next_blocks': [item['block'].title for item in dynamic_sequence[1:6]],  # Next 5 blocks
+                    'progress_percentage': progress_percentage
+                }
+                
+                sync_ready = True
+                print(f"📱 Enhanced Offline: Ready to sync {sync_limit} blocks ({new_blocks_count} new + {review_blocks_count} review)")
+                
+        except Exception as e:
+            print(f"❌ Error generating enhanced offline sequence: {e}")
     
     context = {
-        'selected_plan': plan_type,
+        'dynamic_sequence': dynamic_sequence_info,
+        'sync_ready': sync_ready,
+        'using_dynamic_sequence': True,
+        'user': user,
+        # Keep old config for backward compatibility but mark as deprecated
+        'selected_plan': 'dynamic',
         'plan_configs': {
-            'quick': {'name': 'Quick Review', 'duration': 20, 'blocks': 3},
-            'balanced': {'name': 'Balanced Study', 'duration': 60, 'blocks': 8},
-            'deep': {'name': 'Deep Study', 'duration': 120, 'blocks': 17}
+            'dynamic': {
+                'name': '🎯 Dynamic Study Sequence', 
+                'description': 'Intelligent sequence with spaced repetition',
+                'blocks': dynamic_sequence_info['total_blocks'] if dynamic_sequence_info else 0,
+                'sync_blocks': dynamic_sequence_info['sync_blocks_count'] if dynamic_sequence_info else 0
+            }
         }
     }
     

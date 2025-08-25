@@ -870,11 +870,20 @@ class StudySession(models.Model):
         """Create master sequence with block-based spaced repetition intervals"""
         from django.db.models import Q
         
+        print(f"🔍 DEBUG: Starting block-based sequence creation for user: {user}")
+        
         # Get all blocks in prerequisite order
         all_blocks = FocusBlock.objects.select_related('pdf_document').order_by(
             'pdf_document__created_at', 'block_order'
         )
+        print(f"🔍 DEBUG: Found {all_blocks.count()} total focus blocks")
+        
+        if not all_blocks.exists():
+            print("❌ No focus blocks found in database!")
+            return []
+        
         master_sequence = cls._order_by_prerequisites(list(all_blocks))
+        print(f"🔍 DEBUG: After prerequisite ordering: {len(master_sequence)} blocks")
         
         # Get user's block states
         if user:
@@ -882,8 +891,10 @@ class StudySession(models.Model):
                 state.block_id: state for state in 
                 UserBlockState.objects.filter(user=user).select_related('block')
             }
+            print(f"🔍 DEBUG: Found {len(user_states)} user block states")
         else:
             user_states = {}
+            print("🔍 DEBUG: No user provided, using empty user states")
         
         # Separate blocks into categories
         new_blocks = []           # Never studied
@@ -899,6 +910,11 @@ class StudySession(models.Model):
                     future_blocks.append((block, state.blocks_until_due()))
             else:
                 new_blocks.append(block)
+        
+        print(f"🔍 DEBUG: Categorized blocks:")
+        print(f"   - New blocks: {len(new_blocks)}")
+        print(f"   - Review blocks: {len(review_blocks)}")
+        print(f"   - Future blocks: {len(future_blocks)}")
         
         # Sort review blocks by urgency (how overdue they are)
         review_blocks.sort(key=lambda x: x[1])  # Sort by blocks_until_due (negative = overdue)
@@ -939,6 +955,158 @@ class StudySession(models.Model):
         print(f"   📋 {len(final_sequence)} total blocks in sequence")
         
         return final_sequence
+    
+    @classmethod
+    def create_dynamic_study_sequence(cls, user, current_position=0):
+        """Create a single dynamic study sequence that automatically repositions completed blocks"""
+        print(f"🎯 Creating dynamic study sequence for {user.username if user else 'anonymous'}")
+        
+        # Get base master sequence
+        all_blocks = FocusBlock.objects.select_related('pdf_document').order_by(
+            'pdf_document__created_at', 'block_order'
+        )
+        master_sequence = cls._order_by_prerequisites(list(all_blocks))
+        
+        if not master_sequence:
+            return []
+        
+        # Get user's block states and completion data
+        user_states = {}
+        completed_blocks = set()
+        
+        if user:
+            # Get UserBlockState data
+            for state in UserBlockState.objects.filter(user=user).select_related('block'):
+                user_states[state.block_id] = state
+                # Include learning status as well as completed/review
+                if state.status in ['completed', 'review', 'learning']:
+                    completed_blocks.add(state.block_id)
+            
+            # Also get StudySession completed blocks
+            study_sessions = StudySession.objects.filter(session_type='focus_blocks')
+            for session in study_sessions:
+                completed_blocks.update(session.completed_focus_blocks.values_list('id', flat=True))
+        
+        print(f"📊 Found {len(completed_blocks)} completed blocks, {len(user_states)} user states")
+        
+        # Create the dynamic sequence
+        sequence = []
+        
+        # Start with uncompleted blocks from master sequence
+        for block in master_sequence:
+            if block.id not in completed_blocks:
+                sequence.append({
+                    'block': block,
+                    'type': 'new',
+                    'status': 'new',
+                    'original_position': len(sequence)
+                })
+        
+        # Now insert completed blocks at their calculated positions
+        for block in master_sequence:
+            if block.id in completed_blocks:
+                user_state = user_states.get(block.id)
+                
+                if user_state and user_state.next_due_after_blocks is not None:
+                    # Calculate where this block should be inserted
+                    # It should appear after 'next_due_after_blocks' number of blocks from current position
+                    blocks_studied = user_state.blocks_studied_count
+                    due_after = user_state.next_due_after_blocks
+                    
+                    if blocks_studied >= due_after:
+                        # Block is due now - insert at current position
+                        insert_position = current_position
+                    else:
+                        # Block is due after (due_after - blocks_studied) more blocks
+                        remaining_blocks = due_after - blocks_studied
+                        insert_position = current_position + remaining_blocks
+                    
+                    # Make sure insert position is valid
+                    insert_position = min(insert_position, len(sequence))
+                    
+                    sequence.insert(insert_position, {
+                        'block': block,
+                        'type': 'review',
+                        'status': 'review',
+                        'due_after_blocks': due_after - blocks_studied,
+                        'blocks_studied': blocks_studied,
+                        'original_position': insert_position
+                    })
+                    
+                    print(f"📍 Inserted review block '{block.title[:30]}...' at position {insert_position} (due after {due_after - blocks_studied} blocks)")
+        
+        # Add position numbers and finalize
+        final_sequence = []
+        for i, item in enumerate(sequence):
+            item['position'] = i + 1
+            item['sequence_index'] = i
+            final_sequence.append(item)
+        
+        print(f"✅ Dynamic sequence created: {len(final_sequence)} blocks")
+        print(f"   📍 Current position: {current_position + 1}")
+        print(f"   🆕 New blocks: {sum(1 for b in final_sequence if b['type'] == 'new')}")
+        print(f"   🔄 Review blocks: {sum(1 for b in final_sequence if b['type'] == 'review')}")
+        
+        return final_sequence
+    
+    @classmethod
+    def reposition_completed_block(cls, user, completed_block, rating, current_position=0):
+        """Reposition a completed block in the dynamic sequence based on its interval"""
+        print(f"🔄 Repositioning completed block: {completed_block.title[:30]}...")
+        
+        # Get or create user state
+        user_state, created = UserBlockState.objects.get_or_create(
+            user=user,
+            block=completed_block,
+            defaults={'status': 'new', 'blocks_studied_count': 0}
+        )
+        
+        # Update the state with block-based scheduling
+        user_state.update_from_rating_blocks(rating=rating, time_spent_seconds=0)
+        
+        # Increment block count for all other review blocks
+        UserBlockState.increment_blocks_studied_for_user(user=user, exclude_current_block=completed_block.id)
+        
+        print(f"✅ Block repositioned: next due after {user_state.next_due_after_blocks} blocks")
+        return user_state.next_due_after_blocks
+
+class DynamicStudyPlan(models.Model):
+    """Track user's position in the dynamic study sequence"""
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='dynamic_study_plan')
+    current_position = models.IntegerField(default=0, help_text="Current position in the dynamic sequence (0-based)")
+    total_blocks_studied = models.IntegerField(default=0, help_text="Total number of blocks studied by this user")
+    last_updated = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    def __str__(self):
+        return f"{self.user.username} - Position {self.current_position} ({self.total_blocks_studied} studied)"
+    
+    def advance_position(self):
+        """In dynamic sequence, position stays at 0 - just track total blocks studied"""
+        # DON'T increment position - it always stays at 0 for dynamic sequences
+        # self.current_position += 1  # ❌ REMOVED - this was causing position to increment
+        
+        # Ensure position is always 0 (reset any old values)
+        self.current_position = 0
+        self.total_blocks_studied += 1
+        self.save()
+        print(f"📍 Block completed by {self.user.username}, total studied: {self.total_blocks_studied}")
+    
+    @classmethod
+    def get_or_create_for_user(cls, user):
+        """Get or create dynamic study plan for user"""
+        plan, created = cls.objects.get_or_create(
+            user=user,
+            defaults={'current_position': 0, 'total_blocks_studied': 0}
+        )
+        
+        # Ensure existing users also have position reset to 0 (one-time fix)
+        if not created and plan.current_position != 0:
+            plan.current_position = 0
+            plan.save()
+            print(f"🔧 Reset {user.username}'s position from {plan.current_position} to 0")
+        
+        return plan
 
 class FocusSession(models.Model):
     """Track individual focus block study sessions"""

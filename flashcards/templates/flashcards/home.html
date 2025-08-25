@@ -122,54 +122,139 @@
         <div class="col-12">
             <h4 class="mb-3">
                 <i class="fas fa-rocket me-2"></i>
-                {% if incomplete_sessions %}Start New Learning Journey{% else %}Start Your Learning Journey{% endif %}
+                Your Dynamic Study Plan
             </h4>
         </div>
     </div>
 
+    <!-- Dynamic Study Sequence (Single Unified Plan) -->
+    {% if dynamic_sequence %}
     <div class="row">
-        {% for plan_key, plan in study_plans.items %}
-        <div class="col-lg-4 mb-4">
-            <a href="{% url 'flashcards:preview_intelligent_plan' plan_key %}" class="text-decoration-none">
-                <div class="card h-100 study-plan-card" 
-                     data-plan-type="{{ plan_key }}" 
-                     data-blocks="{{ plan.blocks|length }}" 
-                     data-duration="{{ plan.estimated_duration }}">
-                    <div class="card-header bg-primary text-white">
-                        <h5 class="mb-0 text-white">{{ plan.name }}</h5>
-                    </div>
-                    <div class="card-body">
-                        <p class="card-text text-dark">{{ plan.description }}</p>
-                        
-                        <div class="mb-3">
-                            <div class="d-flex justify-content-between align-items-center mb-2">
-                                <small class="text-muted">
-                                    <i class="fas fa-clock me-1"></i>{{ plan.duration_min }} minutes
-                                </small>
-                                <small class="text-muted">
-                                    <i class="fas fa-cubes me-1"></i>{{ plan.block_ids|length }} blocks
-                                </small>
-                            </div>
-                            <div class="progress" style="height: 6px;">
-                                <div class="progress-bar" role="progressbar" style="width: 100%"></div>
-                            </div>
-                        </div>
-                        
-                        <div class="text-center">
-                            <small class="text-muted">{{ plan.composition }}</small>
-                            <br><small class="badge bg-light text-dark">{{ plan.best_for }}</small>
-                        </div>
-                    </div>
-                    <div class="card-footer text-center">
-                        <div class="btn btn-primary">
-                            <i class="fas fa-eye me-2"></i>Preview Plan
-                        </div>
+        <div class="col-lg-8 mx-auto mb-4">
+            <div class="card h-100 border-primary" style="border-width: 2px;">
+                <div class="card-header bg-primary text-white">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0 text-white">
+                            <i class="fas fa-rocket me-2"></i>🎯 Your Dynamic Study Sequence
+                        </h5>
+                        <span class="badge bg-light text-primary">
+                            {{ dynamic_sequence.current_position }}/{{ dynamic_sequence.total_blocks }}
+                        </span>
                     </div>
                 </div>
-            </a>
+                <div class="card-body">
+                    <p class="card-text text-dark mb-3">
+                        <strong>Personalized learning path with intelligent spaced repetition</strong><br>
+                        Blocks automatically reposition based on your performance and memory strength.
+                    </p>
+                    
+                    <!-- Progress Bar -->
+                    <div class="mb-4">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <small class="text-muted">
+                                <i class="fas fa-brain me-1"></i>Progress: {{ dynamic_sequence.progress_percentage|floatformat:1 }}%
+                            </small>
+                            <small class="text-muted">
+                                <i class="fas fa-cubes me-1"></i>{{ dynamic_sequence.total_blocks }} blocks total
+                            </small>
+                        </div>
+                        <div class="progress" style="height: 8px;">
+                            <div class="progress-bar bg-success" role="progressbar" 
+                                 style="width: {{ dynamic_sequence.progress_percentage }}%">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Current Block Info -->
+                    {% if dynamic_sequence.current_block %}
+                    <div class="alert alert-info mb-3">
+                        <h6 class="mb-2">
+                            <i class="fas fa-play-circle me-2"></i>Currently Studying:
+                        </h6>
+                        <strong>{{ dynamic_sequence.current_block.block.title }}</strong>
+                        <br><small class="text-muted">
+                            Type: {{ dynamic_sequence.current_block.type|title }} • 
+                            From: {{ dynamic_sequence.current_block.block.pdf_document.name|default:"Unknown PDF" }}
+                        </small>
+                    </div>
+                    {% endif %}
+                    
+                    <!-- Stats Row -->
+                    <div class="row text-center mb-3">
+                        <div class="col-4">
+                            <div class="text-primary">
+                                <h5>{{ dynamic_sequence.new_blocks_count }}</h5>
+                                <small>New Blocks</small>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="text-warning">
+                                <h5>{{ dynamic_sequence.review_blocks_count }}</h5>
+                                <small>Review Blocks</small>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="text-success">
+                                <h5>{{ dynamic_sequence.blocks_studied }}</h5>
+                                <small>Blocks Studied</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Next Blocks Preview -->
+                    {% if dynamic_sequence.next_blocks %}
+                    <div class="mb-3">
+                        <h6 class="text-muted mb-2">
+                            <i class="fas fa-list me-2"></i>Next 3 blocks in sequence:
+                        </h6>
+                        {% for block in dynamic_sequence.next_blocks|slice:":3" %}
+                        <div class="d-flex align-items-center mb-1">
+                            <span class="badge {% if forloop.counter0 == 0 %}bg-primary{% else %}bg-secondary{% endif %} me-2">
+                                {{ forloop.counter }}
+                            </span>
+                            <small class="text-truncate">
+                                {{ block.block.title|truncatechars:50 }}
+                                <span class="text-muted">({{ block.type }})</span>
+                            </small>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="card-footer text-center">
+                    {% if dynamic_sequence.current_block %}
+                        <a href="{% url 'flashcards:focus_block_study' dynamic_sequence.current_block.block.id %}" class="btn btn-primary btn-lg">
+                            <i class="fas fa-play me-2"></i>Continue Studying
+                        </a>
+                    {% else %}
+                        <a href="{% url 'flashcards:all_focus_blocks' %}" class="btn btn-primary btn-lg">
+                            <i class="fas fa-eye me-2"></i>View Study Sequence
+                        </a>
+                    {% endif %}
+                    <a href="{% url 'flashcards:preview_dynamic_sequence' %}" class="btn btn-outline-primary ms-2">
+                        <i class="fas fa-list me-2"></i>View Full Sequence
+                    </a>
+                </div>
+            </div>
         </div>
-        {% endfor %}
     </div>
+    {% else %}
+    <!-- Fallback if no dynamic sequence -->
+    <div class="row">
+        <div class="col-12 text-center">
+            <div class="alert alert-info">
+                <h5><i class="fas fa-info-circle me-2"></i>Ready to start learning!</h5>
+                <p>Upload some PDFs or browse existing content to begin your dynamic study journey.</p>
+                <a href="{% url 'flashcards:upload' %}" class="btn btn-primary me-2">
+                    <i class="fas fa-upload me-2"></i>Upload PDFs
+                </a>
+                <a href="{% url 'flashcards:all_focus_blocks' %}" class="btn btn-outline-primary">
+                    <i class="fas fa-cubes me-2"></i>Browse Content
+                </a>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 
     <!-- Quick Actions -->
     <div class="row mb-4">
