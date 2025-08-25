@@ -1,5 +1,5 @@
 /* Enhanced Service Worker for Seamless Offline Experience */
-const CACHE_VERSION = "exocortex-v2.2.0";
+const CACHE_VERSION = "exocortex-v2.3.0";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const OFFLINE_CACHE = `${CACHE_VERSION}-offline`;
@@ -85,7 +85,6 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
     const url = new URL(event.request.url);
     const pathname = url.pathname;
-    const origin = url.origin;
     const origin = url.origin;
     
     // Skip non-GET requests
