@@ -240,12 +240,20 @@ class EnhancedOfflineStudy {
             
             this.showStatus('sync-status', '📡 Fetching master sequence...', 'info');
             
+            // ✅ CRITICAL FIX: Include offline progress when syncing master sequence
+            // This ensures blocks completed offline show as completed in the master sequence
+            const syncData = {
+                include_offline_progress: true,
+                offline_completed_blocks: this.offlineProgress.completed_blocks.map(block => block.block_id)
+            };
+            
             const response = await fetch('/api/sync-master-sequence/', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-CSRFToken': csrfToken
-                }
+                },
+                body: JSON.stringify(syncData)
             });
             
             if (!response.ok) {

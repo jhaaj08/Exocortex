@@ -6980,6 +6980,14 @@ def sync_master_sequence_offline(request):
         return JsonResponse({'error': 'POST method required'}, status=405)
     
     try:
+        # Parse any offline progress data sent from client
+        offline_completed_blocks = []
+        try:
+            data = json.loads(request.body) if request.body else {}
+            offline_completed_blocks = data.get('offline_completed_blocks', [])
+        except:
+            pass  # No offline data sent, that's fine
+        
         # Get the MASTER SEQUENCE (same as Focus Blocks page)
         all_blocks = FocusBlock.objects.select_related('pdf_document').order_by(
             'pdf_document__created_at', 'block_order'
@@ -6992,6 +7000,11 @@ def sync_master_sequence_offline(request):
         # Get user completion status
         user = request.user if request.user.is_authenticated else None
         completed_block_ids = set()
+        
+        # ✅ CRITICAL FIX: Include offline completed blocks
+        if offline_completed_blocks:
+            completed_block_ids.update(str(bid) for bid in offline_completed_blocks)
+            print(f"📱 Including {len(offline_completed_blocks)} offline completed blocks in master sequence")
         
         if user:
             # Get completed blocks from UserBlockState (offline sync data)
