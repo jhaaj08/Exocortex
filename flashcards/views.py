@@ -6,7 +6,7 @@ from django.views.decorators.http import require_http_methods
 from django.db import models  # Add this import
 from django.db.models import F
 from django.utils import timezone
-from .models import Folder, Flashcard, StudySession, PDFDocument, TextChunk, ChunkLabel, ConceptUnit, FocusBlock, FocusBlockRelationship
+from .models import Folder, Flashcard, StudySession, PDFDocument, TextChunk, ChunkLabel, ConceptUnit, FocusBlock, FocusBlockRelationship, UserBlockState
 from .forms import FolderInputForm, PDFUploadForm
 from .services import process_folder_content
 from .llm_service import process_folder_with_llm
@@ -122,7 +122,6 @@ def upload(request):
 def home(request):
     """Home page with study planner interface"""
     from django.contrib.auth.models import User
-    from flashcards.models import UserBlockState
     from django.db import models
     
     # Get current user (for now, use admin user)
@@ -2049,7 +2048,6 @@ def all_focus_blocks(request):
     
     # ✅ CRITICAL FIX: Also include blocks completed via UserBlockState (offline sync)
     from django.contrib.auth.models import User
-    from flashcards.models import UserBlockState
     
     user = User.objects.filter(is_superuser=True).first()
     if user:
@@ -4631,7 +4629,6 @@ def generate_study_schedule_view(request):
     🧠 Enhanced Intelligent Study Planner with UserBlockState integration
     """
     from django.contrib.auth.models import User
-    from flashcards.models import UserBlockState
     from django.db import models
     
     # Get current user (for now, use admin user)
@@ -5410,7 +5407,6 @@ def save_block_rating(request):
             return JsonResponse({'success': False, 'error': 'No user found'})
         
         # Update or create UserBlockState for this block
-        from flashcards.models import UserBlockState
         user_block_state, created = UserBlockState.objects.get_or_create(
             user=user,
             block=focus_block,
@@ -5984,7 +5980,6 @@ def start_study_session(request):
         if use_intelligent and admin_user:
             # Calculate breakdown for response
             try:
-                from flashcards.models import UserBlockState
                 total_blocks = len(plan_ids)
                 estimated_review = int(total_blocks * mix_ratio_review)
                 plan_details = {
@@ -6036,7 +6031,6 @@ def preview_intelligent_plan(request, plan_type):
     Preview an intelligent study plan showing the sequence of blocks
     """
     from django.contrib.auth.models import User
-    from flashcards.models import UserBlockState
     
     # Get current user (for now, use admin user)
     user = User.objects.filter(is_superuser=True).first()
@@ -6194,7 +6188,6 @@ def generate_study_schedule_view(request):
     🧠 Enhanced Intelligent Study Planner with UserBlockState integration
     """
     from django.contrib.auth.models import User
-    from flashcards.models import UserBlockState
     from django.db import models
     
     # Get current user (for now, use admin user)
@@ -6640,7 +6633,6 @@ def sync_offline_progress(request):
                     continue
                 
                 # Save progress to UserBlockState
-                from flashcards.models import UserBlockState
                 user_block_state, created = UserBlockState.objects.get_or_create(
                     user=user,
                     block=focus_block,
@@ -6731,7 +6723,6 @@ def debug_completion_status(request):
     """Debug endpoint to check block completion status across both systems"""
     
     from django.contrib.auth.models import User
-    from flashcards.models import UserBlockState
     
     # Get admin user
     user = User.objects.filter(is_superuser=True).first()
