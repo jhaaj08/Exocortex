@@ -2015,50 +2015,147 @@ def deduplication_stats(request):
 def all_focus_blocks(request):
     """Show the complete master sequence of all focus blocks (same order as study plans)"""
     
-    # Get ALL blocks in the exact same order as study plans use
-    all_blocks = FocusBlock.objects.select_related('pdf_document').order_by(
-        'pdf_document__created_at', 'block_order'
-    )
-    
-    if not all_blocks.exists():
-        return render(request, 'flashcards/all_focus_blocks.html', {'no_blocks': True})
-    
-    # ✅ FIXED: Find ANY active session, not just for first block
-    # Find or create continuous study session
-    # Instead of filtering by PDF:
-    study_session = StudySession.objects.filter(
-        session_type='focus_blocks'  # Just find ANY active focus study session
-    ).order_by('-last_accessed').first()
-
-    if not study_session:
-        # Create ONE session for ALL focus blocks
-        study_session = StudySession.objects.create(
-            session_type='focus_blocks',
-            current_focus_block=all_blocks.first()  # Start with first block (any PDF)
-            # No pdf_document field needed
-        )
-        print(f"✅ Created new continuous study session: {study_session.session_id}")
+    # Get user for block-based scheduling
+    user = None
+    if request.user.is_authenticated:
+        user = request.user
     else:
-        print(f"✅ Found existing study session: {study_session.session_id}")
-        study_session.last_accessed = timezone.now()
-        study_session.save()
-        
-    # ✅ NEW: Use StudySession's completed_focus_blocks + UserBlockState integration
-    completed_block_ids = list(study_session.completed_focus_blocks.values_list('id', flat=True))
+        # For anonymous users, use the first admin user
+        from django.contrib.auth.models import User
+        user = User.objects.filter(is_superuser=True).first()
     
-    # ✅ CRITICAL FIX: Also include blocks completed via UserBlockState (offline sync)
-    from django.contrib.auth.models import User
-    
-    user = User.objects.filter(is_superuser=True).first()
+    # ✅ NEW: Use block-based master sequence
     if user:
-        # Include blocks completed via offline study and sync
-        user_completed_blocks = UserBlockState.objects.filter(
-            user=user,
-            status='completed'
-        ).values_list('block_id', flat=True)
+        block_sequence = StudySession.create_block_based_master_sequence(user, total_blocks=100)
         
-        # Merge both completion sources
-        completed_block_ids.extend(user_completed_blocks)
+        if not block_sequence:
+            return render(request, 'flashcards/all_focus_blocks.html', {'no_blocks': True})
+        
+        # Find or create continuous study session
+        study_session = StudySession.objects.filter(
+            session_type='focus_blocks'
+        ).order_by('-last_accessed').first()
+
+        if not study_session:
+            first_block = block_sequence[0]['block'] if block_sequence else None
+            study_session = StudySession.objects.create(
+                session_type='focus_blocks',
+                current_focus_block=first_block
+            )
+            print(f"✅ Created new block-based study session: {study_session.session_id}")
+        else:
+            print(f"✅ Found existing study session: {study_session.session_id}")
+            study_session.last_accessed = timezone.now()
+            study_session.save()
+        
+        # Get completed block IDs for display
+        completed_block_ids = list(study_session.completed_focus_blocks.values_list('id', flat=True))
+        
+        # Also include blocks completed via UserBlockState
+        if user:
+            user_completed_blocks = UserBlockState.objects.filter(
+                user=user,
+                status__in=['completed', 'review']  # Include review status blocks as completed
+            ).values_list('block_id', flat=True)
+            completed_block_ids.extend(user_completed_blocks)
+        
+        # Format blocks for display with block-based information
+        formatted_blocks = []
+        current_block_id = study_session.current_focus_block.id if study_session.current_focus_block else None
+        
+        for item in block_sequence:
+            block = item['block']
+            block_type = item['type']
+            position = item['position']
+            
+            is_completed = block.id in completed_block_ids
+            is_current = block.id == current_block_id
+            
+            # Get user state for additional info
+            user_state = UserBlockState.objects.filter(user=user, block=block).first()
+            
+            formatted_block = {
+                'id': block.id,
+                'title': block.title,
+                'position': position,
+                'type': block_type,  # 'new' or 'review'
+                'is_completed': is_completed,
+                'is_current': is_current,
+                'is_available': True,  # In block-based system, all blocks in sequence are available
+                'pdf_name': block.pdf_document.name if block.pdf_document else 'Unknown',
+                'estimated_time': getattr(block, 'estimated_time_min', 7),
+                'block_state': {
+                    'status': user_state.status if user_state else 'new',
+                    'review_count': user_state.review_count if user_state else 0,
+                    'blocks_until_due': user_state.blocks_until_due() if user_state else 0,
+                    'next_due_after_blocks': user_state.next_due_after_blocks if user_state else None,
+                } if user_state else None
+            }
+            formatted_blocks.append(formatted_block)
+        
+        # Check if all blocks are completed
+        total_in_sequence = len(block_sequence)
+        completed_in_sequence = sum(1 for b in formatted_blocks if b['is_completed'])
+        
+        if completed_in_sequence >= total_in_sequence:
+            print("🎉 All blocks in sequence completed!")
+            return render(request, 'flashcards/all_focus_blocks.html', {
+                'all_completed': True,
+                'message': 'All focus blocks in current sequence completed!',
+                'total_completed': completed_in_sequence,
+                'total_blocks': total_in_sequence
+            })
+        
+        # Get current block for context
+        current_block = study_session.current_focus_block
+        print(f"📖 Currently studying: {current_block.title if current_block else 'None'}")
+        
+        context = {
+            'blocks': formatted_blocks,
+            'current_block': current_block,
+            'study_session': study_session,
+            'total_blocks': total_in_sequence,
+            'completed_count': completed_in_sequence,
+            'progress_percentage': (completed_in_sequence / total_in_sequence * 100) if total_in_sequence > 0 else 0,
+            'using_block_based_scheduling': True,
+            'user': user,
+        }
+        
+        return render(request, 'flashcards/all_focus_blocks.html', context)
+    
+    else:
+        # Fallback to original time-based system for users without proper authentication
+        all_blocks = FocusBlock.objects.select_related('pdf_document').order_by(
+            'pdf_document__created_at', 'block_order'
+        )
+        
+        if not all_blocks.exists():
+            return render(request, 'flashcards/all_focus_blocks.html', {'no_blocks': True})
+        
+        study_session = StudySession.objects.filter(
+            session_type='focus_blocks'
+        ).order_by('-last_accessed').first()
+
+        if not study_session:
+            study_session = StudySession.objects.create(
+                session_type='focus_blocks',
+                current_focus_block=all_blocks.first()
+            )
+            print(f"✅ Created new continuous study session: {study_session.session_id}")
+        else:
+            print(f"✅ Found existing study session: {study_session.session_id}")
+            study_session.last_accessed = timezone.now()
+            study_session.save()
+            
+        completed_block_ids = list(study_session.completed_focus_blocks.values_list('id', flat=True))
+        
+        # Also get user completed blocks for fallback system  
+        if user:
+            user_completed_blocks = UserBlockState.objects.filter(
+                user=user,
+                status='completed'
+            ).values_list('block_id', flat=True)
+            completed_block_ids.extend(user_completed_blocks)
         completed_block_ids = list(set(completed_block_ids))  # Remove duplicates
         print(f"📋 Total completed (StudySession + UserBlockState): {len(completed_block_ids)}")
     
@@ -2683,33 +2780,83 @@ def complete_focus_block_api(request, focus_block_id):
 
             print(f"   ✅ Added to StudySession completed_focus_blocks (original working system)")
             
-            # Calculate next review date using spaced repetition logic
+            # ✅ NEW: Update block-based scheduling system
+            user = None
+            if request.user.is_authenticated:
+                user = request.user
+            else:
+                # For anonymous users, use the first admin user (for testing)
+                from django.contrib.auth.models import User
+                user = User.objects.filter(is_superuser=True).first()
+            
             proficiency_score = int(proficiency_score)
             completion_time = float(completion_time)
             
-            # Simple spaced repetition logic
-            base_intervals = [1, 3, 7, 21, 52]  # days
-            proficiency_multipliers = {1: 0.5, 2: 0.7, 3: 1.0, 4: 1.3, 5: 1.5}
+            if user:
+                # Create or update UserBlockState for block-based scheduling
+                user_state, created = UserBlockState.objects.get_or_create(
+                    user=user,
+                    block=focus_block,
+                    defaults={
+                        'status': 'new',
+                        'blocks_studied_count': 0
+                    }
+                )
+                
+                # Update using block-based scheduling
+                user_state.update_from_rating_blocks(
+                    rating=proficiency_score,
+                    time_spent_seconds=completion_time
+                )
+                
+                # Increment blocks_studied_count for all other review blocks
+                UserBlockState.increment_blocks_studied_for_user(
+                    user=user,
+                    exclude_current_block=focus_block.id
+                )
+                
+                print(f"🔢 Updated block-based scheduling for {user.username}")
+                print(f"   Block: {focus_block.title}")
+                print(f"   Status: {user_state.status}")
+                print(f"   Next review after: {user_state.next_due_after_blocks} blocks")
+                
+                # Create response with both systems
+                response_data = {
+                    'success': True,
+                    'session_id': str(session.id),
+                    'block_scheduling': {
+                        'next_due_after_blocks': user_state.next_due_after_blocks,
+                        'blocks_interval': user_state.blocks_interval,
+                        'status': user_state.status,
+                        'blocks_until_due': user_state.blocks_until_due()
+                    },
+                    'message': f'Completed! Next review after {user_state.next_due_after_blocks or 0} new blocks'
+                }
+            else:
+                # Fallback to time-based system for users without authentication
+                base_intervals = [1, 3, 7, 21, 52]  # days
+                proficiency_multipliers = {1: 0.5, 2: 0.7, 3: 1.0, 4: 1.3, 5: 1.5}
+                
+                # Get current repetition level (how many times completed)
+                previous_sessions = FocusSession.objects.filter(
+                    focus_block=focus_block, 
+                    status='completed'
+                ).count() - 1  # Subtract current session
+                
+                level = min(previous_sessions, len(base_intervals) - 1)
+                interval = base_intervals[level] * proficiency_multipliers.get(proficiency_score, 1.0)
+                
+                next_review = timezone.now() + timedelta(days=interval)
+                
+                response_data = {
+                    'success': True,
+                    'session_id': str(session.id),
+                    'next_review_date': next_review.isoformat(),
+                    'interval_days': int(interval),
+                    'message': f'Completed! Next review in {int(interval)} days'
+                }
             
-            # Get current repetition level (how many times completed)
-            previous_sessions = FocusSession.objects.filter(
-                focus_block=focus_block, 
-                status='completed'
-            ).count() - 1  # Subtract current session
-            
-            level = min(previous_sessions, len(base_intervals) - 1)
-            interval = base_intervals[level] * proficiency_multipliers.get(proficiency_score, 1.0)
-            
-            # ✅ FIXED: Use timedelta correctly  
-            next_review = timezone.now() + timedelta(days=interval)
-            
-            return JsonResponse({
-                'success': True,
-                'session_id': str(session.id),
-                'next_review_date': next_review.isoformat(),
-                'interval_days': int(interval),
-                'message': f'Completed! Next review in {int(interval)} days'
-            })
+            return JsonResponse(response_data)
             
         except FocusBlock.DoesNotExist:
             return JsonResponse({'success': False, 'error': 'Focus block not found'})

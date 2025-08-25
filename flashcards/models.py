@@ -864,6 +864,81 @@ class StudySession(models.Model):
                         queue.append(other_node)
         
         return result
+    
+    @classmethod
+    def create_block_based_master_sequence(cls, user, total_blocks=50):
+        """Create master sequence with block-based spaced repetition intervals"""
+        from django.db.models import Q
+        
+        # Get all blocks in prerequisite order
+        all_blocks = FocusBlock.objects.select_related('pdf_document').order_by(
+            'pdf_document__created_at', 'block_order'
+        )
+        master_sequence = cls._order_by_prerequisites(list(all_blocks))
+        
+        # Get user's block states
+        if user:
+            user_states = {
+                state.block_id: state for state in 
+                UserBlockState.objects.filter(user=user).select_related('block')
+            }
+        else:
+            user_states = {}
+        
+        # Separate blocks into categories
+        new_blocks = []           # Never studied
+        review_blocks = []        # Due for review based on block intervals
+        future_blocks = []        # Not yet due for review
+        
+        for block in master_sequence:
+            if block.id in user_states:
+                state = user_states[block.id]
+                if state.is_due():
+                    review_blocks.append((block, state.blocks_until_due()))
+                else:
+                    future_blocks.append((block, state.blocks_until_due()))
+            else:
+                new_blocks.append(block)
+        
+        # Sort review blocks by urgency (how overdue they are)
+        review_blocks.sort(key=lambda x: x[1])  # Sort by blocks_until_due (negative = overdue)
+        review_blocks = [block for block, _ in review_blocks]
+        
+        # Create the final sequence
+        final_sequence = []
+        new_index = 0
+        review_index = 0
+        
+        # Interleave new blocks with review blocks
+        # Strategy: For every 3-4 new blocks, insert 1 review block
+        while len(final_sequence) < total_blocks and (new_index < len(new_blocks) or review_index < len(review_blocks)):
+            
+            # Add new blocks (prioritize learning new material)
+            blocks_added_this_round = 0
+            while blocks_added_this_round < 3 and new_index < len(new_blocks) and len(final_sequence) < total_blocks:
+                final_sequence.append({
+                    'block': new_blocks[new_index],
+                    'type': 'new',
+                    'position': len(final_sequence) + 1
+                })
+                new_index += 1
+                blocks_added_this_round += 1
+            
+            # Add one review block if available
+            if review_index < len(review_blocks) and len(final_sequence) < total_blocks:
+                final_sequence.append({
+                    'block': review_blocks[review_index],
+                    'type': 'review',
+                    'position': len(final_sequence) + 1
+                })
+                review_index += 1
+        
+        print(f"🎯 Created block-based master sequence:")
+        print(f"   📚 {new_index} new blocks")
+        print(f"   🔄 {review_index} review blocks")
+        print(f"   📋 {len(final_sequence)} total blocks in sequence")
+        
+        return final_sequence
 
 class FocusSession(models.Model):
     """Track individual focus block study sessions"""
@@ -1000,7 +1075,13 @@ class UserBlockState(models.Model):
     last_reviewed_at = models.DateTimeField(null=True, blank=True)
     next_due_at = models.DateTimeField(null=True, blank=True)
     
-    # Spaced repetition parameters
+    # Block-based scheduling (NEW SYSTEM)
+    next_due_after_blocks = models.IntegerField(null=True, blank=True, help_text="Number of blocks that need to be studied before this is due for review")
+    blocks_interval = models.IntegerField(default=1, help_text="Current block interval for spaced repetition")
+    stability_blocks = models.FloatField(default=1.0, help_text="Memory stability measured in number of blocks")
+    blocks_studied_count = models.IntegerField(default=0, help_text="Total blocks studied since last review of this block")
+    
+    # Spaced repetition parameters (legacy time-based system)
     review_count = models.IntegerField(default=0, help_text="Number of times reviewed")
     lapses = models.IntegerField(default=0, help_text="Number of times marked as difficult/forgotten")
     ease_factor = models.FloatField(default=2.5, help_text="SM-2 ease factor (1.3-4.0)")
@@ -1017,18 +1098,26 @@ class UserBlockState(models.Model):
     
     class Meta:
         unique_together = ['user', 'block']
-        ordering = ['next_due_at', '-updated_at']
+        ordering = ['next_due_after_blocks', 'next_due_at', '-updated_at']
         indexes = [
             models.Index(fields=['user', 'status']),
             models.Index(fields=['next_due_at']),
             models.Index(fields=['status', 'next_due_at']),
+            models.Index(fields=['next_due_after_blocks']),
+            models.Index(fields=['user', 'next_due_after_blocks']),
+            models.Index(fields=['status', 'next_due_after_blocks']),
         ]
     
     def __str__(self):
         return f"{self.user.username} → {self.block.title} ({self.status})"
     
     def is_due(self):
-        """Check if this block is due for review"""
+        """Check if this block is due for review (checks both time and block-based systems)"""
+        # Check block-based system first (if enabled)
+        if self.next_due_after_blocks is not None:
+            return self.blocks_studied_count >= self.next_due_after_blocks
+        
+        # Fall back to time-based system
         if not self.next_due_at:
             return self.status == 'new'
         from django.utils import timezone
@@ -1041,6 +1130,12 @@ class UserBlockState(models.Model):
         from django.utils import timezone
         delta = self.next_due_at - timezone.now()
         return delta.days
+    
+    def blocks_until_due(self):
+        """Get blocks until due for review (negative if overdue)"""
+        if self.next_due_after_blocks is None:
+            return 0  # Not using block-based system
+        return self.next_due_after_blocks - self.blocks_studied_count
     
     def update_from_rating(self, rating, time_spent_seconds=0, qa_correct=0, qa_total=0):
         """Update scheduling parameters based on new rating (1-5)"""
@@ -1099,28 +1194,128 @@ class UserBlockState(models.Model):
         self.save()
         print(f"📅 Updated {self.user.username} → {self.block.title}: {self.status}, due in {self.days_until_due()} days")
     
+    def update_from_rating_blocks(self, rating, time_spent_seconds=0, qa_correct=0, qa_total=0):
+        """Update block-based scheduling parameters based on new rating (1-5)"""
+        from django.utils import timezone
+        
+        self.last_reviewed_at = timezone.now()
+        self.review_count += 1
+        self.total_time_spent += time_spent_seconds
+        self.blocks_studied_count = 0  # Reset counter since we're reviewing this block
+        
+        # Update average rating
+        if self.avg_rating is None:
+            self.avg_rating = rating
+        else:
+            # Weighted average: recent ratings have more influence
+            self.avg_rating = (self.avg_rating * 0.7) + (rating * 0.3)
+        
+        # Update Q&A score if provided
+        if qa_total > 0:
+            qa_score = qa_correct / qa_total
+            if self.recent_qa_score is None:
+                self.recent_qa_score = qa_score
+            else:
+                self.recent_qa_score = (self.recent_qa_score * 0.6) + (qa_score * 0.4)
+        
+        # Block-based spaced repetition algorithm
+        base_intervals = [1, 3, 7, 15, 30]  # blocks (not days)
+        proficiency_multipliers = {1: 0.5, 2: 0.7, 3: 1.0, 4: 1.3, 5: 1.5}
+        
+        if rating >= 3:
+            # Successful recall
+            if self.status == 'new':
+                self.status = 'learning'
+                self.next_due_after_blocks = 1  # Review after 1 new block
+                self.blocks_interval = 1
+            elif self.status == 'learning':
+                self.status = 'review'
+                self.next_due_after_blocks = 3  # Review after 3 new blocks
+                self.blocks_interval = 3
+            else:
+                # Review mode: use ease factor and intervals
+                level = min(self.review_count - 1, len(base_intervals) - 1)
+                interval = base_intervals[level] * proficiency_multipliers.get(rating, 1.0)
+                interval = max(1, int(interval * self.ease_factor))
+                
+                self.next_due_after_blocks = interval
+                self.blocks_interval = interval
+                self.stability_blocks = interval
+            
+            # Adjust ease factor based on rating
+            if rating == 5:
+                self.ease_factor = min(4.0, self.ease_factor + 0.15)
+            elif rating == 4:
+                self.ease_factor = min(4.0, self.ease_factor + 0.1)
+            # rating == 3: no change
+        else:
+            # Poor recall (rating 1-2): lapse
+            self.lapses += 1
+            self.status = 'lapsed'
+            self.ease_factor = max(1.3, self.ease_factor - 0.2)
+            self.stability_blocks = max(1, self.stability_blocks * 0.8)
+            # Short retry interval - review after 1 block
+            self.next_due_after_blocks = 1
+            self.blocks_interval = 1
+        
+        self.save()
+        print(f"🔢 Updated {self.user.username} → {self.block.title}: {self.status}, due in {self.blocks_until_due()} blocks")
+    
     @classmethod
     def get_due_blocks_for_user(cls, user, include_overdue=True):
-        """Get blocks that are due for review for a specific user"""
+        """Get blocks that are due for review for a specific user (both time and block-based)"""
         from django.utils import timezone
         
         queryset = cls.objects.filter(user=user)
         
         if include_overdue:
-            # Include new blocks (no due date) and overdue blocks
+            # Include:
+            # 1. New blocks
+            # 2. Block-based: blocks where blocks_studied_count >= next_due_after_blocks 
+            # 3. Time-based: overdue blocks
             queryset = queryset.filter(
-                models.Q(next_due_at__isnull=True, status='new') |
-                models.Q(next_due_at__lte=timezone.now())
+                models.Q(status='new') |  # New blocks are always due
+                models.Q(
+                    next_due_after_blocks__isnull=False,
+                    blocks_studied_count__gte=models.F('next_due_after_blocks')
+                ) |  # Block-based system: due when enough blocks studied
+                models.Q(
+                    next_due_after_blocks__isnull=True,
+                    next_due_at__lte=timezone.now()
+                )  # Time-based system: overdue blocks
             )
         else:
             # Only blocks due today (not overdue)
             today = timezone.now().date()
             queryset = queryset.filter(
-                models.Q(next_due_at__isnull=True, status='new') |
-                models.Q(next_due_at__date=today)
+                models.Q(status='new') |
+                models.Q(
+                    next_due_after_blocks__isnull=False,
+                    blocks_studied_count__gte=models.F('next_due_after_blocks')
+                ) |
+                models.Q(
+                    next_due_after_blocks__isnull=True,
+                    next_due_at__date=today
+                )
             )
         
-        return queryset.select_related('block').order_by('next_due_at', 'status')
+        return queryset.select_related('block').order_by('next_due_after_blocks', 'next_due_at', 'status')
+    
+    @classmethod
+    def increment_blocks_studied_for_user(cls, user, exclude_current_block=None):
+        """Increment blocks_studied_count for all user's block states (when a new block is studied)"""
+        queryset = cls.objects.filter(user=user, next_due_after_blocks__isnull=False)
+        
+        # Don't increment for the block that was just completed
+        if exclude_current_block:
+            queryset = queryset.exclude(block_id=exclude_current_block)
+        
+        # Only increment for blocks that are not yet due (haven't reached their target)
+        queryset = queryset.filter(blocks_studied_count__lt=models.F('next_due_after_blocks'))
+        
+        updated = queryset.update(blocks_studied_count=models.F('blocks_studied_count') + 1)
+        print(f"📊 Incremented block study count for {updated} review blocks for user {user.username}")
+        return updated
     
     @classmethod
     def get_new_blocks_for_user(cls, user, exclude_completed=True):
