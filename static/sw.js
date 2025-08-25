@@ -1,5 +1,5 @@
 /* Enhanced Service Worker for Seamless Offline Experience */
-const CACHE_VERSION = "exocortex-v2.1.0";
+const CACHE_VERSION = "exocortex-v2.2.0";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const OFFLINE_CACHE = `${CACHE_VERSION}-offline`;
@@ -85,13 +85,21 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
     const url = new URL(event.request.url);
     const pathname = url.pathname;
+    const origin = url.origin;
+    const origin = url.origin;
     
     // Skip non-GET requests
     if (event.request.method !== 'GET') {
         return;
     }
+    // IMPORTANT: Skip external CDN requests entirely - let browser handle them
+    if (origin !== self.location.origin) {
+        console.log(`[SW] 🌍 Skipping external CDN request: ${url.hostname}`);
+        return; // Let browser handle external requests normally without SW intervention
+    }
+
     
-    console.log(`[SW] 🌐 Handling fetch for: ${pathname} (online: ${navigator.onLine})`);
+    console.log(`[SW] 🏠 Handling local request: ${pathname} (online: ${navigator.onLine})`);
     
     // Home page strategy - cache first with offline fallback
     if (pathname === '/' || pathname === '/home/') {
