@@ -2081,8 +2081,8 @@ def all_focus_blocks(request):
                 'all_completed': True,
                 'message': 'All focus blocks completed!'
             })
-    elif study_session.current_focus_block in study_session.completed_focus_blocks.all():
-        # Current block was completed, advance to next
+    elif study_session.current_focus_block.id in completed_block_ids:
+        # Current block was completed (either online or via offline sync), advance to next
         if uncompleted_blocks.exists():
             study_session.current_focus_block = uncompleted_blocks.first()
             study_session.save()
