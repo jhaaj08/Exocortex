@@ -3,6 +3,11 @@
 {% block title %}Offline Study Session{% endblock %}
 
 {% block content %}
+<!-- Add CSRF token for API calls -->
+<form style="display: none;">
+    {% csrf_token %}
+</form>
+
 <div class="container-fluid" id="study-session-container">
     <!-- Session Header -->
     <div class="row mb-3">
@@ -177,8 +182,9 @@ class OfflineStudySession {
         this.init();
     }
 
-    init() {
-        this.loadOfflineData();
+    // ✅ FIXED: Changed to async to handle smart data loading
+    async init() {
+        await this.loadStudyData(); // ✅ Changed: Smart data loading
         this.setupSession();
         this.updateConnectionStatus();
         
@@ -187,14 +193,74 @@ class OfflineStudySession {
         window.addEventListener('offline', () => this.updateConnectionStatus());
     }
 
-    loadOfflineData() {
-        // Load master sequence
+    // ✅ NEW: CSRF token function
+    getCSRFToken() {
+        // Try multiple sources for CSRF token
+        const tokenInput = document.querySelector('input[name="csrfmiddlewaretoken"]');
+        if (tokenInput) return tokenInput.value;
+        
+        const tokenCookie = document.cookie.split('; ')
+            .find(row => row.startsWith('csrftoken='))
+            ?.split('=')[1];
+        if (tokenCookie) return tokenCookie;
+        
+        const tokenMeta = document.querySelector('meta[name="csrf-token"]');
+        if (tokenMeta) return tokenMeta.getAttribute('content');
+        
+        return null;
+    }
+
+    // ✅ COMPLETELY REWRITTEN: Smart data loading - database when online, localStorage when offline
+    async loadStudyData() {
+        if (navigator.onLine) {
+            console.log('🌐 Online: Getting fresh study data from database...');
+            try {
+                // Get fresh data from database API
+                const response = await fetch('/api/sync-master-sequence/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': this.getCSRFToken() || ''
+                    },
+                    body: JSON.stringify({})
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success) {
+                        // Use fresh data from database
+                        this.masterSequence = data.master_sequence;
+                        
+                        // Update localStorage for offline access
+                        localStorage.setItem('masterSequence', JSON.stringify(this.masterSequence));
+                        localStorage.setItem('lastSync', data.sync_timestamp);
+                        
+                        console.log(`✅ Loaded fresh data: ${this.masterSequence.length} blocks, ${data.completed_count} completed`);
+                        
+                        // Generate study plan with fresh data
+                        const planType = localStorage.getItem('currentOfflinePlan') || 'balanced';
+                        this.generateStudyPlan(planType);
+                        return;
+                    }
+                }
+                console.warn('⚠️ Failed to get fresh data, falling back to cache');
+            } catch (error) {
+                console.warn('⚠️ Error getting fresh data, falling back to cache:', error);
+            }
+        }
+        
+        // Fallback: Load from localStorage (offline or API failed)
+        console.log('📱 Offline/Fallback: Loading cached study data...');
         const stored = localStorage.getItem('masterSequence');
         if (stored) {
             this.masterSequence = JSON.parse(stored);
+            console.log(`📂 Loaded cached data: ${this.masterSequence.length} blocks`);
+        } else {
+            console.error('❌ No cached data available');
+            this.masterSequence = [];
         }
         
-        // Load current plan type
+        // Generate study plan
         const planType = localStorage.getItem('currentOfflinePlan') || 'balanced';
         this.generateStudyPlan(planType);
     }
@@ -211,6 +277,8 @@ class OfflineStudySession {
         // Get blocks following master sequence order
         const availableBlocks = this.masterSequence.filter(block => !block.is_completed);
         this.currentPlan = availableBlocks.slice(0, config.blocks);
+        
+        console.log(`📚 Generated ${planType} study plan: ${this.currentPlan.length} blocks (${availableBlocks.length} available)`);
         
         // Update session title
         document.getElementById('session-title').textContent = 
